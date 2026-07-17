@@ -1,0 +1,12 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# Browser-automation droppings (apex-sentinel runs)
+.playwright-mcp/
+.playwright-cli/
+.playwright/

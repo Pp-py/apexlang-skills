@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck scripts and tests
+        run: shellcheck skills/apex-sync-guard/scripts/*.sh tests/*.sh
+
+  sync-guard-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: run offline e2e harness (stubbed SQLcl)
+        run: bash tests/sync-guard-e2e.sh

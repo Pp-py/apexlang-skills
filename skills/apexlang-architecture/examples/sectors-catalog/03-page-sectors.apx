@@ -1,0 +1,204 @@
+page 30 (
+    name: Sectors
+    alias: SECTORS-CATALOG
+    title: Sectors
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+
+    region sectors (
+        name: Sectors
+        type: interactiveGrid
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                select sector_id, code, name, active_flag
+                  from hr_sectors
+                 order by code
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: #DEFAULT#
+        }
+        edit {
+            enabled: true
+            allowedOperations: [
+                add
+                update
+                delete
+            ]
+        }
+        pagination {
+            type: page
+        }
+        messages {
+            whenNoDataFound: No sectors loaded.
+        }
+        toolbar {
+            controls: [
+                searchField
+                actionsMenu
+                resetButton
+                saveButton
+            ]
+        }
+
+        savedReport PRIMARY (
+            visibility: primary
+            name: Primary
+            view {
+                default: grid
+            }
+            singleRowView {
+                displayedColumns: true
+            }
+
+            displayColumn (
+                column: @SECTOR_ID
+                layout {
+                    sequence: 1
+                }
+            )
+
+            displayColumn (
+                column: @CODE
+                layout {
+                    sequence: 2
+                }
+            )
+
+            displayColumn (
+                column: @NAME
+                layout {
+                    sequence: 3
+                }
+            )
+
+            displayColumn (
+                column: @ACTIVE_FLAG
+                layout {
+                    sequence: 4
+                }
+            )
+
+        )
+
+        column SECTOR_ID (
+            type: hidden
+            layout {
+                sequence: 10
+            }
+            source {
+                databaseColumn: SECTOR_ID
+                dataType: number
+                primaryKey: true
+            }
+        )
+
+        column CODE (
+            type: textField
+            heading {
+                heading: Code
+            }
+            layout {
+                sequence: 20
+            }
+            validation {
+                maxLength: 30
+            }
+            source {
+                databaseColumn: CODE
+                dataType: varchar2
+            }
+        )
+
+        column NAME (
+            type: textField
+            heading {
+                heading: Name
+            }
+            layout {
+                sequence: 30
+            }
+            validation {
+                maxLength: 100
+            }
+            source {
+                databaseColumn: NAME
+                dataType: varchar2
+            }
+        )
+
+        column ACTIVE_FLAG (
+            type: selectList
+            heading {
+                heading: Active
+            }
+            lov {
+                type: staticValues
+                staticValues: STATIC2:Active;Y,Inactive;N
+                displayExtraValues: false
+                displayNullValue: false
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                databaseColumn: ACTIVE_FLAG
+                dataType: varchar2
+            }
+        )
+    )
+
+    process save-sectors (
+        name: Save sectors
+        type: executeCode
+        editableRegion: @sectors
+        source {
+            plsqlCode:
+                ```plsql
+                declare
+                    l_err boolean := false;
+                begin
+                    -- Required-field checks live here: native IG column validations
+                    -- do NOT fire on IG Save. apex_error shows the clean message,
+                    -- without the ORA- prefix.
+                    if :APEX$ROW_STATUS in ('C', 'U') then
+                        if trim(:CODE) is null then
+                            apex_error.add_error(
+                                p_message => 'Sector code is required.',
+                                p_display_location => apex_error.c_inline_in_notification);
+                            l_err := true;
+                        end if;
+                    end if;
+
+                    if not l_err then
+                        -- Normalize before writing; p_sector_id is IN OUT: on insert
+                        -- :SECTOR_ID receives the generated PK and the IG finalizes the row.
+                        :CODE := upper(trim(:CODE));
+                        pkg_sectors.save_row(
+                            p_row_status  => :APEX$ROW_STATUS,
+                            p_sector_id   => :SECTOR_ID,
+                            p_code        => :CODE,
+                            p_name        => :NAME,
+                            p_active_flag => :ACTIVE_FLAG
+                        );
+                    end if;
+                end;
+                ```
+        }
+        execution {
+            sequence: 10
+            point: afterSubmit
+        }
+    )
+
+)
