@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck scripts and tests
-        run: shellcheck skills/apex-sync-guard/scripts/*.sh tests/*.sh
+        run: shellcheck skills/*/scripts/*.sh tests/*.sh
 
   sync-guard-e2e:
     runs-on: ubuntu-latest

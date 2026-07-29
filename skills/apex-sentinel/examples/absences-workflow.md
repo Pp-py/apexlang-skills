@@ -9,8 +9,9 @@ change — and that an illegal transition is blocked (non-mutating).
 
 ## Step 0 — prerequisite (do NOT skip)
 
-Confirm a browser-automation tool is available (`playwright-cli` or a browser-MCP — see
-`../setup.md` §0). If none is, **stop and report**. Don't substitute validate/import as proof.
+Resolve a browser backend with the launcher probe in `../SKILL.md` §Prerequisites — Playwright
+CLI first (global binary *or* npx), browser-MCP only if that resolves nothing (`../setup.md` §0).
+If neither is available, **stop and report**. Don't substitute validate/import as proof.
 
 ## 1. Render the master
 

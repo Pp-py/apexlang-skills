@@ -32,7 +32,7 @@ Installs the three skills and auto-registers the sync-guard hook (it no-ops in p
 ## Requirements
 
 - Official `apex` skill (SQLcl) — generate/validate/import `.apx`
-- **apex-sentinel:** a browser-automation tool (Playwright CLI recommended; any browser-MCP works) + SQLcl. No browser → it stops and reports; it never fakes verification
+- **apex-sentinel:** a browser-automation tool + SQLcl. Playwright CLI preferred and driven through `skills/apex-sentinel/scripts/pw.sh` (no install needed — it falls back to `npx`); any browser-MCP works as a fallback. No browser → it stops and reports; it never fakes verification
 - **apex-sync-guard:** `git`, SQLcl, `jq` *or* `python3`
 
 ## Examples
@@ -42,7 +42,7 @@ Two runnable vertical slices (DDL + write-path package + validate-green `.apx` +
 ## Development
 
 ```bash
-shellcheck skills/apex-sync-guard/scripts/*.sh tests/*.sh   # lint
+shellcheck skills/*/scripts/*.sh tests/*.sh                 # lint
 tests/sync-guard-e2e.sh                                     # offline e2e (stubbed SQLcl)
 ```
 

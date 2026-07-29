@@ -25,7 +25,7 @@ IG cells are `<td role="gridcell">`, **not inputs**. Typing into the cell fails 
 2. Per required column: double-click the cell → type into the revealed input. Fill **all** required columns (the save process enforces required fields *before* the package call, so missing one tests the wrong path).
 3. click **Save**.
 
-MCP: `browser_run_code_unsafe` with `getByRole('button', { name: 'Add Row' })`, `getByRole('gridcell', …).dblclick()`, etc. CLI: batch the equivalent commands; Grep the on-disk snapshot once if you need refs first.
+MCP: `browser_run_code_unsafe` with `getByRole('button', { name: 'Add Row' })`, `getByRole('gridcell', …).dblclick()`, etc. CLI: one `pw.sh run-code` with the same snippet; `pw.sh find <text>` against the on-disk snapshot first if you need refs.
 
 ## 3. The high-value assertion — rejection path (non-mutating)
 

@@ -16,9 +16,10 @@ loop close on a real artifact.
    `apexlang-architecture/examples/`).
 2. Read `../setup.md` — backend choice/config, base-URL/TLS resolution, login, session
    preservation.
-3. **Step 0 every time:** confirm a browser-automation tool is available (`playwright-cli`
-   or a browser-MCP). No browser → stop and report; never claim verification from
-   `validate`/`import` alone.
+3. **Step 0 every time:** run the launcher probe in `../SKILL.md` §Prerequisites — resolve the
+   Playwright CLI (global binary *or* npx; `which playwright-cli` alone is not the test), and
+   only fall back to a browser-MCP if it resolves nothing. No browser → stop and report; never
+   claim verification from `validate`/`import` alone.
 
 Both walkthroughs lead with the **rejection / illegal path**, which exercises the full write
 path and the business rule **without persisting test data**.

@@ -6,7 +6,7 @@
 
 ## Steps
 
-1. Navigate to the **master** page (with `?session=<token>`). Assert render with `eval` (report rows present, no error region — see the §1 snippet in `editable-ig.md`). Take **one** snapshot only to locate the row's edit/link icon ref (CLI: Grep the YAML for the icon; MCP: note the ref, don't re-snapshot).
+1. Navigate to the **master** page (with `?session=<token>`). Assert render with `eval` (report rows present, no error region — see the §1 snippet in `editable-ig.md`). Take **one** snapshot only to locate the row's edit/link icon ref (CLI: `pw.sh find <label>`, or Grep the YAML; MCP: note the ref, don't re-snapshot).
 2. **Open the modal the real way:** `click` that edit/link icon. This makes APEX set the PK item *and* carry the session — don't deep-link the modal standalone. Assert the dialog opened and (for edit) prefilled: `eval` → `apex.item('Px_<PK>').getValue()` / the dialog's visible title text — not a fresh snapshot.
 3. Fill fields + submit as **one batched round-trip** (fill form / `run code`).
 4. Assert the **dialog closed** and the master **refreshed**: `eval` → dialog absent (`!document.querySelector('.ui-dialog:not([style*="display: none"])')`) and the new/edited value present in the report region's text.

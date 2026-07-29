@@ -1,7 +1,7 @@
 {
   "name": "apexlang-toolkit",
   "description": "Three paired skills for Oracle APEX apps written as APEXlang (.apx): apexlang-architecture decides WHERE business logic, validation and DML belong (single write-path PL/SQL packages, not region-bound Automatic DML); apex-sync-guard gates apex import/export behind a Builder↔git divergence check (syncpoint + assisted 3-way merge) so neither replica is silently overwritten; apex-sentinel is the runtime verification gate that drives the running page in a browser before claiming a change works.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": { "name": "Pablo Portillo", "email": "pabloportillo095@gmail.com" },
   "homepage": "https://github.com/Pp-py/apexlang-skills",
   "repository": "https://github.com/Pp-py/apexlang-skills",

@@ -8,9 +8,10 @@ rejected with a **friendly** error — without persisting test data (the rejecti
 
 ## Step 0 — prerequisite (do NOT skip)
 
-Confirm a browser-automation tool is available (`playwright-cli` or a browser-MCP — see
-`../setup.md` §0). If none is, **stop and report** — `apex validate`/`import` already
-succeeded but prove nothing about rendering. Don't fake it.
+Resolve a browser backend with the launcher probe in `../SKILL.md` §Prerequisites — Playwright
+CLI first (global binary *or* npx; a missing global binary is **not** a missing CLI), browser-MCP
+only if that resolves nothing. See `../setup.md` §0. If neither is available, **stop and report** —
+`apex validate`/`import` already succeeded but prove nothing about rendering. Don't fake it.
 
 ## 1. Connect & render
 

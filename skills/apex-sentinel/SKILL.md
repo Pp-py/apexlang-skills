@@ -17,31 +17,44 @@ This skill is the runtime verification gate for the APEXlang loop. It does **not
 
 ## Prerequisites — hard, this skill does NOT degrade gracefully
 
-The browser IS the gate. This skill requires a **browser-automation tool** available to the session — either of:
+The browser IS the gate. This skill requires a **browser-automation tool**. The two backends are **ranked, not interchangeable** — take the first that runs:
 
-- **Playwright CLI** (`@playwright/cli`) — **recommended.** A daemon keeps one browser alive across every check (the APEX login and session token survive the whole loop), and snapshots are written to **disk** as YAML for you to Grep — not streamed into your context. Roughly 4× cheaper per check than the MCP path.
-- **A browser-automation MCP** — Playwright MCP is the reference; any MCP exposing navigate / accessibility-snapshot / click / type / dialog-handling works.
+1. **Playwright CLI** (`@playwright/cli`), driven through `scripts/pw.sh` in this skill's directory — **use this whenever it runs at all.** A daemon keeps one browser alive across every check (the APEX login and session token survive the whole loop), and snapshots are written to **disk** as YAML for you to Grep — not streamed into your context (roughly 4× cheaper per check). Decisively: on a self-signed APEX instance its TLS bypass is a **config file the wrapper writes for you, in-loop**.
+2. **A browser-automation MCP** — Playwright MCP is the reference; any MCP exposing navigate / accessibility-snapshot / click / type / dialog-handling works. A legitimate fallback, but its TLS bypass and snapshot settings are **server-launch flags you cannot change mid-loop** — a cert wall here has no in-loop fix, only a config edit plus a restart.
 
 Also requires **SQLcl** (`sql -name <conn>`) for the data-side confirmation.
 
-**Step 0 — before the loop:** confirm a browser-automation tool is available (the `playwright-cli` binary, or a navigate/snapshot-style browser MCP tool). If neither is, **STOP and report**: "runtime verification impossible — no browser automation available." Do **not** substitute `apex validate`/`import` as proof of behavior; they prove grammar/metadata, not rendering. Faking verification is the exact failure this skill exists to prevent — so here, absence of the tool means *abort*, never *degrade*.
+**Step 0 — before the loop:** resolve a **launcher**, not a binary. `which playwright-cli` is **not** the test — the CLI is very often available only through `npx`, and stopping at a missing global binary is the single most common reason this skill ends up on the slower MCP path:
+
+```bash
+# prints the resolved launcher, or nothing if the CLI genuinely cannot run
+command -v playwright-cli >/dev/null 2>&1 && playwright-cli --version >/dev/null 2>&1 \
+  && echo "playwright-cli" \
+  || { npx -y @playwright/cli --version >/dev/null 2>&1 && echo "npx -y @playwright/cli"; }
+```
+
+Branch on the **exit code, never on the output text** — npx prints an "update available" banner that reads like a failure but is not one. `scripts/pw.sh` already does exactly this; just use it. Only if that probe resolves nothing may you fall back to a browser MCP.
+
+If **neither** backend is available, **STOP and report**: "runtime verification impossible — no browser automation available." Do **not** substitute `apex validate`/`import` as proof of behavior; they prove grammar/metadata, not rendering. Faking verification is the exact failure this skill exists to prevent — so here, absence of the tool means *abort*, never *degrade*.
 
 ### Operation vocabulary (tool-agnostic, mappable)
 
 This skill names browser operations generically. Map them to your backend; both reference implementations are given.
 
-| Operation | What it does | Playwright CLI (recommended) | Playwright MCP |
+| Operation | What it does | Playwright CLI via `pw.sh` (preferred) | Playwright MCP |
 |---|---|---|---|
-| navigate | open a URL | `open <url>` / `goto <url>` | `browser_navigate` |
-| snapshot | capture the **accessibility tree** (rows, error regions, state as text) | `snapshot` → YAML file on disk (Grep it) | `browser_snapshot` (streams into context — see Snapshot diet) |
-| screenshot | pixel capture (fallback when the a11y tree is thin — e.g. canvas charts) | `screenshot [ref]` | `browser_take_screenshot` |
-| click | click an element | `click <ref>` | `browser_click` |
-| type | type into a revealed input | `type <text>` / `fill <ref> <text>` | `browser_type` |
-| fill form | set several fields at once | `fill` per field, or one `run-code` | `browser_fill_form` |
-| eval | run JavaScript in the page, get the return value | `eval <func> [ref]` | `browser_evaluate` |
-| run code | run a multi-step Playwright snippet in ONE round-trip | `run-code [code]` | `browser_run_code_unsafe` |
-| handle dialog | accept/dismiss a browser dialog (beforeunload) | `dialog-accept` / `dialog-dismiss` | `browser_handle_dialog` |
+| navigate | open a URL | `pw.sh open <url>` / `pw.sh goto <url>` | `browser_navigate` |
+| snapshot | capture the **accessibility tree** (rows, error regions, state as text) | `pw.sh snapshot` → YAML file on disk (Grep it), or `pw.sh find <text>` | `browser_snapshot` (streams into context — see Snapshot diet) |
+| screenshot | pixel capture (fallback when the a11y tree is thin — e.g. canvas charts) | `pw.sh screenshot [ref]` | `browser_take_screenshot` |
+| click | click an element | `pw.sh click <ref>` | `browser_click` |
+| type | type into a revealed input | `pw.sh type <text>` / `pw.sh fill <ref> <text>` | `browser_type` |
+| fill form | set several fields at once | `pw.sh fill` per field, or one `run-code` | `browser_fill_form` |
+| eval | run JavaScript in the page, get the return value | `pw.sh eval <func> [ref]` | `browser_evaluate` |
+| run code | run a multi-step Playwright snippet in ONE round-trip | `pw.sh run-code [code]` | `browser_run_code_unsafe` |
+| handle dialog | accept/dismiss a browser dialog (beforeunload) | `pw.sh dialog-accept` / `pw.sh dialog-dismiss` | `browser_handle_dialog` |
 | wait | wait for a condition/time | re-`snapshot` / `eval` a condition | `browser_wait_for` |
+
+`pw.sh` is safe to call repeatedly and from any working directory — it pins the workspace, resolves the launcher, and reuses the live session instead of restarting the browser. Details in `setup.md` §0.
 
 If your backend offers only screenshots (no accessibility snapshot), every "snapshot + assert" step degrades to **screenshot + visual assertion** — slower, but still real verification. The a11y snapshot is preferred, not mandatory. The browser itself is mandatory.
 
@@ -56,7 +69,7 @@ A full accessibility snapshot of an APEX page — especially one with an Interac
    - a badge/cell's text: a one-line `querySelector(...).innerText`
 2. **Snapshot only to discover refs** — when you must click something you haven't located yet (a toolbar button, an edit icon). With the CLI the snapshot lands on disk: **Grep the YAML for the element, don't read the file whole.** With the MCP, take the one snapshot, note the refs you need, and don't take another until the page structurally changes.
 3. **Batch multi-step mechanics into one round-trip.** Login (navigate → fill → click) and the IG add-row dance (Add Row → dblclick cell → type → next cell → Save) are fixed sequences that need no reasoning between steps: run them as one `run code` snippet (MCP: `browser_run_code_unsafe` with `getByRole` locators) or one batched CLI sequence, instead of 6–10 round-trips each dragging a snapshot.
-4. **Assert cheaply.** "Text X is on the page" is `wait` for text (MCP: `browser_wait_for`; CLI: Grep the latest snapshot) — not a fresh full snapshot. If your Playwright MCP has the `verify` capability enabled, `browser_verify_text_visible`/`browser_verify_element_visible` are purpose-built for this.
+4. **Assert cheaply.** "Text X is on the page" is `wait` for text (MCP: `browser_wait_for`; CLI: `pw.sh find <text>`, which searches the snapshot and returns only matching nodes with context) — not a fresh full snapshot. If your Playwright MCP has the `verify` capability enabled, `browser_verify_text_visible`/`browser_verify_element_visible` are purpose-built for this.
 
 The checks in `checks/` are written against these rules; `setup.md` §0 configures the backend so the defaults don't fight you.
 
@@ -93,6 +106,7 @@ Verify the **rejection/negative path** first (duplicate code → error, illegal 
 ## Red flags — you have NOT verified
 
 - You answered "done / it works" after `validate`/`import` without opening the browser.
+- **You changed the URL's scheme, port or host to get past a cert or connection error** — e.g. dropping to `http://…:8080` because `https://…:8443` threw `ERR_CERT_AUTHORITY_INVALID`. That verifies a different transport than the one under test, and hides exactly the class of defect (mixed content, secure-cookie, proxy-only rewrite) that only appears on the real one. Fix the backend's TLS setting (`setup.md` §1) or stop and report.
 - You asserted on an optimistic client state without a reload or a SQL read.
 - You saw "an error appeared" and stopped — without checking it's the *right*, *friendly* error (a raw `ORA-NNNNN:` prefix leaking to the user is a defect, see `checks/editable-ig.md`).
 - You only tested the happy path; the rejection path is unverified.
