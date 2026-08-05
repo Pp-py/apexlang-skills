@@ -123,6 +123,21 @@ if [[ -n "$real_python" ]]; then     # the python fallback path never runs in CI
   expect "python fallback works when jq is broken"                 0 without_jq "$CHK" status
 fi
 
+# --- deploy payload. A PASS says the import destroys nothing; it must also say what
+# the import PUSHES, because `apex import` replaces the whole app with the LOCAL
+# backlog accumulated since the syncpoint.
+"$CHK" record-sync >/dev/null
+expect_out "in sync -> payload says there is nothing to deploy" 'Nothing to deploy' "$CHK" check-import
+printf 'page 31 (\n  name: Two\n)\n' > src/demo/p31.apx
+printf 'application 100 (\n  name: Demo v2\n)\n' > src/demo/application.apx    # (no sed -i: BSD sed differs)
+git add -A && git commit -qm "local work not yet imported"
+expect_out "payload lists the files an import would deploy" 'A[[:space:]]+p31\.apx' "$CHK" check-import
+expect_out "payload counts files and commits"              '2 file\(s\), 1 commit\(s\)' "$CHK" check-import
+expect_out "payload warns the import replaces the whole app" 'replaces the WHOLE app' "$CHK" check-import
+expect_out "status reports the payload too, without an export" 'A[[:space:]]+p31\.apx' "$CHK" status
+git rm -q src/demo/p31.apx && git checkout -q -- src/demo/application.apx
+git commit -qm "back to the syncpoint"
+
 # --- doctor: one command that validates a machine, probing by doing
 expect     "doctor passes on a wired project"                      0 "$CHK" doctor
 expect_out "doctor names the resolved JSON parser"                 'JSON parser \(probed by execution\)' "$CHK" doctor

@@ -247,6 +247,30 @@ eol_note() {  # $1 = tree_diff output
 
 dirs_equal() { [[ -z "$(blocking "$(tree_diff "$1" "$2")")" ]]; }
 
+# The guard's other direction. check-import answers "does the Builder hold work an
+# import would destroy?" — it says nothing about what the import DEPLOYS. Since
+# `apex import` replaces the whole app, a silent PASS can push a backlog that
+# accumulated over days, changing behaviour nobody was expecting to change today.
+# Reported, never gating: every legitimate import has a payload.
+payload_report() {  # $1 = materialized BASE app dir
+  local dif n recorded commits
+  dif=$(tree_diff "$1" "$APP_SRC")
+  dif=$(blocking "$dif")
+  n=$(grep -c . <<<"$dif" || true)
+  echo ""
+  if (( n == 0 )); then
+    note "Nothing to deploy: LOCAL matches the syncpoint (if you expected changes, they were not generated/saved)."
+    return 0
+  fi
+  recorded=$( [[ -f "$STATE" ]] && json_get "$STATE" recordedAt || echo "")
+  commits=$( [[ -n "$recorded" ]] && git -C "$ROOT" log --oneline --since="$recorded" -- "$SRCDIR" | grep -c . || echo "?")
+  note "This import DEPLOYS the accumulated LOCAL backlog — \`apex import\` replaces the WHOLE app:"
+  note "(A = new in LOCAL, M = differs, D = removed from LOCAL)"
+  indent <<<"$dif"
+  note "$n file(s), $commits commit(s) touching $SRCDIR since the syncpoint${recorded:+ ($recorded)}"
+  note "(may include formatting-only entries: LOCAL is hand-edited, BASE is the exporter's canonical form)"
+}
+
 write_marker() {  # $1 = import|export
   printf '{"check":"%s","at":"%s"}\n' "$1" "$(now_iso)" > "$STATE_DIR/check-ok.$1"
 }
@@ -287,6 +311,7 @@ cmd_check_import() {
     write_marker import
     echo "PASS: Builder untouched since last syncpoint. Safe to import."
     eol_note "$dif"
+    payload_report "$base"
     return 0
   fi
 
@@ -309,6 +334,7 @@ cmd_check_import() {
     write_marker import
     echo "PASS: Builder changed since last syncpoint, but LOCAL already contains every Builder-side change. Safe to import (those files are rewritten identically). Remember record-sync afterwards."
     eol_note "$dif"
+    payload_report "$base"
     return 0
   fi
 
@@ -424,6 +450,8 @@ cmd_status() {
       note "last check-$d PASS: ${age}s ago"
     fi
   done
+  # What an import from here would deploy — no Builder export needed for this half.
+  have_base && payload_report "$(materialize_base)"
 }
 
 case "${1:-}" in
