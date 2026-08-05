@@ -103,6 +103,12 @@ Verify the **rejection/negative path** first (duplicate code → error, illegal 
 - Grammar / validate / import / round-trip questions — that's the official `apex` skill.
 - Generic "did I finish?" checks with no APEX runtime — that's `superpowers:verification-before-completion`.
 
+## Relationship to `apexctl runtime verify-ui`
+
+The APEXlang package ships its own post-import browser check (`apexctl … runtime verify-ui`, providers `chrome-devtools-mcp` / `http-fallback`, opt-in via `--require-runtime-verification`). Its own contract (`references/ops/runtime-gates.md` §10–11) places it **after** `import_status = pass` and treats its findings as **diagnostics** that never overturn a successful import.
+
+That is the shallow lane, and it agrees with this skill's sequencing — verification is post-import, never a pre-import gate (the pre-import gate is `apex-sync-guard`). Where they differ: `verify-ui` records that a page responded; this skill holds one logged-in APEX session across the whole loop, drives the archetype's actual interaction (save the grid, close the modal, land the transition), and confirms the row in the database afterwards. If your team already runs `verify-ui`, keep it — and still run this loop before saying the change works, because "reported no findings" is not "I saw it save".
+
 ## Red flags — you have NOT verified
 
 - You answered "done / it works" after `validate`/`import` without opening the browser.

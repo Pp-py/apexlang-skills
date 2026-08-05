@@ -170,6 +170,16 @@ expect "hook: no marker blocks apex export"                  2 hook_in_proj "sql
 expect "hook: unrelated command passes"                      0 hook_in_proj "ls -la"
 expect "hook: outside an onboarded repo passes"              0 hook_out_repo
 
+# --- APEXlang 2026.08.01 routes the canonical import through apexctl, which runs
+# `apex import` inside a SQLcl subprocess — the literal string never appears in the
+# command the hook sees, so matching only that string stopped catching real imports.
+RT='node tools/apexctl.mjs runtime roundtrip --app-path /a --db-connection-name c --import-intent validate-and-import'
+expect "hook: apexctl roundtrip blocked without a marker"    2 hook_in_proj "$RT"
+expect "hook: bare roundtrip (default intent) blocked"       2 hook_in_proj "node tools/apexctl.mjs runtime roundtrip --app-path /a --db-connection-name c"
+"$CHK" check-import >/dev/null
+expect "hook: apexctl roundtrip allowed with a fresh marker" 0 hook_in_proj "$RT"
+expect "hook: offline apexctl validate passes"               0 hook_in_proj "node tools/apexctl.mjs apexlang validate --app-path /a"
+
 echo
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]

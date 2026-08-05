@@ -65,7 +65,7 @@ Layer 2 on top of process discipline: a `PreToolUse` hook that blocks any Bash c
 
 The explicit `bash` prefix is what makes it portable: on Windows a bare `.sh` path depends on which shell the hook runner happens to use, while `bash <path>` works either way (and is harmless on Linux/macOS).
 
-The hook reads the tool call JSON on stdin; commands not matching `apex\s+(import|export)` pass through untouched. On a match without a fresh marker it exits 2 with the reason on stderr, which blocks the call and tells the agent to run `check-import` / `check-export` first. The marker is written by a PASSing check and keyed to the app alias.
+The hook reads the tool call JSON on stdin; commands not matching `apex\s+(import|export)` — or the APEXlang package's own import lane, `apexctl … runtime roundtrip` — pass through untouched. That second pattern matters: `roundtrip` runs `apex import` inside a SQLcl subprocess, so the literal string never appears in the command being gated. On a match without a fresh marker it exits 2 with the reason on stderr, which blocks the call and tells the agent to run `check-import` / `check-export` first. The marker is written by a PASSing check and keyed to the app alias.
 
 Known trade-off: the hook matches the command **text**, so a command that merely *mentions* `apex import`/`apex export` (an `echo`, a `git commit -m` message) is also gated. Rephrase or run the corresponding check; erring on the blocking side is the point — a false positive costs one rephrase, a false negative overwrites a replica. Expect an agent meeting this for the first time to report it as a bug; it is not. (It also makes the hook cheap to test — see §4.)
 

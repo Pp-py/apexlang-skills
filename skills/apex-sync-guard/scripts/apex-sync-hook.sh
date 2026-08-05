@@ -57,8 +57,20 @@ else
   [[ -z "$cmd" ]] && cmd=$input          # scan the whole payload rather than allow blindly
 fi
 
+# What counts as an import, by the text of the command:
+#   * SQLcl directly — `apex import`.
+#   * The APEXlang package's canonical lane (2026.08.01 runtime-gates §9) —
+#     `apexctl … runtime roundtrip`, which builds a SQLcl script containing
+#     `apex import -input …` and runs it in a subprocess. The literal string never
+#     reaches this hook, so matching only it stopped catching real imports.
+#     Gated whatever the --import-intent says: the flag defaults to importing, and
+#     one extra 20 s check-import is the cheap side of this trade.
 needs=()
-grep -qiE 'apex[[:space:]]+import' <<<"$cmd" && needs+=(import)
+if grep -qiE 'apex[[:space:]]+import' <<<"$cmd" \
+   || grep -qiE 'apexctl[^;|&]*runtime[[:space:]]+roundtrip' <<<"$cmd" \
+   || grep -qiE 'import-intent[[:space:]=]+validate-and-import' <<<"$cmd"; then
+  needs+=(import)
+fi
 grep -qiE 'apex[[:space:]]+export' <<<"$cmd" && needs+=(export)
 [[ ${#needs[@]} -eq 0 ]] && exit 0
 

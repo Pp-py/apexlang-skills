@@ -40,6 +40,8 @@ All operations go through `scripts/apex-sync-check.sh` in this skill's directory
 3. Otherwise **FAIL** with the per-file diff plus the who/when report → resolve (next section), then re-run.
 4. On every PASS it then prints the **deploy payload** — BASE vs LOCAL, plus how many commits touched the source dir since the syncpoint. Read it before importing: that is the change set the Builder is about to receive. `status` prints it too, without needing an export.
 
+**What counts as an import.** Not just `apex import`. The APEXlang package's canonical lane (2026.08.01 `references/ops/runtime-gates.md` §9) is `apexctl … runtime roundtrip --import-intent validate-and-import`, which builds a SQLcl script containing `apex import -input …` and runs it in a subprocess — same total overwrite of the Builder, different command text. `check-import` gates it too. (That contract also normalizes CRLF/CR to LF before validate and import, §5 — one more reason the comparator's `E` status must not gate.)
+
 **Pre-export** — `apex-sync-check.sh check-export`:
 Fails if the APEXlang source dir has uncommitted or untracked changes — the export would clobber them. Commit or stash first, then re-run.
 
@@ -77,6 +79,7 @@ Then re-run `check-import`: it PASSes once LOCAL contains every Builder-side cha
 | "The user is in a hurry — skip the check, mention the risk afterwards" | By "afterwards" the overwrite already happened, irreversibly. The check costs ~20 seconds; redoing lost Builder work costs hours. |
 | "I'll export a backup first and sort it out later" | A backup nobody diffs is a graveyard. `check-import` both snapshots AND diffs — same cost, actual protection. |
 | "It's only DEV, worst case we redo it" | The unexported Builder changes ARE the work being destroyed. |
+| "I didn't run `apex import`, I ran `runtime roundtrip`" | Same write to the Builder, issued inside a SQLcl subprocess. The official lane is still an import; it needs the same PASS. |
 | "The import only pushes the change I just made" | It replaces the whole app with LOCAL — every commit since the syncpoint lands at once. Read the deploy payload the PASS prints before you run it. |
 
 ## Red flags — you are about to violate the gate
