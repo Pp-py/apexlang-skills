@@ -93,6 +93,34 @@ cp src/demo/p30.apx "$WORK/remote/demo/p30.apx"                       # restore 
 git commit -qm "drop line-ending attributes"
 expect "replicas back in sync -> PASS"                       0 "$CHK" check-import
 
+# --- JSON parser resolution. `command -v python3` succeeding does not mean python3
+# runs: the Microsoft Store stub satisfies it and then exits without doing anything.
+# Both scripts must probe by execution, and the hook must not open the gate when the
+# probe finds nothing.
+mkdir -p "$WORK/stub"
+printf '#!/usr/bin/env bash\necho "Python was not found; run without arguments to install from the Microsoft Store" >&2\nexit 49\n' \
+  > "$WORK/stub/python3" && chmod +x "$WORK/stub/python3"
+cp "$WORK/stub/python3" "$WORK/stub/python"
+printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/stub/jq" && chmod +x "$WORK/stub/jq"   # jq present but broken
+mkdir -p "$WORK/nojq"
+printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/nojq/jq" && chmod +x "$WORK/nojq/jq"
+real_python=$(command -v python3 || true)
+# shellcheck disable=SC2030,SC2031   # the subshell-local PATH is the point
+with_stub_json() { ( export PATH="$WORK/stub:$PATH"; "$@" ); }   # no parser at all
+# shellcheck disable=SC2030,SC2031
+without_jq()     { ( export PATH="$WORK/nojq:$PATH"; "$@" ); }   # jq broken, real python behind it
+# shellcheck disable=SC2030,SC2031
+hook_no_json()   { ( export PATH="$WORK/stub:$PATH"; hook_in_proj "apex import" ); }
+
+expect     "no working JSON parser -> check-import dies (exit 2)"  2 with_stub_json "$CHK" check-import
+expect_out "the Microsoft Store stub is named in the error"        'Microsoft Store' with_stub_json "$CHK" check-import
+rm -f "$WORK/proj/.git/apex-sync/demo/"check-ok.*
+expect     "hook fails CLOSED without a JSON parser"               2 hook_no_json
+"$CHK" check-import >/dev/null                       # restore the marker the hook section needs
+if [[ -n "$real_python" ]]; then     # the python fallback path never runs in CI, where jq exists
+  expect "python fallback works when jq is broken"                 0 without_jq "$CHK" status
+fi
+
 # --- enforcement hook
 expect "hook: fresh marker allows apex import"               0 hook_in_proj "apex import -applicationid 100"
 rm -f "$WORK/proj/.git/apex-sync/demo/"check-ok.*

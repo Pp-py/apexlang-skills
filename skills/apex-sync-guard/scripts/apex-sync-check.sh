@@ -24,13 +24,32 @@ now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }                    # BSD date has no 
 
 # ---------------------------------------------------------------- setup
 command -v sql >/dev/null || die "SQLcl (sql) is required on PATH"
-command -v jq >/dev/null || command -v python3 >/dev/null || die "jq or python3 required"
+
+# The JSON parser is resolved ONCE and by EXECUTION, never by `command -v`:
+# on Windows the Microsoft Store `python3` stub satisfies `command -v` and then
+# exits without running anything, which surfaced as a cryptic exit deep in a run.
+resolve_json_tool() {
+  local c cand=()
+  if command -v jq >/dev/null 2>&1 && printf '{}' | jq -e . >/dev/null 2>&1; then
+    JSON_TOOL=(jq); return 0
+  fi
+  for c in "python3" "python" "py -3"; do
+    read -ra cand <<<"$c"
+    command -v "${cand[0]}" >/dev/null 2>&1 || continue
+    "${cand[@]}" -c 'import json' >/dev/null 2>&1 && { JSON_TOOL=("${cand[@]}"); return 0; }
+  done
+  return 1
+}
+JSON_TOOL=()
+resolve_json_tool || die "no working JSON parser — need jq, or a python that actually runs.
+      A 'python3' that exists but does nothing when executed is typically the
+      Microsoft Store stub: install real Python (or jq) and put it ahead of it on PATH."
 
 json_get() {  # $1 = json file ('-' = stdin), $2 = dotted key path
-  if command -v jq >/dev/null; then
+  if [[ "${JSON_TOOL[0]}" == "jq" ]]; then
     jq -r ".$2 // empty" "$1"
   else
-    python3 -c '
+    "${JSON_TOOL[@]}" -c '
 import json, sys
 src = sys.stdin if sys.argv[1] == "-" else open(sys.argv[1])
 data = json.load(src)
@@ -46,10 +65,10 @@ CFG="$ROOT/apex-sync.json"
 [[ -f "$CFG" ]] || die "apex-sync.json not found at repo root ($ROOT) — see setup.md"
 
 json_array() {  # $1 = json file, $2 = key of a string array → one element per line
-  if command -v jq >/dev/null; then
+  if [[ "${JSON_TOOL[0]}" == "jq" ]]; then
     jq -r ".$2[]?" "$1"
   else
-    python3 -c '
+    "${JSON_TOOL[@]}" -c '
 import json, sys
 for x in json.load(open(sys.argv[1])).get(sys.argv[2], []) or []:
     print(x)' "$1" "$2"
