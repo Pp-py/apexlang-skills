@@ -20,7 +20,9 @@ Committed at the **project repo root**. Everything the guard needs to know about
 - `sqlclConnection` — SQLcl saved connection name (`sql -name <conn>`); the schema must be able to read `APEX_APPLICATION_PAGES` for the app.
 - `ignorePaths` (optional) — paths relative to the app dir that exist only on one side by design (repo-only artifacts living inside the app dir, e.g. an `apex-exports/` folder with legacy SQL exports). Excluded from all comparisons.
 
-Dependencies: `git`, SQLcl on PATH, and `jq` *or* `python3` (JSON parsing falls back automatically).
+Dependencies: `git`, SQLcl on PATH, and `jq` *or* `python3` (JSON parsing falls back automatically). The scripts probe the parser by **running** it, so a `python3` that exists without executing — the Microsoft Store stub — is rejected with that named as the likely cause instead of failing mid-run.
+
+**Platform.** These are bash scripts: Linux and macOS natively; on **Windows they need Git Bash (Git for Windows) or WSL** — PowerShell and cmd cannot execute them, and Claude Code's Bash tool on Windows already uses Git Bash, so agent-driven use works out of the box. Paths handed to SQLcl (a Java program) are converted with `cygpath` automatically, and quoted when they hold spaces. If an export still fails with a path containing spaces, point `TMPDIR` at one that has none — how SQLcl tokenizes `-dir` there has not been confirmed. `apex-sync-check.sh doctor` validates all of this on a new machine in one command.
 
 Sync **state** is machine-local and never committed: git ref `refs/apex-sync/<appAlias>` (the BASE tree) plus `.git/apex-sync/<appAlias>/state.json` (timestamps, last `LAST_UPDATED_ON` seen) and the freshness marker used by the hook. The Builder is per-environment — your DEV syncpoint means nothing on another machine.
 
@@ -52,7 +54,7 @@ Layer 2 on top of process discipline: a `PreToolUse` hook that blocks any Bash c
         "hooks": [
           {
             "type": "command",
-            "command": "<path-to-your-clone>/apexlang-skills/skills/apex-sync-guard/scripts/apex-sync-hook.sh"
+            "command": "bash \"<path-to-your-clone>/apexlang-skills/skills/apex-sync-guard/scripts/apex-sync-hook.sh\""
           }
         ]
       }
@@ -61,7 +63,9 @@ Layer 2 on top of process discipline: a `PreToolUse` hook that blocks any Bash c
 }
 ```
 
-The hook reads the tool call JSON on stdin; commands not matching `apex\s+(import|export)` pass through untouched. On a match without a fresh marker it exits 2 with the reason on stderr, which blocks the call and tells the agent to run `check-import` / `check-export` first. The marker is written by a PASSing check and keyed to the app alias.
+The explicit `bash` prefix is what makes it portable: on Windows a bare `.sh` path depends on which shell the hook runner happens to use, while `bash <path>` works either way (and is harmless on Linux/macOS).
+
+The hook reads the tool call JSON on stdin; commands not matching `apex\s+(import|export)` — or the APEXlang package's own import lane, `apexctl … runtime roundtrip` — pass through untouched. That second pattern matters: `roundtrip` runs `apex import` inside a SQLcl subprocess, so the literal string never appears in the command being gated. On a match without a fresh marker it exits 2 with the reason on stderr, which blocks the call and tells the agent to run `check-import` / `check-export` first. The marker is written by a PASSing check and keyed to the app alias.
 
 Known trade-off: the hook matches the command **text**, so a command that merely *mentions* `apex import`/`apex export` (an `echo`, a `git commit -m` message) is also gated. Rephrase or run the corresponding check; erring on the blocking side is the point — a false positive costs one rephrase, a false negative overwrites a replica. Expect an agent meeting this for the first time to report it as a bug; it is not. (It also makes the hook cheap to test — see §4.)
 
@@ -70,10 +74,10 @@ Other agents (Codex, opencode, …) don't get the hook — for them the wrapper 
 ## 4. Smoke test the wiring
 
 ```bash
-<skill-dir>/scripts/apex-sync-check.sh status
+<skill-dir>/scripts/apex-sync-check.sh doctor
 ```
 
-Expected: config found, connection OK, syncpoint present (or "no syncpoint yet — bootstrap needed").
+Checks, by exercising each one rather than by looking for it on PATH: shell and platform (plus `cygpath` on Windows), `git`, SQLcl, the JSON parser, `apex-sync.json` and its fields, the state dir, that the connection answers **and that it can actually see this `appId`** (a wrong saved connection is otherwise only discovered mid-import), and the syncpoint. Non-zero exit if anything failed. `status` remains the quick look at syncpoint age and both replicas.
 
 Then prove the hook actually fires. **Do not use a real `apex export` for this** — if the hook is broken, the test overwrites a replica, which is the very thing being guarded. Because the matcher is text-based (§3), `echo "apex export"` trips it identically and does nothing if it gets through.
 

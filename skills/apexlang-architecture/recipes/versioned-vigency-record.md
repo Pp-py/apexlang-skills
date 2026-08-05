@@ -56,11 +56,16 @@ region current-surcharges (
     source { type: sqlQuery  sqlQuery: ```sql
         select surcharge_id, code, percentage, valid_from, version_no
           from hr_surcharges where valid_to is null order by code``` }
-    link { linkColumn: customTarget
-        target { page: 101  items { P101_CODE: #CODE# }  clearCache: 101 }
-        linkIcon: <span class="fa fa-plus"></span> }
+    column CODE ( type: plainText
+        heading { heading: Code }
+        source { dataType: STRING }
+        link {
+            target { page: 101  items { P101_CODE: #CODE# }  clearCache: 101 }
+            linkText: <span class="fa fa-plus"></span> } )
 )
 ```
+
+The link is column-level: a report-level `link {}` is rejected by the live compiler — see `modal-crud-to-package.md`.
 
 ## `.apx` — modal new-vigency process
 

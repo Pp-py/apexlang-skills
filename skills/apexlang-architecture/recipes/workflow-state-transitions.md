@@ -39,19 +39,29 @@ The legal-transition guard lives here so every caller (UI, job, REST) is bound b
 region requests (
     type: interactiveReport
     source { type: sqlQuery  sqlQuery: ```sql
-        select absence_id, employee_no, absence_type, date_from, date_to,
+        select absence_id, employee_no, absence_type, date_from, date_to, status,
                case status
-                    when 'APPROVED' then '<span class="bdg bdg--green">Approved</span>'
-                    when 'REJECTED' then '<span class="bdg bdg--red">Rejected</span>'
-                    else '<span class="bdg bdg--amber">Requested</span>'
-               end as status_bdg
+                    when 'APPROVED' then 'u-color-9-text'
+                    when 'REJECTED' then 'u-color-7-text'
+                    else 'u-color-15-text'
+               end as status_css
           from hr_absences where cancelled_at is null order by date_from desc``` }
-    column STATUS_BDG ( type: plainText  columnFormatting { htmlExpression: #STATUS_BDG!RAW# } )
-    link { linkColumn: customTarget
-        target { page: 62  items { P62_ABSENCE_ID: #ABSENCE_ID# }  clearCache: 62 }
-        linkIcon: <span class="fa fa-gavel"></span> }
+    column STATUS ( type: plainText
+        columnFormatting { htmlExpression: <span class="#STATUS_CSS#">#STATUS#</span> } )
+    column STATUS_CSS ( type: hidden  source { dataType: STRING } )
+    column ABSENCE_ID ( type: plainText
+        heading { heading: Resolve }
+        source { dataType: NUMBER }
+        link {
+            target { page: 62  items { P62_ABSENCE_ID: #ABSENCE_ID# }  clearCache: 62 }
+            linkText: <span class="fa fa-gavel"></span> } )
 )
 ```
+
+Two rules the compiler enforces here:
+
+- **No markup in the query.** `source.sqlQuery` must be data-only (`REPORT_SQL_HTML_LITERAL_FORBIDDEN_001`): project the status and a plain CSS token, and let the column's `columnFormatting.htmlExpression` build the badge. The `case` above therefore yields `u-color-9-text`, not a `<span>`.
+- **The link belongs to a column**, never to the region — see `modal-crud-to-package.md` for the full note.
 
 ## `.apx` — resolve modal (approve / reject as distinct buttons)
 

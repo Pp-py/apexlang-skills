@@ -28,10 +28,19 @@
 #                     Default: a scratchpad dir; never the project repo.
 #   PW_SESSION        browser session name (default: apex)
 #   PW_INSECURE_TLS   1 (default) accept self-signed certs; 0 to enforce validation
+#
+# Runs under bash: Linux, macOS, and Windows via Git Bash or WSL (not PowerShell/cmd).
 set -euo pipefail
 
 die()  { echo "apex-sentinel: ERROR: $*" >&2; exit 2; }
 warn() { echo "apex-sentinel: $*" >&2; }
+
+# --config is read by node, a native binary on Windows: a POSIX path from this
+# shell would be resolved against the current drive and the config silently missed
+# (and with it ignoreHTTPSErrors, so the loop stalls on a self-signed cert).
+native_path() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
+}
 
 [[ $# -gt 0 ]] || die "no subcommand — try: $(basename "$0") open <url>"
 
@@ -45,6 +54,7 @@ warn() { echo "apex-sentinel: $*" >&2; }
 mkdir -p "$PW_WORKSPACE/.playwright" || die "cannot create workspace $PW_WORKSPACE"
 PW_WORKSPACE=$(cd "$PW_WORKSPACE" && pwd)          # absolute; --config needs it
 CONFIG="$PW_WORKSPACE/.playwright/cli.config.json"
+CONFIG_ARG=$(native_path "$CONFIG")                # what the CLI is handed
 LAST_URL="$PW_WORKSPACE/.playwright/last-url"
 
 # Written once. Absent config => the CLI rejects self-signed certs with
@@ -72,11 +82,16 @@ fi
 
 pw() { (cd "$PW_WORKSPACE" && "${LAUNCHER[@]}" -s "$PW_SESSION" "$@"); }
 
+# jq probed by running it, not by presence: a jq that errors would make
+# session_open report "closed", and a bare `open` on a live session kills the
+# browser and throws the APEX login away — the one thing this wrapper prevents.
+if command -v jq >/dev/null 2>&1 && printf '{}' | jq -e . >/dev/null 2>&1; then HAVE_JQ=1; else HAVE_JQ=0; fi
+
 # is the named session currently open?
 session_open() {
   local json
   json=$( (cd "$PW_WORKSPACE" && "${LAUNCHER[@]}" list --json) 2>/dev/null ) || return 1
-  if command -v jq >/dev/null 2>&1; then
+  if (( HAVE_JQ )); then
     [[ $(jq -r --arg n "$PW_SESSION" \
           '[.browsers[]? | select(.name == $n and .status == "open")] | length' <<<"$json") -gt 0 ]]
   else
@@ -88,10 +103,10 @@ session_open() {
 
 open_session() {  # $1 = url (optional)
   if [[ -n "${1:-}" ]]; then
-    pw open --config "$CONFIG" "$1"
+    pw open --config "$CONFIG_ARG" "$1"
     printf '%s\n' "$1" > "$LAST_URL"
   else
-    pw open --config "$CONFIG"
+    pw open --config "$CONFIG_ARG"
   fi
 }
 

@@ -11,6 +11,8 @@ description: Use when about to run `apex import` or `apex export` on an APEXlang
 
 **Principle: cleanliness is verified, never assumed. No `apex import` or `apex export` runs until a sync-check against the opposite replica has PASSED in this session.**
 
+The check answers **two** questions, and both are reported. *Is anything destroyed?* — does the opposite replica hold work this operation would overwrite. *What is deployed?* — since import replaces the whole app, a PASS still pushes every LOCAL change accumulated since the syncpoint, not just today's edit. The second half never blocks (every legitimate import has a payload), but it is printed on every PASS: an app that quietly starts behaving like the last four days of commits is a surprise worth one paragraph of output.
+
 Division of labor: this skill decides whether it is **SAFE** to import/export *now*. The official `apex` skill stays the **HOW** (grammar/validate/import); `apexlang-architecture` decides **WHERE** logic goes; `apex-sentinel` proves the result **WORKS**.
 
 ## The model
@@ -25,6 +27,8 @@ Same 3-way logic as `git pull` before `push`: if REMOTE moved since BASE, integr
 
 **Canonical space:** BASE is always snapshotted from an `apex export`, never from the raw working tree — hand-edited `.apx` differ *textually* from the exporter's canonical serialization (whitespace, fenced vs inline blocks, JSON spacing) without differing semantically. BASE↔REMOTE comparisons are therefore noise-free; only the one-time bootstrap (BUILDER vs LOCAL, no BASE yet) can surface formatting-only diffs, which reconcile by adopting the canonical form.
 
+**Comparison is byte-exact and independent of your git config.** Replicas are compared byte for byte (`cmp`, or `git hash-object --no-filters` where `cmp` is unavailable), never with `git diff --no-index`: git applies `.gitattributes` / `core.autocrlf` to whichever side it resolves inside the repo and not to the scratch export, so its verdict tracked the machine's git settings instead of the content (with `core.autocrlf=true` — the Git-for-Windows default — a CRLF and an LF copy of the same file compare *equal*). Files that differ **only** in line endings are reported as `E` and do not gate: that difference cannot carry a Builder-side change, and blocking on it would deadlock since every re-export reintroduces it. Silence them with `*.apx text eol=lf` in the consuming repo's `.gitattributes`.
+
 ## Protocol
 
 All operations go through `scripts/apex-sync-check.sh` in this skill's directory, run from the project repo root. It reads `apex-sync.json` (per-project config: app id, alias, source dir, SQLcl connection — see `setup.md`; setup also covers the first-run bootstrap when no syncpoint exists yet).
@@ -32,8 +36,11 @@ All operations go through `scripts/apex-sync-check.sh` in this skill's directory
 **Pre-import** — `apex-sync-check.sh check-import`:
 
 1. Exports REMOTE (the Builder) to scratch — **always**, ~20 s. Dictionary timestamps cannot gate this: an APEXlang import recreates components with NULL audit columns, so `LAST_UPDATED_ON`/`LAST_UPDATED_BY` feed only the best-effort who/when report.
-2. `git diff --no-index` REMOTE vs BASE. Zero diff → Builder untouched → **PASS**. Diff, but LOCAL already contains every Builder-side change (captured/merged earlier) → **PASS** — importing rewrites those files identically, losing nothing.
+2. Byte-compares REMOTE vs BASE. Zero diff → Builder untouched → **PASS**. Diff, but LOCAL already contains every Builder-side change (captured/merged earlier) → **PASS** — importing rewrites those files identically, losing nothing.
 3. Otherwise **FAIL** with the per-file diff plus the who/when report → resolve (next section), then re-run.
+4. On every PASS it then prints the **deploy payload** — BASE vs LOCAL, plus how many commits touched the source dir since the syncpoint. Read it before importing: that is the change set the Builder is about to receive. `status` prints it too, without needing an export.
+
+**What counts as an import.** Not just `apex import`. The APEXlang package's canonical lane (2026.08.01 `references/ops/runtime-gates.md` §9) is `apexctl … runtime roundtrip --import-intent validate-and-import`, which builds a SQLcl script containing `apex import -input …` and runs it in a subprocess — same total overwrite of the Builder, different command text. `check-import` gates it too. (That contract also normalizes CRLF/CR to LF before validate and import, §5 — one more reason the comparator's `E` status must not gate.)
 
 **Pre-export** — `apex-sync-check.sh check-export`:
 Fails if the APEXlang source dir has uncommitted or untracked changes — the export would clobber them. Commit or stash first, then re-run.
@@ -41,7 +48,7 @@ Fails if the APEXlang source dir has uncommitted or untracked changes — the ex
 **After every successful import or export** — `apex-sync-check.sh record-sync`:
 Updates the syncpoint (tree + timestamps). Skipping this poisons every future comparison — treat import/export as unfinished until `record-sync` ran.
 
-`apex-sync-check.sh status` shows syncpoint age and both replicas' state at any time.
+`apex-sync-check.sh status` shows syncpoint age and both replicas' state at any time; `apex-sync-check.sh doctor` validates the whole wiring on a machine (platform, git, SQLcl, JSON parser, config, and that the saved connection can see this `appId`) — run it first on any machine where a check behaves oddly.
 
 ## Resolution when the Builder moved
 
@@ -72,6 +79,8 @@ Then re-run `check-import`: it PASSes once LOCAL contains every Builder-side cha
 | "The user is in a hurry — skip the check, mention the risk afterwards" | By "afterwards" the overwrite already happened, irreversibly. The check costs ~20 seconds; redoing lost Builder work costs hours. |
 | "I'll export a backup first and sort it out later" | A backup nobody diffs is a graveyard. `check-import` both snapshots AND diffs — same cost, actual protection. |
 | "It's only DEV, worst case we redo it" | The unexported Builder changes ARE the work being destroyed. |
+| "I didn't run `apex import`, I ran `runtime roundtrip`" | Same write to the Builder, issued inside a SQLcl subprocess. The official lane is still an import; it needs the same PASS. |
+| "The import only pushes the change I just made" | It replaces the whole app with LOCAL — every commit since the syncpoint lands at once. Read the deploy payload the PASS prints before you run it. |
 
 ## Red flags — you are about to violate the gate
 

@@ -34,6 +34,9 @@ the browser** (plus sync-check before any export, and `record-sync` after either
 - `git`, SQLcl on PATH, and `jq` *or* `python3`.
 - A per-project `apex-sync.json` at the repo root (see `skills/apex-sync-guard/setup.md`);
   without it the guard cannot run — do NOT proceed to import/export unchecked, wire it first.
+- bash: Linux/macOS natively, Windows through Git Bash or WSL (never PowerShell/cmd).
+  `scripts/apex-sync-check.sh doctor` verifies the whole wiring on a new machine, including
+  that the saved SQLcl connection can actually see the configured `appId`.
 
 ## Hard requirements (apex-sentinel)
 

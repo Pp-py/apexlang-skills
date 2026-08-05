@@ -16,13 +16,20 @@
 region sectors-ir (
     type: interactiveReport
     source { sqlQuery: ```sql select sector_id, code, name, active_flag from hr_sectors order by code``` }
-    link {
-        linkColumn: customTarget
-        target { page: 81  items { P81_SECTOR_ID: #SECTOR_ID# }  clearCache: 81 }
-        linkIcon: <span class="fa fa-pencil"></span>
-    }
+    column SECTOR_ID (
+        type: plainText
+        heading { heading: Edit }
+        layout { sequence: 10 }
+        source { dataType: NUMBER }
+        link {
+            target { page: 81  items { P81_SECTOR_ID: #SECTOR_ID# }  clearCache: 81 }
+            linkText: <span class="fa fa-pencil"></span>
+        }
+    )
 )
 ```
+
+**The link goes on the column, never on the region.** A report-level `link { linkColumn / target / linkIcon }` is rejected by the live compiler (`REPORT_REGION_LINK_BLOCK_UNSUPPORTED_001`), for Classic Reports as well as Interactive Reports — even though Oracle's own IR page-example and `interactive-report._common.md` template still show it at region scope. On an Interactive Report the linked column stays `type: plainText` and carries the `link {}` block, with the icon markup in `linkText`; `type: link` is Classic-Report-only.
 
 ## Modal page
 

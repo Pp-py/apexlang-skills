@@ -63,6 +63,15 @@ Two runnable end-to-end slices (DDL + package + `.apx`, deploy-and-verify) live 
 | "Uniqueness belongs in an IG column validation" | UI validations fire only in that grid — bypassed by jobs, SQLcl, REST, and your next page. The rule must live in the package (DB constraint as backstop), surfaced to the UI, not the other way around. |
 | "It's read-only, so put the package there too" | No. Reads use inline SQL or a `v_*` view. Packages are the *write* path only. Don't invert it. |
 
+## Report contracts the live compiler enforces
+
+Two rules break generated reports at `apex validate`, and both are easy to get wrong because Oracle's own templates still show the old form:
+
+- **The link belongs to the column, never to the region.** A report-level `link { linkColumn / target / linkIcon }` is rejected (`REPORT_REGION_LINK_BLOCK_UNSUPPORTED_001`) for Classic and Interactive Reports alike. On an IR the linked column stays `type: plainText` and carries `link { target {…} linkText: … }`; `type: link` is Classic-Report-only.
+- **`source.sqlQuery` is data-only.** Projecting markup is rejected (`REPORT_SQL_HTML_LITERAL_FORBIDDEN_001`). Select the value plus a plain CSS token and build the badge in `columnFormatting.htmlExpression` — see `workflow-state-transitions.md`.
+
+Page-level validations follow a fixed skeleton — static ID prefixed `VAL_`, blocks in the order `name` → `execution` → `validation` → `error` → optional `serverSideCondition { whenButtonPressed: @<button> }` — and one page per file, named `p<5-digit>-<alias>.apx`.
+
 ## Red flags — move the write and the rule into the table's package
 
 - You used `Automatic Row Processing (DML)`, or bound a region directly to a table for writing.

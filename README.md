@@ -32,18 +32,22 @@ Installs the three skills and auto-registers the sync-guard hook (it no-ops in p
 ## Requirements
 
 - Official `apex` skill (SQLcl) — generate/validate/import `.apx`
+- **Platform:** the scripts are bash — Linux and macOS natively, Windows through **Git Bash or WSL** (not PowerShell/cmd; Claude Code's Bash tool on Windows already uses Git Bash). Paths crossing into SQLcl or node are converted with `cygpath`
 - **apex-sentinel:** a browser-automation tool + SQLcl. Playwright CLI preferred and driven through `skills/apex-sentinel/scripts/pw.sh` (no install needed — it falls back to `npx`); any browser-MCP works as a fallback. No browser → it stops and reports; it never fakes verification
-- **apex-sync-guard:** `git`, SQLcl, `jq` *or* `python3`
+- **apex-sync-guard:** `git`, SQLcl, `jq` *or* `python3`. Validate a machine with `skills/apex-sync-guard/scripts/apex-sync-check.sh doctor`
 
 ## Examples
 
-Two runnable vertical slices (DDL + write-path package + validate-green `.apx` + browser-verification walkthrough): an editable Interactive Grid and an approval state machine. Start at [`examples/README.md`](skills/apexlang-architecture/examples/README.md) — and still `apex validate` against **your** APEX version before importing.
+Two runnable vertical slices (DDL + write-path package + `.apx` + browser-verification walkthrough): an editable Interactive Grid and an approval state machine. Start at [`examples/README.md`](skills/apexlang-architecture/examples/README.md) — and still `apex validate` against **your** APEX version before importing.
+
+The `.apx` are validated against the APEXlang package **2026.08.01** (`apexctl.mjs apexlang validate`, no database needed). Two diagnostics remain by design and are documented where they occur: the app-level breadcrumb entry, which only the consuming app's `shared-components/breadcrumbs.apx` can satisfy, and an Interactive Grid column `lov {}` block that the grammar allows but the linter's component table does not list.
 
 ## Development
 
 ```bash
 shellcheck skills/*/scripts/*.sh tests/*.sh                 # lint
 tests/sync-guard-e2e.sh                                     # offline e2e (stubbed SQLcl)
+tests/pw-wrapper-smoke.sh                                   # pw.sh (stubbed Playwright CLI)
 ```
 
 Both also run in CI.
