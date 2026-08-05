@@ -1,0 +1,171 @@
+page 62 (
+    name: Resolve absence
+    alias: ABSENCE-RESOLVE
+    title: Resolve absence
+    appearance {
+        pageMode: modalDialog
+        dialogTemplate: @/modal-dialog
+        templateOptions: #DEFAULT#
+    }
+
+    region form-resolve (
+        name: Resolve request
+        type: staticContent
+        layout {
+            sequence: 10
+            slot: contentBody
+        }
+        appearance {
+            template: @/standard
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    pageItem P62_ABSENCE_ID (
+        type: hidden
+        layout {
+            sequence: 10
+            region: @form-resolve
+            slot: regionBody
+        }
+    )
+
+    pageItem P62_REASON (
+        type: textField
+        label {
+            label: Reason (required to reject)
+        }
+        layout {
+            sequence: 20
+            region: @form-resolve
+            slot: regionBody
+            columnSpan: 12
+        }
+        appearance {
+            template: @/optional
+            templateOptions: #DEFAULT#
+        }
+        help {
+            inlineHelpText: Required when rejecting; stored with the request and shown to the requester.
+        }
+        validation {
+            maxLength: 400
+        }
+    )
+
+    button approve (
+        buttonName: APPROVE
+        label: Approve
+        layout {
+            sequence: 10
+            region: @form-resolve
+            slot: create
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    button reject (
+        buttonName: REJECT
+        label: Reject
+        layout {
+            sequence: 20
+            region: @form-resolve
+            slot: delete
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    validation VAL_REJECT_REASON (
+        name: Reason required when rejecting
+        execution {
+            sequence: 10
+        }
+        validation {
+            type: itemIsNotNull
+            item: P62_REASON
+        }
+        error {
+            errorMessage: Enter the rejection reason.
+            associatedItem: @P62_REASON
+        }
+        serverSideCondition {
+            whenButtonPressed: @reject
+        }
+    )
+
+    process approve-absence (
+        name: Approve absence
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                begin
+                    -- transition as a package verb: from-state guard,
+                    -- approved_by/approved_at stamp and side effects, all in pkg_absences
+                    pkg_absences.approve(
+                        p_absence_id => :P62_ABSENCE_ID,
+                        p_approver   => :APP_USER
+                    );
+                end;
+                ```
+        }
+        execution {
+            sequence: 10
+            point: afterSubmit
+        }
+        serverSideCondition {
+            type: expression
+            plsqlExpression: :REQUEST = 'APPROVE'
+        }
+    )
+
+    process reject-absence (
+        name: Reject absence
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                begin
+                    pkg_absences.reject(
+                        p_absence_id => :P62_ABSENCE_ID,
+                        p_reason     => :P62_REASON
+                    );
+                end;
+                ```
+        }
+        execution {
+            sequence: 20
+            point: afterSubmit
+        }
+        serverSideCondition {
+            type: expression
+            plsqlExpression: :REQUEST = 'REJECT'
+        }
+    )
+
+    process close-dialog (
+        name: Close dialog and refresh p60
+        type: closeDialog
+        execution {
+            sequence: 90
+        }
+        serverSideCondition {
+            type: expression
+            plsqlExpression: :REQUEST in ('APPROVE','REJECT')
+        }
+    )
+
+)

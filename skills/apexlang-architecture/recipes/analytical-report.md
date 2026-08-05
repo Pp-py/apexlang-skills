@@ -38,16 +38,21 @@ region ot-monthly (
     source { type: sqlQuery  sqlQuery: ```sql
         select e.employee_no, e.full_name, s.name sector, v.ot_hours,
                case v.ot_rule_code
-                    when 'PRODUCTION' then '<span class="bdg bdg--purple">Production</span>'
-                    else '<span class="bdg bdg--blue">Clock hour</span>'
-               end as rule
+                    when 'PRODUCTION' then 'Production'
+                    else 'Clock hour'
+               end as rule,
+               case v.ot_rule_code
+                    when 'PRODUCTION' then 'u-color-11-text'
+                    else 'u-color-1-text'
+               end as rule_css
           from v_ot_monthly_employee v
           join hr_employees e on e.employee_id = v.employee_id
           join hr_sectors   s on s.sector_id  = e.sector_id
          where v.year_no = :P30_YEAR and v.month_no = :P30_MONTH``` }
 
     column RULE ( type: plainText
-        columnFormatting { htmlExpression: #RULE!RAW# } )
+        columnFormatting { htmlExpression: <span class="#RULE_CSS#">#RULE#</span> } )
+    column RULE_CSS ( type: hidden  source { dataType: STRING } )
 )
 ```
 

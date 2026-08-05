@@ -30,9 +30,15 @@ apex validate -input <apexlang-src-dir>                   # add 03-page-sectors.
 apex import   -input <apexlang-src-dir>
 ```
 
-> The `.apx` is written in validated grammar (`apex validate` green against APEX 26.1 /
-> SQLcl 26.1) — still re-validate against your own APEX version before importing, and mind
-> that page number (30) and alias (`SECTORS-CATALOG`) must not collide with your app's.
+> Validated against APEXlang **2026.08.01**, with two known diagnostics:
+> `BREADCRUMB_COVERAGE_ENTRY_REQUIRED_001`, satisfied by adding a `pageNumber: 30` entry to
+> **your** app's `shared-components/breadcrumbs.apx`, and `DSL_RULE_BLOCK … column
+> 'ACTIVE_FLAG' does not allow block 'lov'` — the EBNF grammar accepts an `lov {}` block on a
+> column (`<column-c-lov>`), but the linter's `component-attributes.json` does not list it
+> among an Interactive Grid column's allowed blocks; the same omission exists in the previous
+> package version. The block is kept because dropping it would silently turn the select list
+> into a text field. Re-validate against your own APEX version before importing, and mind that
+> page number (30) and alias (`SECTORS-CATALOG`) must not collide with your app's.
 
 ## What "done" looks like
 

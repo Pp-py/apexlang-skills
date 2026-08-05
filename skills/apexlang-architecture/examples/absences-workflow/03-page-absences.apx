@@ -7,6 +7,26 @@ page 60 (
         templateOptions: #DEFAULT#
     }
 
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
     region requests (
         name: Requests
         type: interactiveReport
@@ -15,17 +35,20 @@ page 60 (
             type: sqlQuery
             sqlQuery:
                 ```sql
+                -- data only: no markup is projected here. The status badge is
+                -- rendered by the STATUS column's columnFormatting.htmlExpression,
+                -- which consumes STATUS_CSS as a plain token.
                 select absence_id,
                        employee_no,
                        absence_type,
                        to_char(date_from, 'DD/MM/YYYY') as date_from,
                        to_char(date_to, 'DD/MM/YYYY') as date_to,
-                       -- badge built in SQL; the column renders it with !RAW
+                       status,
                        case status
-                            when 'APPROVED' then '<span class="u-color-9-text"><b>Approved</b></span>'
-                            when 'REJECTED' then '<span class="u-color-7-text"><b>Rejected</b></span>'
-                            else '<span class="u-color-15-text"><b>Requested</b></span>'
-                       end as status_bdg
+                            when 'APPROVED' then 'u-color-9-text'
+                            when 'REJECTED' then 'u-color-7-text'
+                            else 'u-color-15-text'
+                       end as status_css
                   from hr_absences
                  where cancelled_at is null
                  order by date_from desc
@@ -39,28 +62,27 @@ page 60 (
             template: @/standard
             templateOptions: #DEFAULT#
         }
-        link {
-            linkColumn: customTarget
-            target: {
-                page: 62
-                items: {
-                    P62_ABSENCE_ID: #ABSENCE_ID#
-                }
-                clearCache: 62
-            }
-            linkIcon: <span aria-hidden="true" class="fa fa-gavel" title="Resolve"></span>
-        }
 
         column ABSENCE_ID (
-            type: hidden
+            type: plainText
             heading {
-                heading: ID
+                heading: Resolve
             }
             layout {
                 sequence: 10
             }
             source {
                 dataType: NUMBER
+            }
+            link {
+                target: {
+                    page: 62
+                    items: {
+                        P62_ABSENCE_ID: #ABSENCE_ID#
+                    }
+                    clearCache: 62
+                }
+                linkText: <span aria-hidden="true" class="fa fa-gavel" title="Resolve"></span>
             }
         )
 
@@ -116,7 +138,7 @@ page 60 (
             }
         )
 
-        column STATUS_BDG (
+        column STATUS (
             type: plainText
             heading {
                 heading: Status
@@ -128,7 +150,20 @@ page 60 (
                 dataType: STRING
             }
             columnFormatting {
-                htmlExpression: #STATUS_BDG!RAW#
+                htmlExpression: <span class="#STATUS_CSS#"><b>#STATUS#</b></span>
+            }
+        )
+
+        column STATUS_CSS (
+            type: hidden
+            heading {
+                heading: Status CSS
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
             }
         )
     )
@@ -155,176 +190,6 @@ page 60 (
             }
         )
 
-    )
-
-)
-
-page 62 (
-    name: Resolve absence
-    alias: ABSENCE-RESOLVE
-    title: Resolve absence
-    appearance {
-        pageMode: modalDialog
-        dialogTemplate: @/modal-dialog
-        templateOptions: #DEFAULT#
-    }
-
-    region form-resolve (
-        name: Resolve request
-        type: staticContent
-        layout {
-            sequence: 10
-            slot: contentBody
-        }
-        appearance {
-            template: @/standard
-            templateOptions: #DEFAULT#
-        }
-    )
-
-    pageItem P62_ABSENCE_ID (
-        type: hidden
-        layout {
-            sequence: 10
-            region: @form-resolve
-            slot: regionBody
-        }
-    )
-
-    pageItem P62_REASON (
-        type: textField
-        label {
-            label: Reason (required to reject)
-        }
-        layout {
-            sequence: 20
-            region: @form-resolve
-            slot: regionBody
-            columnSpan: 12
-        }
-        appearance {
-            template: @/optional
-            templateOptions: #DEFAULT#
-        }
-        validation {
-            maxLength: 400
-        }
-    )
-
-    button approve (
-        buttonName: APPROVE
-        label: Approve
-        layout {
-            sequence: 10
-            region: @form-resolve
-            slot: create
-        }
-        appearance {
-            buttonTemplate: @/text
-            hot: true
-            templateOptions: #DEFAULT#
-        }
-        behavior {
-            warnOnUnsavedChanges: doNotCheck
-        }
-    )
-
-    button reject (
-        buttonName: REJECT
-        label: Reject
-        layout {
-            sequence: 20
-            region: @form-resolve
-            slot: delete
-        }
-        appearance {
-            buttonTemplate: @/text
-            templateOptions: #DEFAULT#
-        }
-        behavior {
-            warnOnUnsavedChanges: doNotCheck
-        }
-    )
-
-    validation reject-reason-required (
-        name: Reason required when rejecting
-        execution {
-            sequence: 10
-        }
-        validation {
-            type: itemIsNotNull
-            item: P62_REASON
-        }
-        error {
-            errorMessage: Enter the rejection reason.
-            associatedItem: @P62_REASON
-        }
-        serverSideCondition {
-            type: expression
-            plsqlExpression: :REQUEST = 'REJECT'
-        }
-    )
-
-    process approve-absence (
-        name: Approve absence
-        type: executeCode
-        source {
-            plsqlCode:
-                ```plsql
-                begin
-                    -- transition as a package verb: from-state guard,
-                    -- approved_by/approved_at stamp and side effects, all in pkg_absences
-                    pkg_absences.approve(
-                        p_absence_id => :P62_ABSENCE_ID,
-                        p_approver   => :APP_USER
-                    );
-                end;
-                ```
-        }
-        execution {
-            sequence: 10
-            point: afterSubmit
-        }
-        serverSideCondition {
-            type: expression
-            plsqlExpression: :REQUEST = 'APPROVE'
-        }
-    )
-
-    process reject-absence (
-        name: Reject absence
-        type: executeCode
-        source {
-            plsqlCode:
-                ```plsql
-                begin
-                    pkg_absences.reject(
-                        p_absence_id => :P62_ABSENCE_ID,
-                        p_reason     => :P62_REASON
-                    );
-                end;
-                ```
-        }
-        execution {
-            sequence: 20
-            point: afterSubmit
-        }
-        serverSideCondition {
-            type: expression
-            plsqlExpression: :REQUEST = 'REJECT'
-        }
-    )
-
-    process close-dialog (
-        name: Close dialog and refresh p60
-        type: closeDialog
-        execution {
-            sequence: 90
-        }
-        serverSideCondition {
-            type: expression
-            plsqlExpression: :REQUEST in ('APPROVE','REJECT')
-        }
     )
 
 )

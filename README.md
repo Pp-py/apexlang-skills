@@ -38,7 +38,9 @@ Installs the three skills and auto-registers the sync-guard hook (it no-ops in p
 
 ## Examples
 
-Two runnable vertical slices (DDL + write-path package + validate-green `.apx` + browser-verification walkthrough): an editable Interactive Grid and an approval state machine. Start at [`examples/README.md`](skills/apexlang-architecture/examples/README.md) — and still `apex validate` against **your** APEX version before importing.
+Two runnable vertical slices (DDL + write-path package + `.apx` + browser-verification walkthrough): an editable Interactive Grid and an approval state machine. Start at [`examples/README.md`](skills/apexlang-architecture/examples/README.md) — and still `apex validate` against **your** APEX version before importing.
+
+The `.apx` are validated against the APEXlang package **2026.08.01** (`apexctl.mjs apexlang validate`, no database needed). Two diagnostics remain by design and are documented where they occur: the app-level breadcrumb entry, which only the consuming app's `shared-components/breadcrumbs.apx` can satisfy, and an Interactive Grid column `lov {}` block that the grammar allows but the linter's component table does not list.
 
 ## Development
 
