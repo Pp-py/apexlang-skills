@@ -4,8 +4,18 @@
 # Prints only the diagnostics that belong to OUR files.
 set -uo pipefail
 
-PKG=${PKG:-$HOME/.agents/skills/apex/apexlang}
-REPO=${REPO:-/home/palmera/skills/apexlang-skills}
+# Resolve the APEXlang package: the plugin install first (versioned cache dir),
+# then a skills-directory install. Override with PKG=<path/to/apexlang>.
+if [[ -z "${PKG:-}" ]]; then
+  PKG=$(find "$HOME/.claude/plugins/cache/oracle-skills/apex" -maxdepth 2 -type d -name apexlang 2>/dev/null | sort | tail -1)
+  [[ -z "$PKG" && -d "$HOME/.agents/skills/apex/apexlang" ]] && PKG="$HOME/.agents/skills/apex/apexlang"
+  [[ -z "$PKG" && -d "$HOME/.claude/skills/apex/apexlang" ]] && PKG="$HOME/.claude/skills/apex/apexlang"
+fi
+[[ -n "$PKG" && -d "$PKG" ]] || {
+  echo "APEXlang package not found. Install it with: claude plugin install apex@oracle-skills" >&2
+  exit 2
+}
+REPO=${REPO:-$(cd "$(dirname "$0")/.." && pwd)}
 V=$(mktemp -d "${TMPDIR:-/tmp}/apexval-XXXXXX")
 trap 'rm -rf "$V"' EXIT
 
@@ -23,5 +33,5 @@ if [[ -z "$ours" ]]; then
   grep -cE "^ - " <<<"$out" | xargs -I{} echo "({} diagnostics remain, all from Oracle's own scaffold pages)"
   exit 0
 fi
-echo "$ours" | sed 's|/tmp/apexval-[^/]*/pages/||'
+while IFS= read -r line; do printf '%s\n' "${line##*/pages/}"; done <<<"$ours"
 exit 1
