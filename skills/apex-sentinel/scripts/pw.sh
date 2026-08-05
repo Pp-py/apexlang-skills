@@ -82,11 +82,16 @@ fi
 
 pw() { (cd "$PW_WORKSPACE" && "${LAUNCHER[@]}" -s "$PW_SESSION" "$@"); }
 
+# jq probed by running it, not by presence: a jq that errors would make
+# session_open report "closed", and a bare `open` on a live session kills the
+# browser and throws the APEX login away — the one thing this wrapper prevents.
+if command -v jq >/dev/null 2>&1 && printf '{}' | jq -e . >/dev/null 2>&1; then HAVE_JQ=1; else HAVE_JQ=0; fi
+
 # is the named session currently open?
 session_open() {
   local json
   json=$( (cd "$PW_WORKSPACE" && "${LAUNCHER[@]}" list --json) 2>/dev/null ) || return 1
-  if command -v jq >/dev/null 2>&1; then
+  if (( HAVE_JQ )); then
     [[ $(jq -r --arg n "$PW_SESSION" \
           '[.browsers[]? | select(.name == $n and .status == "open")] | length' <<<"$json") -gt 0 ]]
   else
