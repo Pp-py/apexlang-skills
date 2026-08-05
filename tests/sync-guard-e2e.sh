@@ -18,7 +18,11 @@ cat > "$WORK/bin/sql" <<'EOF'
 #!/usr/bin/env bash
 stmts=$(cat)
 if grep -q 'apex export' <<<"$stmts"; then
-  dir=$(sed -n 's/.*-dir \([^ ]*\).*/\1/p' <<<"$stmts")
+  if grep -q -- '-dir "' <<<"$stmts"; then          # the guard quotes paths holding spaces
+    dir=$(sed -n 's/.*-dir "\([^"]*\)".*/\1/p' <<<"$stmts")
+  else
+    dir=$(sed -n 's/.*-dir \([^ ]*\).*/\1/p' <<<"$stmts")
+  fi
   mkdir -p "$dir/demo" && cp -r "$FAKE_REMOTE/demo/." "$dir/demo/"
 elif grep -q 'greatest' <<<"$stmts"; then
   echo "2026-07-17T10:00:00"

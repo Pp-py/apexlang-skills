@@ -14,8 +14,15 @@ jobs:
         run: shellcheck skills/*/scripts/*.sh tests/*.sh
 
   sync-guard-e2e:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash          # Git Bash on windows-latest — the only supported Windows shell
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4      # .gitattributes keeps *.sh at LF, so bash can run them
       - name: run offline e2e harness (stubbed SQLcl)
         run: bash tests/sync-guard-e2e.sh

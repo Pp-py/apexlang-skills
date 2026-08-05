@@ -201,13 +201,30 @@ snapshot_export() {  # $1 = scratch dir containing <alias>/…; commits it to $R
 
 list_files() { (cd "$1" 2>/dev/null && find . -type f | sed 's|^\./||' | LC_ALL=C sort); }
 
+# `cmp` is not guaranteed everywhere this runs (Git for Windows ships a lean
+# userland), and assuming a tool is present is the mistake this skill just paid
+# for elsewhere. git is a hard requirement and `hash-object --no-filters` is
+# byte-exact by definition, so it is the fallback.
+if cmp -s /dev/null /dev/null 2>/dev/null; then BYTES_EQ="cmp"; else BYTES_EQ="git-hash"; fi
+
+bytes_equal() {
+  if [[ "$BYTES_EQ" == cmp ]]; then cmp -s "$1" "$2"
+  else [[ "$(git hash-object --no-filters -- "$1")" == "$(git hash-object --no-filters -- "$2")" ]]; fi
+}
+
+eol_equal() {  # equal once every CR is dropped
+  if [[ "$BYTES_EQ" == cmp ]]; then cmp -s <(tr -d '\r' < "$1") <(tr -d '\r' < "$2")
+  else [[ "$(tr -d '\r' < "$1" | git hash-object --no-filters --stdin)" \
+       == "$(tr -d '\r' < "$2" | git hash-object --no-filters --stdin)" ]]; fi
+}
+
 same_content() {  # 0 = identical bytes, 2 = differs only in line endings, 1 = differs
-  cmp -s "$1" "$2" && return 0
+  bytes_equal "$1" "$2" && return 0
   case "$1" in                                  # never normalize a binary
     *.apx|*.sql|*.js|*.css|*.md|*.json|*.txt|*.xml|*.html|*.yml|*.yaml) ;;
     *) return 1 ;;
   esac
-  cmp -s <(tr -d '\r' < "$1") <(tr -d '\r' < "$2") && return 2
+  eol_equal "$1" "$2" && return 2
   return 1
 }
 
@@ -399,6 +416,7 @@ cmd_doctor() {
   doc_ok "$(git --version)"
   doc_ok "SQLcl: $(command -v sql)"
   doc_ok "JSON parser (probed by execution): ${JSON_TOOL[*]}"
+  doc_ok "byte comparator: $( [[ "$BYTES_EQ" == cmp ]] && echo "cmp" || echo "git hash-object --no-filters (cmp unavailable)" )"
   doc_ok "config: $CFG → dir $SRCDIR, connection $CONN"
   if [[ -d "$APP_SRC" ]]; then
     doc_ok "source dir $SRCDIR/$ALIAS ($(list_files "$APP_SRC" | grep -c . || true) files)"
