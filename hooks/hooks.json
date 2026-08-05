@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/skills/apex-sync-guard/scripts/apex-sync-hook.sh"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/apex-sync-guard/scripts/apex-sync-hook.sh\""
           }
         ]
       }

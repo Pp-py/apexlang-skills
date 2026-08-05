@@ -32,8 +32,9 @@ Installs the three skills and auto-registers the sync-guard hook (it no-ops in p
 ## Requirements
 
 - Official `apex` skill (SQLcl) — generate/validate/import `.apx`
+- **Platform:** the scripts are bash — Linux and macOS natively, Windows through **Git Bash or WSL** (not PowerShell/cmd; Claude Code's Bash tool on Windows already uses Git Bash). Paths crossing into SQLcl or node are converted with `cygpath`
 - **apex-sentinel:** a browser-automation tool + SQLcl. Playwright CLI preferred and driven through `skills/apex-sentinel/scripts/pw.sh` (no install needed — it falls back to `npx`); any browser-MCP works as a fallback. No browser → it stops and reports; it never fakes verification
-- **apex-sync-guard:** `git`, SQLcl, `jq` *or* `python3`
+- **apex-sync-guard:** `git`, SQLcl, `jq` *or* `python3`. Validate a machine with `skills/apex-sync-guard/scripts/apex-sync-check.sh doctor`
 
 ## Examples
 

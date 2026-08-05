@@ -22,6 +22,8 @@ if grep -q 'apex export' <<<"$stmts"; then
   mkdir -p "$dir/demo" && cp -r "$FAKE_REMOTE/demo/." "$dir/demo/"
 elif grep -q 'greatest' <<<"$stmts"; then
   echo "2026-07-17T10:00:00"
+elif grep -q 'apex-sync-doctor' <<<"$stmts"; then
+  echo "apex-sync-doctor ${FAKE_APP_COUNT:-1}"
 fi
 EOF
 chmod +x "$WORK/bin/sql"
@@ -120,6 +122,13 @@ expect     "hook fails CLOSED without a JSON parser"               2 hook_no_jso
 if [[ -n "$real_python" ]]; then     # the python fallback path never runs in CI, where jq exists
   expect "python fallback works when jq is broken"                 0 without_jq "$CHK" status
 fi
+
+# --- doctor: one command that validates a machine, probing by doing
+expect     "doctor passes on a wired project"                      0 "$CHK" doctor
+expect_out "doctor names the resolved JSON parser"                 'JSON parser \(probed by execution\)' "$CHK" doctor
+expect     "doctor fails when the app is invisible to the connection" 1 \
+           env FAKE_APP_COUNT=0 "$CHK" doctor
+expect_out "doctor reports the platform"                           'bash .* on ' "$CHK" doctor
 
 # --- enforcement hook
 expect "hook: fresh marker allows apex import"               0 hook_in_proj "apex import -applicationid 100"

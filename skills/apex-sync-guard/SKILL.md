@@ -43,7 +43,7 @@ Fails if the APEXlang source dir has uncommitted or untracked changes — the ex
 **After every successful import or export** — `apex-sync-check.sh record-sync`:
 Updates the syncpoint (tree + timestamps). Skipping this poisons every future comparison — treat import/export as unfinished until `record-sync` ran.
 
-`apex-sync-check.sh status` shows syncpoint age and both replicas' state at any time.
+`apex-sync-check.sh status` shows syncpoint age and both replicas' state at any time; `apex-sync-check.sh doctor` validates the whole wiring on a machine (platform, git, SQLcl, JSON parser, config, and that the saved connection can see this `appId`) — run it first on any machine where a check behaves oddly.
 
 ## Resolution when the Builder moved
 

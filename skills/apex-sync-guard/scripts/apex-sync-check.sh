@@ -6,6 +6,9 @@
 #   apex-sync-check.sh check-export   # gate before `apex export`
 #   apex-sync-check.sh record-sync    # after a successful import/export
 #   apex-sync-check.sh status         # inspect syncpoint + both replicas
+#   apex-sync-check.sh doctor         # validate this machine's wiring end to end
+#
+# Runs under bash: Linux, macOS, and Windows via Git Bash or WSL (not PowerShell/cmd).
 #
 # Reads apex-sync.json at the repo root. Sync state lives in
 # .git/apex-sync/<appAlias>/ (machine-local, never committed) plus the
@@ -22,7 +25,19 @@ note() { echo "  $*"; }
 mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }   # GNU stat / BSD (macOS) stat
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }                    # BSD date has no -Iseconds
 
+# A path that crosses into a native Windows binary must be converted first.
+# The export dir reaches SQLcl (a Java program) inside the SQL text on stdin,
+# where MSYS does no argv mangling at all, so /tmp/... arrives as C:\tmp\... .
+# Forward slashes (-m, not -w) so nothing has to survive backslash escaping.
+native_path() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
+}
+
 # ---------------------------------------------------------------- setup
+[[ -n "${BASH_VERSION:-}" ]] || die "run this under bash (on Windows: Git Bash or WSL — PowerShell and cmd cannot execute it)"
+case "${OSTYPE:-}" in
+  msys*|cygwin*) command -v cygpath >/dev/null 2>&1 || die "cygpath not found — run this from Git Bash (Git for Windows), not from a bare MSYS shell" ;;
+esac
 command -v sql >/dev/null || die "SQLcl (sql) is required on PATH"
 
 # The JSON parser is resolved ONCE and by EXECUTION, never by `command -v`:
@@ -144,9 +159,11 @@ pages_changed_since() {  # $1 = stamp 'YYYY-MM-DD"T"HH24:MI:SS' (skipped if unav
 }
 
 export_builder() {  # exports REMOTE (the Builder) to a scratch dir; prints its path
-  local scratch; scratch=$(mktemp -d "${TMPDIR:-/tmp}/apex-sync-remote-XXXXXX"); TMPS+=("$scratch")
-  run_sql "apex export -applicationid $APP_ID -expType APEXLANG -dir $scratch" >/dev/null
-  [[ -f "$scratch/$ALIAS/application.apx" ]] || die "apex export produced no $ALIAS/application.apx in $scratch — check connection/app id"
+  local scratch native; scratch=$(mktemp -d "${TMPDIR:-/tmp}/apex-sync-remote-XXXXXX"); TMPS+=("$scratch")
+  native=$(native_path "$scratch")
+  [[ "$native" == *" "* ]] && native="\"$native\""     # SQLcl splits its arguments on spaces
+  run_sql "apex export -applicationid $APP_ID -expType APEXLANG -dir $native" >/dev/null
+  [[ -f "$scratch/$ALIAS/application.apx" ]] || die "apex export produced no $ALIAS/application.apx in $scratch (SQLcl was given -dir $native) — check connection/app id; if that path holds spaces, point TMPDIR at one that does not"
   echo "$scratch"
 }
 
@@ -338,6 +355,55 @@ cmd_record_sync() {
   note "builderStamp: $s"
 }
 
+DOC_BAD=0
+doc_ok()   { printf '  OK    %s\n' "$*"; }
+doc_note() { printf '  --    %s\n' "$*"; }
+doc_fail() { printf '  FAIL  %s\n' "$*"; DOC_BAD=$((DOC_BAD+1)); }
+
+# One command to validate a machine before trusting the guard on it. Everything is
+# probed by doing it, never by "the binary is on PATH" — that is what let a stub
+# python3 and an unconvertible scratch path through in the first place.
+cmd_doctor() {
+  echo "apex-sync-guard: doctor (app $APP_ID '$ALIAS')"
+  doc_ok "bash ${BASH_VERSION%%(*} on ${OSTYPE:-unknown}"
+  case "${OSTYPE:-}" in
+    msys*|cygwin*) doc_ok "cygpath present — SQLcl will be handed e.g. $(native_path "${TMPDIR:-/tmp}")" ;;
+    *)             doc_note "not a Windows shell — no path conversion needed" ;;
+  esac
+  doc_ok "$(git --version)"
+  doc_ok "SQLcl: $(command -v sql)"
+  doc_ok "JSON parser (probed by execution): ${JSON_TOOL[*]}"
+  doc_ok "config: $CFG → dir $SRCDIR, connection $CONN"
+  if [[ -d "$APP_SRC" ]]; then
+    doc_ok "source dir $SRCDIR/$ALIAS ($(list_files "$APP_SRC" | grep -c . || true) files)"
+  else
+    doc_fail "source dir missing: $APP_SRC"
+  fi
+  if [[ -w "$STATE_DIR" ]]; then doc_ok "state dir writable: .git/apex-sync/$ALIAS"
+  else doc_fail "state dir not writable: $STATE_DIR"; fi
+
+  local probe n
+  if probe=$(run_sql "select 'apex-sync-doctor '||(select count(*) from apex_applications where application_id=$APP_ID) from dual;" 2>&1) \
+     && grep -q apex-sync-doctor <<<"$probe"; then
+    doc_ok "SQLcl connection '$CONN' answers"
+    n=$(sed -n 's/.*apex-sync-doctor \([0-9]*\).*/\1/p' <<<"$probe" | head -1)
+    if [[ "$n" == "0" ]]; then
+      doc_fail "app $APP_ID is not visible through '$CONN' — wrong connection, wrong workspace, or wrong appId"
+    else
+      doc_ok "app $APP_ID visible through '$CONN'"
+    fi
+  else
+    doc_fail "SQLcl connection '$CONN' failed: $(head -3 <<<"$probe" | tr '\n' ' ')"
+  fi
+
+  if have_base; then doc_ok "syncpoint: $(git -C "$ROOT" rev-parse --short "$REF")"
+  else doc_note "no syncpoint yet — run check-import once to bootstrap (setup.md §2)"; fi
+
+  echo ""
+  if (( DOC_BAD )); then echo "$DOC_BAD check(s) failed."; return 1; fi
+  echo "All checks passed."
+}
+
 cmd_status() {
   echo "apex-sync-guard: status (app $APP_ID '$ALIAS' via $CONN)"
   note "repo root:  $ROOT"
@@ -365,5 +431,6 @@ case "${1:-}" in
   check-export) cmd_check_export ;;
   record-sync)  cmd_record_sync ;;
   status)       cmd_status ;;
-  *) die "usage: $(basename "$0") check-import|check-export|record-sync|status" ;;
+  doctor)       cmd_doctor ;;
+  *) die "usage: $(basename "$0") check-import|check-export|record-sync|status|doctor" ;;
 esac

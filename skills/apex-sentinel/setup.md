@@ -12,7 +12,7 @@ Pick and configure the backend once (§0), then get the four APEX-specific block
 <skill-dir>/scripts/pw.sh close-all         # when the loop is done
 ```
 
-Run it from anywhere — unlike the raw CLI, it does not care about your working directory.
+Run it from anywhere — unlike the raw CLI, it does not care about your working directory. It is a bash script: Linux and macOS natively, Windows through **Git Bash or WSL** (the `--config` path it hands to node is converted with `cygpath`, so a POSIX path is not silently resolved against the wrong drive — which would drop `ignoreHTTPSErrors` and stall the loop on a self-signed cert).
 
 No install step to reason about: the wrapper takes a global `playwright-cli` if there is one and falls back to `npx -y @playwright/cli`, probing on **exit code** (see `SKILL.md` Step 0 — the npx "update available" banner is not a failure).
 
