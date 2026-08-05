@@ -161,7 +161,10 @@ pages_changed_since() {  # $1 = stamp 'YYYY-MM-DD"T"HH24:MI:SS' (skipped if unav
 export_builder() {  # exports REMOTE (the Builder) to a scratch dir; prints its path
   local scratch native; scratch=$(mktemp -d "${TMPDIR:-/tmp}/apex-sync-remote-XXXXXX"); TMPS+=("$scratch")
   native=$(native_path "$scratch")
-  [[ "$native" == *" "* ]] && native="\"$native\""     # SQLcl splits its arguments on spaces
+  # Quoted only when it has to be: how SQLcl's `apex export -dir` tokenizes a path
+  # with spaces is unverified here, so the quoting is a best effort and the die
+  # below points at TMPDIR if it still fails.
+  [[ "$native" == *" "* ]] && native="\"$native\""
   run_sql "apex export -applicationid $APP_ID -expType APEXLANG -dir $native" >/dev/null
   [[ -f "$scratch/$ALIAS/application.apx" ]] || die "apex export produced no $ALIAS/application.apx in $scratch (SQLcl was given -dir $native) — check connection/app id; if that path holds spaces, point TMPDIR at one that does not"
   echo "$scratch"
@@ -262,8 +265,6 @@ eol_note() {  # $1 = tree_diff output
   echo "        To silence them, add to this repo's .gitattributes:  *.apx text eol=lf"
 }
 
-dirs_equal() { [[ -z "$(blocking "$(tree_diff "$1" "$2")")" ]]; }
-
 # The guard's other direction. check-import answers "does the Builder hold work an
 # import would destroy?" — it says nothing about what the import DEPLOYS. Since
 # `apex import` replaces the whole app, a silent PASS can push a backlog that
@@ -279,8 +280,14 @@ payload_report() {  # $1 = materialized BASE app dir
     note "Nothing to deploy: LOCAL matches the syncpoint (if you expected changes, they were not generated/saved)."
     return 0
   fi
-  recorded=$( [[ -f "$STATE" ]] && json_get "$STATE" recordedAt || echo "")
-  commits=$( [[ -n "$recorded" ]] && git -C "$ROOT" log --oneline --since="$recorded" -- "$SRCDIR" | grep -c . || echo "?")
+  recorded=""; [[ -f "$STATE" ]] && recorded=$(json_get "$STATE" recordedAt)
+  # wc, not `grep -c`: grep exits 1 on a zero count, so `| grep -c . || echo "?"`
+  # printed BOTH the count and the fallback, splitting the line in two.
+  if [[ -n "$recorded" ]]; then
+    commits=$(git -C "$ROOT" log --oneline --since="$recorded" -- "$SRCDIR" | wc -l | tr -d '[:space:]')
+  else
+    commits="?"
+  fi
   note "This import DEPLOYS the accumulated LOCAL backlog — \`apex import\` replaces the WHOLE app:"
   note "(A = new in LOCAL, M = differs, D = removed from LOCAL)"
   indent <<<"$dif"
@@ -469,7 +476,9 @@ cmd_status() {
     fi
   done
   # What an import from here would deploy — no Builder export needed for this half.
-  have_base && payload_report "$(materialize_base)"
+  # (an `if`, not `have_base && …`: as the last statement of the function, a false
+  #  `&&` would become status's exit code and report a bootstrap-pending repo as failed)
+  if have_base; then payload_report "$(materialize_base)"; fi
 }
 
 case "${1:-}" in

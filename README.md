@@ -45,6 +45,7 @@ Two runnable vertical slices (DDL + write-path package + validate-green `.apx` +
 ```bash
 shellcheck skills/*/scripts/*.sh tests/*.sh                 # lint
 tests/sync-guard-e2e.sh                                     # offline e2e (stubbed SQLcl)
+tests/pw-wrapper-smoke.sh                                   # pw.sh (stubbed Playwright CLI)
 ```
 
 Both also run in CI.

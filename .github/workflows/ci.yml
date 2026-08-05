@@ -26,3 +26,5 @@ jobs:
       - uses: actions/checkout@v4      # .gitattributes keeps *.sh at LF, so bash can run them
       - name: run offline e2e harness (stubbed SQLcl)
         run: bash tests/sync-guard-e2e.sh
+      - name: run pw.sh smoke test (stubbed Playwright CLI)
+        run: bash tests/pw-wrapper-smoke.sh

@@ -69,6 +69,7 @@ hook_in_proj()  { printf '{"tool_input":{"command":"%s"},"cwd":"%s"}' "$1" "$WOR
 hook_out_repo() { printf '{"tool_input":{"command":"apex import"},"cwd":"/"}' | "$HOOK"; }
 
 # --- wrapper protocol
+expect "status before any syncpoint exits 0"                 0 "$CHK" status
 expect "bootstrap: equal replicas -> PASS + first syncpoint" 0 "$CHK" check-import
 sed 's/One/OneEditedInBuilder/' "$WORK/remote/demo/p30.apx" > "$WORK/remote/demo/p30.apx.new" \
   && mv "$WORK/remote/demo/p30.apx.new" "$WORK/remote/demo/p30.apx"
@@ -76,6 +77,12 @@ expect "builder moved -> check-import FAIL"                  1 "$CHK" check-impo
 cp "$WORK/remote/demo/p30.apx" src/demo/p30.apx && git add -A && git commit -qm "capture Builder changes"
 expect "builder changes captured in LOCAL -> PASS"           0 "$CHK" check-import
 expect "record-sync"                                         0 "$CHK" record-sync
+# a page deleted in the Builder is a Builder-side change too: importing would
+# recreate it. Exercises the comparator's "only in BASE" branch.
+mv "$WORK/remote/demo/p30.apx" "$WORK/p30.apx.away"
+expect "builder deleted a page -> check-import FAIL"         1 "$CHK" check-import
+mv "$WORK/p30.apx.away" "$WORK/remote/demo/p30.apx"
+expect "page restored -> PASS again"                         0 "$CHK" check-import
 echo "-- local edit" >> src/demo/p30.apx
 expect "dirty source dir -> check-export FAIL"               1 "$CHK" check-export
 git checkout -q -- src/demo/p30.apx
@@ -139,6 +146,12 @@ expect_out "payload lists the files an import would deploy" 'A[[:space:]]+p31\.a
 expect_out "payload counts files and commits"              '2 file\(s\), 1 commit\(s\)' "$CHK" check-import
 expect_out "payload warns the import replaces the whole app" 'replaces the WHOLE app' "$CHK" check-import
 expect_out "status reports the payload too, without an export" 'A[[:space:]]+p31\.apx' "$CHK" status
+# zero commits since the syncpoint (work not committed yet) must print "0", on one
+# line: `git log | grep -c .` exits 1 on a zero count, which emitted count AND fallback.
+"$CHK" record-sync >/dev/null
+printf 'page 32 (\n  name: Three\n)\n' > src/demo/p32.apx
+expect_out "payload prints a bare 0 when no commits followed the syncpoint" ', 0 commit\(s\)' "$CHK" check-import
+rm -f src/demo/p32.apx
 git rm -q src/demo/p31.apx && git checkout -q -- src/demo/application.apx
 git commit -qm "back to the syncpoint"
 
