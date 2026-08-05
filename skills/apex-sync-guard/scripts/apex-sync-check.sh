@@ -77,6 +77,15 @@ STATE="$STATE_DIR/state.json"
 REF="refs/apex-sync/$ALIAS"
 mkdir -p "$STATE_DIR"
 
+# BASE round-trips through git objects (add → write-tree → archive). Content
+# filters would rewrite the bytes on the way in or out, so every git call that
+# stores or restores a replica runs with them off and with attribute lookup
+# pinned to an empty file — the syncpoint must return exactly what was exported.
+: > "$STATE_DIR/empty-attributes"
+GIT_HERMETIC=(-c core.autocrlf=false -c core.eol=lf -c core.safecrlf=false
+              -c "core.attributesfile=$STATE_DIR/empty-attributes")
+export GIT_ATTR_NOSYSTEM=1
+
 TMP_KEEP=""                       # scratch dirs preserved on FAIL for resolution
 TMPS=()
 trap 'for t in "${TMPS[@]:-}"; do [[ -n "$t" && "$t" != "$TMP_KEEP" ]] && rm -rf "$t"; done' EXIT
@@ -127,7 +136,7 @@ have_base() { git -C "$ROOT" rev-parse -q --verify "$REF" >/dev/null; }
 
 materialize_base() {  # extracts the BASE tree to a tmpdir; prints path of the app dir
   local t; t=$(mktemp -d "${TMPDIR:-/tmp}/apex-sync-base-XXXXXX"); TMPS+=("$t")
-  git -C "$ROOT" archive "$REF" | tar -x -C "$t"
+  git -C "$ROOT" "${GIT_HERMETIC[@]}" archive "$REF" | tar -x -C "$t"
   echo "$t/$ALIAS"
 }
 
@@ -138,7 +147,7 @@ materialize_base() {  # extracts the BASE tree to a tmpdir; prints path of the a
 snapshot_export() {  # $1 = scratch dir containing <alias>/…; commits it to $REF
   local tmpidx tree commit
   tmpidx=$(mktemp -u "${TMPDIR:-/tmp}/apex-sync-idx-XXXXXX")
-  GIT_INDEX_FILE=$tmpidx git --git-dir="$ROOT/.git" --work-tree="$1" add -f -A -- . 2>/dev/null
+  GIT_INDEX_FILE=$tmpidx git "${GIT_HERMETIC[@]}" --git-dir="$ROOT/.git" --work-tree="$1" add -f -A -- . 2>/dev/null
   tree=$(GIT_INDEX_FILE=$tmpidx git --git-dir="$ROOT/.git" write-tree)
   commit=$(git -C "$ROOT" commit-tree "$tree" -m "apex-sync syncpoint $ALIAS $(now_iso)")
   git -C "$ROOT" update-ref "$REF" "$commit"
@@ -146,21 +155,61 @@ snapshot_export() {  # $1 = scratch dir containing <alias>/…; commits it to $R
   echo "$commit"
 }
 
-tree_diff() {  # $1=dirA $2=dirB → name-status with app-relative paths, ignorePaths filtered
-  local line rel
-  { git -C "$ROOT" diff --no-index --name-status -- "$1" "$2" 2>/dev/null || true; } | \
-    sed "s|$1/||g;s|$2/||g" | \
-  while IFS= read -r line; do
-    rel="${line#*$'\t'}"
-    local skip=0 p
-    for p in "${IGNORE_PATHS[@]:-}"; do
-      [[ -n "$p" && "$rel" == "$p"* ]] && { skip=1; break; }
-    done
-    (( skip )) || printf '%s\n' "$line"
-  done
+# ------------------------------------------------------- content comparison
+# Deliberately NOT `git diff --no-index`: git applies .gitattributes and
+# core.autocrlf to whichever side it resolves inside the repo and not to the
+# scratch export, so its verdict tracked the user's git config instead of the
+# bytes — on Windows core.autocrlf=true alone makes a CRLF and an LF file
+# compare equal, and an anchored `text eol=lf` pattern makes the same pair
+# compare equal one way and differ the other. The gate needs bytes.
+
+list_files() { (cd "$1" 2>/dev/null && find . -type f | sed 's|^\./||' | LC_ALL=C sort); }
+
+same_content() {  # 0 = identical bytes, 2 = differs only in line endings, 1 = differs
+  cmp -s "$1" "$2" && return 0
+  case "$1" in                                  # never normalize a binary
+    *.apx|*.sql|*.js|*.css|*.md|*.json|*.txt|*.xml|*.html|*.yml|*.yaml) ;;
+    *) return 1 ;;
+  esac
+  cmp -s <(tr -d '\r' < "$1") <(tr -d '\r' < "$2") && return 2
+  return 1
 }
 
-dirs_equal() { [[ -z "$(tree_diff "$1" "$2")" ]]; }
+ignored() {  # $1 = app-relative path
+  local p
+  for p in "${IGNORE_PATHS[@]:-}"; do
+    [[ -n "$p" && "$1" == "$p"* ]] && return 0
+  done
+  return 1
+}
+
+tree_diff() {  # $1=dirA $2=dirB → "<status>\t<app-relative path>", ignorePaths filtered
+  local f rc                # D = only in A, A = only in B, M = differs, E = EOL only
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    ignored "$f" && continue
+    if   [[ ! -e "$2/$f" ]]; then printf 'D\t%s\n' "$f"
+    elif [[ ! -e "$1/$f" ]]; then printf 'A\t%s\n' "$f"
+    else
+      rc=0; same_content "$1/$f" "$2/$f" || rc=$?
+      case $rc in 0) ;; 2) printf 'E\t%s\n' "$f" ;; *) printf 'M\t%s\n' "$f" ;; esac
+    fi
+  done < <( { list_files "$1"; list_files "$2"; } | LC_ALL=C sort -u )
+}
+
+# A line-ending-only difference cannot carry a Builder-side change, and blocking
+# on it would deadlock: every re-export reintroduces it. So E is reported, never gated.
+blocking() { grep -v $'^E\t' <<<"${1:-}" || true; }
+
+indent() { local l; while IFS= read -r l; do printf '    %s\n' "$l"; done; }
+
+eol_note() {  # $1 = tree_diff output
+  grep -q $'^E\t' <<<"${1:-}" || return 0
+  echo "  Note: the files marked E differ only in line endings — not a Builder change, so they do not gate."
+  echo "        To silence them, add to this repo's .gitattributes:  *.apx text eol=lf"
+}
+
+dirs_equal() { [[ -z "$(blocking "$(tree_diff "$1" "$2")")" ]]; }
 
 write_marker() {  # $1 = import|export
   printf '{"check":"%s","at":"%s"}\n' "$1" "$(now_iso)" > "$STATE_DIR/check-ok.$1"
@@ -183,21 +232,25 @@ cmd_check_import() {
     echo "  No syncpoint yet — bootstrap mode: comparing BUILDER vs LOCAL working tree."
     echo "  (note: formatting-only differences are expected if .apx were hand-edited;"
     echo "   the Builder export is the canonical serialization)"
-    if dirs_equal "$APP_SRC" "$scratch/$ALIAS"; then
+    local boot; boot=$(tree_diff "$APP_SRC" "$scratch/$ALIAS")
+    if [[ -z "$(blocking "$boot")" ]]; then
       local c s; s=$(builder_stamp); c=$(snapshot_export "$scratch"); write_state "$c" "$s"; write_marker import
       echo "PASS: replicas already agree — first syncpoint recorded ($c). Safe to import."
+      eol_note "$boot"
       return 0
     fi
     TMP_KEEP="$scratch"
-    echo "  (D = only in LOCAL, A = only in BUILDER, M = differs)"
-    tree_diff "$APP_SRC" "$scratch/$ALIAS" | sed 's/^/    /'
+    echo "  (D = only in LOCAL, A = only in BUILDER, M = differs, E = line endings only)"
+    indent <<<"$boot"
+    eol_note "$boot"
     fail "bootstrap: BUILDER ≠ LOCAL and there is no BASE to arbitrate. Reconcile once by hand (Builder export kept at $scratch), commit, then record-sync. See setup.md §2."
   fi
 
-  local base; base=$(materialize_base)
-  if dirs_equal "$base" "$scratch/$ALIAS"; then
+  local base dif; base=$(materialize_base); dif=$(tree_diff "$base" "$scratch/$ALIAS")
+  if [[ -z "$(blocking "$dif")" ]]; then
     write_marker import
     echo "PASS: Builder untouched since last syncpoint. Safe to import."
+    eol_note "$dif"
     return 0
   fi
 
@@ -205,27 +258,30 @@ cmd_check_import() {
   # in LOCAL (captured/merged earlier), importing loses nothing: it rewrites
   # those files identically. Without this, the gate would be circular: capture
   # the Builder changes, still FAIL, never import.
-  local all_captured=1 _st f L R
+  local all_captured=1 _st f L R rc
   while IFS=$'\t' read -r _st f; do
-    [[ -z "$f" ]] && continue
+    [[ -z "$f" || "$_st" == "E" ]] && continue
     L="$APP_SRC/$f"; R="$scratch/$ALIAS/$f"
     if [[ -f "$R" ]]; then
-      { [[ -f "$L" ]] && cmp -s "$L" "$R"; } || { all_captured=0; break; }
-    else
-      [[ -f "$L" ]] && { all_captured=0; break; }   # Builder deleted it, LOCAL still has it
+      if [[ -f "$L" ]]; then rc=0; same_content "$L" "$R" || rc=$?; else rc=1; fi
+      (( rc == 0 || rc == 2 )) || { all_captured=0; break; }
+    elif [[ -f "$L" ]]; then
+      all_captured=0; break                        # Builder deleted it, LOCAL still has it
     fi
-  done < <(tree_diff "$base" "$scratch/$ALIAS")
+  done <<<"$dif"
   if (( all_captured )); then
     write_marker import
     echo "PASS: Builder changed since last syncpoint, but LOCAL already contains every Builder-side change. Safe to import (those files are rewritten identically). Remember record-sync afterwards."
+    eol_note "$dif"
     return 0
   fi
 
   TMP_KEEP="$scratch"
   echo ""
   echo "  Builder changed since the last syncpoint:"
-  echo "  (D = only in BASE, A = only in BUILDER, M = differs)"
-  tree_diff "$base" "$scratch/$ALIAS" | sed 's/^/    /'
+  echo "  (D = only in BASE, A = only in BUILDER, M = differs, E = line endings only)"
+  indent <<<"$dif"
+  eol_note "$dif"
   local s; s=$(stored_stamp)
   if [[ -n "$s" ]]; then
     echo ""

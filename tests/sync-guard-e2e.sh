@@ -49,6 +49,16 @@ expect() {  # $1 = description, $2 = expected exit code, rest = command
     echo "FAIL $desc (exit $got, wanted $want)"; fail=$((fail+1))
   fi
 }
+expect_out() {  # $1 = description, $2 = ERE the combined output must match, rest = command
+  local desc=$1 want=$2; shift 2
+  local out; out=$("$@" 2>&1) || true
+  if grep -qE "$want" <<<"$out"; then
+    echo "ok   $desc"; pass=$((pass+1))
+  else
+    echo "FAIL $desc (output did not match /$want/)"; fail=$((fail+1))
+    while IFS= read -r l; do printf '       | %s\n' "$l"; done <<<"$out"
+  fi
+}
 hook_in_proj()  { printf '{"tool_input":{"command":"%s"},"cwd":"%s"}' "$1" "$WORK/proj" | "$HOOK"; }
 hook_out_repo() { printf '{"tool_input":{"command":"apex import"},"cwd":"/"}' | "$HOOK"; }
 
@@ -65,6 +75,23 @@ expect "dirty source dir -> check-export FAIL"               1 "$CHK" check-expo
 git checkout -q -- src/demo/p30.apx
 expect "clean source dir -> check-export PASS"               0 "$CHK" check-export
 expect "status runs"                                         0 "$CHK" status
+
+# --- content comparison must not depend on git's content filters.
+# `git diff --no-index` applies .gitattributes/core.autocrlf to whichever side git
+# resolves inside the repo and not to the scratch export, so its verdict tracked the
+# user's git config instead of the bytes. Comparison is byte-exact now; a difference
+# that is only in line endings is reported apart and does not gate.
+printf 'src/** text eol=lf\n' > .gitattributes
+git add -A && git commit -qm "line-ending attributes"
+sed 's/$/\r/' src/demo/p30.apx > "$WORK/remote/demo/p30.apx"          # same text, CRLF in the Builder
+expect     "EOL-only difference -> check-import PASS"        0 "$CHK" check-import
+expect_out "EOL-only difference is named, not silent"        'only in line endings' "$CHK" check-import
+printf 'page 30 (\r\n  name: OneChangedInBuilder\r\n)\r\n' > "$WORK/remote/demo/p30.apx"
+expect     "real change under CRLF still FAILs"              1 "$CHK" check-import
+git rm -q --cached .gitattributes && rm -f .gitattributes
+cp src/demo/p30.apx "$WORK/remote/demo/p30.apx"                       # restore the fixture
+git commit -qm "drop line-ending attributes"
+expect "replicas back in sync -> PASS"                       0 "$CHK" check-import
 
 # --- enforcement hook
 expect "hook: fresh marker allows apex import"               0 hook_in_proj "apex import -applicationid 100"

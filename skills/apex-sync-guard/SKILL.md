@@ -25,6 +25,8 @@ Same 3-way logic as `git pull` before `push`: if REMOTE moved since BASE, integr
 
 **Canonical space:** BASE is always snapshotted from an `apex export`, never from the raw working tree — hand-edited `.apx` differ *textually* from the exporter's canonical serialization (whitespace, fenced vs inline blocks, JSON spacing) without differing semantically. BASE↔REMOTE comparisons are therefore noise-free; only the one-time bootstrap (BUILDER vs LOCAL, no BASE yet) can surface formatting-only diffs, which reconcile by adopting the canonical form.
 
+**Comparison is byte-exact and independent of your git config.** Replicas are compared with `cmp`, not with `git diff --no-index`: git applies `.gitattributes` / `core.autocrlf` to whichever side it resolves inside the repo and not to the scratch export, so its verdict tracked the machine's git settings instead of the content (with `core.autocrlf=true` — the Git-for-Windows default — a CRLF and an LF copy of the same file compare *equal*). Files that differ **only** in line endings are reported as `E` and do not gate: that difference cannot carry a Builder-side change, and blocking on it would deadlock since every re-export reintroduces it. Silence them with `*.apx text eol=lf` in the consuming repo's `.gitattributes`.
+
 ## Protocol
 
 All operations go through `scripts/apex-sync-check.sh` in this skill's directory, run from the project repo root. It reads `apex-sync.json` (per-project config: app id, alias, source dir, SQLcl connection — see `setup.md`; setup also covers the first-run bootstrap when no syncpoint exists yet).
