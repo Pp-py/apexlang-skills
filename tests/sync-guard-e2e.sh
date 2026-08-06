@@ -48,11 +48,14 @@ mkdir -p "$WORK/remote" && cp -r src/demo "$WORK/remote/demo" && rm -rf "$WORK/r
 pass=0; fail=0
 expect() {  # $1 = description, $2 = expected exit code, rest = command
   local desc=$1 want=$2; shift 2
-  local got=0; "$@" >/dev/null 2>&1 || got=$?
+  local out got=0; out=$("$@" 2>&1) || got=$?
   if [[ "$got" == "$want" ]]; then
     echo "ok   $desc"; pass=$((pass+1))
   else
     echo "FAIL $desc (exit $got, wanted $want)"; fail=$((fail+1))
+    # printed, not swallowed: these failures usually only reproduce on another
+    # platform's CI, where this output is the only evidence available
+    while IFS= read -r l; do printf '       | %s\n' "$l"; done <<<"$out"
   fi
 }
 expect_out() {  # $1 = description, $2 = ERE the combined output must match, rest = command
@@ -114,6 +117,8 @@ mkdir -p "$WORK/stub"
 printf '#!/usr/bin/env bash\necho "Python was not found; run without arguments to install from the Microsoft Store" >&2\nexit 49\n' \
   > "$WORK/stub/python3" && chmod +x "$WORK/stub/python3"
 cp "$WORK/stub/python3" "$WORK/stub/python"
+cp "$WORK/stub/python3" "$WORK/stub/py"        # the Windows launcher: without it the
+                                               # resolver finds a real python behind the stubs
 printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/stub/jq" && chmod +x "$WORK/stub/jq"   # jq present but broken
 mkdir -p "$WORK/nojq"
 printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/nojq/jq" && chmod +x "$WORK/nojq/jq"
@@ -154,6 +159,19 @@ expect_out "payload prints a bare 0 when no commits followed the syncpoint" ', 0
 rm -f src/demo/p32.apx
 git rm -q src/demo/p31.apx && git checkout -q -- src/demo/application.apx
 git commit -qm "back to the syncpoint"
+
+# --- a JSON parser that emits CRLF (native tooling on Windows does) must not break
+# ignorePaths: the entries are read line by line, so a trailing \r left the prefix
+# match failing and the repo-only apex-exports/ showed up as a Builder-side deletion.
+mkdir -p "$WORK/crlf"
+printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/crlf/jq" && chmod +x "$WORK/crlf/jq"
+printf '#!/usr/bin/env bash\ncommand %s "$@" | sed "s/$/\\r/"\n' "$(command -v python3)" \
+  > "$WORK/crlf/python3" && chmod +x "$WORK/crlf/python3"
+# shellcheck disable=SC2030,SC2031
+with_crlf_json() { ( export PATH="$WORK/crlf:$PATH"; "$@" ); }
+if [[ -n "$real_python" ]]; then
+  expect "CRLF-emitting parser still honours ignorePaths"          0 with_crlf_json "$CHK" check-import
+fi
 
 # --- doctor: one command that validates a machine, probing by doing
 expect     "doctor passes on a wired project"                      0 "$CHK" doctor
