@@ -160,6 +160,19 @@ rm -f src/demo/p32.apx
 git rm -q src/demo/p31.apx && git checkout -q -- src/demo/application.apx
 git commit -qm "back to the syncpoint"
 
+# --- a JSON parser that emits CRLF (native tooling on Windows does) must not break
+# ignorePaths: the entries are read line by line, so a trailing \r left the prefix
+# match failing and the repo-only apex-exports/ showed up as a Builder-side deletion.
+mkdir -p "$WORK/crlf"
+printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/crlf/jq" && chmod +x "$WORK/crlf/jq"
+printf '#!/usr/bin/env bash\ncommand %s "$@" | sed "s/$/\\r/"\n' "$(command -v python3)" \
+  > "$WORK/crlf/python3" && chmod +x "$WORK/crlf/python3"
+# shellcheck disable=SC2030,SC2031
+with_crlf_json() { ( export PATH="$WORK/crlf:$PATH"; "$@" ); }
+if [[ -n "$real_python" ]]; then
+  expect "CRLF-emitting parser still honours ignorePaths"          0 with_crlf_json "$CHK" check-import
+fi
+
 # --- doctor: one command that validates a machine, probing by doing
 expect     "doctor passes on a wired project"                      0 "$CHK" doctor
 expect_out "doctor names the resolved JSON parser"                 'JSON parser \(probed by execution\)' "$CHK" doctor

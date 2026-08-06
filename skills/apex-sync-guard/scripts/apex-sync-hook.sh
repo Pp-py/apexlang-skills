@@ -25,10 +25,14 @@ else
   done
 fi
 
+# Native tooling on Windows writes CRLF, and a trailing \r survives command
+# substitution — it would break the repo lookup and the pattern match below.
+strip_cr() { tr -d '\r'; }
+
 json_get() {  # $1 = json file ('-' = stdin), $2 = dotted key path; 1 = no parser
   [[ ${#JSON_TOOL[@]} -gt 0 ]] || return 1
   if [[ "${JSON_TOOL[0]}" == "jq" ]]; then
-    jq -r ".$2 // empty" "$1" 2>/dev/null
+    jq -r ".$2 // empty" "$1" 2>/dev/null | strip_cr
   else
     "${JSON_TOOL[@]}" -c '
 import json, sys
@@ -37,12 +41,12 @@ data = json.load(src)
 for k in sys.argv[2].split("."):
     data = data.get(k) if isinstance(data, dict) else None
     if data is None: break
-print("" if data is None else data)' "$1" "$2" 2>/dev/null
+print("" if data is None else data)' "$1" "$2" 2>/dev/null | strip_cr
   fi
 }
 
 raw_get() {  # $1 = field name — flat string extraction when there is no parser at all
-  sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\(\([^"\]\|\\.\)*\)".*/\1/p' <<<"$input" | head -1
+  sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\(\([^"\]\|\\.\)*\)".*/\1/p' <<<"$input" | head -1 | strip_cr
 }
 
 input=$(cat)

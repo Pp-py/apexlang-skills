@@ -60,9 +60,16 @@ resolve_json_tool || die "no working JSON parser — need jq, or a python that a
       A 'python3' that exists but does nothing when executed is typically the
       Microsoft Store stub: install real Python (or jq) and put it ahead of it on PATH."
 
+# Every JSON read is stripped of carriage returns: native tooling on Windows writes
+# CRLF, and a trailing \r survives command substitution. Windows then hides the
+# damage for filesystem paths — the OS trims trailing whitespace — while the plain
+# string comparison in ignored() kept failing, so a repo-only ignorePaths entry was
+# reported as a Builder-side deletion and every LOCAL comparison FAILed.
+strip_cr() { tr -d '\r'; }
+
 json_get() {  # $1 = json file ('-' = stdin), $2 = dotted key path
   if [[ "${JSON_TOOL[0]}" == "jq" ]]; then
-    jq -r ".$2 // empty" "$1"
+    jq -r ".$2 // empty" "$1" | strip_cr
   else
     "${JSON_TOOL[@]}" -c '
 import json, sys
@@ -71,7 +78,7 @@ data = json.load(src)
 for k in sys.argv[2].split("."):
     data = data.get(k) if isinstance(data, dict) else None
     if data is None: break
-print("" if data is None else data)' "$1" "$2"
+print("" if data is None else data)' "$1" "$2" | strip_cr
   fi
 }
 
@@ -81,12 +88,12 @@ CFG="$ROOT/apex-sync.json"
 
 json_array() {  # $1 = json file, $2 = key of a string array → one element per line
   if [[ "${JSON_TOOL[0]}" == "jq" ]]; then
-    jq -r ".$2[]?" "$1"
+    jq -r ".$2[]?" "$1" | strip_cr
   else
     "${JSON_TOOL[@]}" -c '
 import json, sys
 for x in json.load(open(sys.argv[1])).get(sys.argv[2], []) or []:
-    print(x)' "$1" "$2"
+    print(x)' "$1" "$2" | strip_cr
   fi
 }
 
