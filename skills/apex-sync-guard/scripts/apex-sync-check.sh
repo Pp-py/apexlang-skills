@@ -281,9 +281,16 @@ payload_report() {  # $1 = materialized BASE app dir
     return 0
   fi
   recorded=""; [[ -f "$STATE" ]] && recorded=$(json_get "$STATE" recordedAt)
+  local head=""; [[ -f "$STATE" ]] && head=$(json_get "$STATE" headCommit)
+  # Count from the recorded revision, not from a timestamp: --since has one-second
+  # granularity, so a commit made in the same second as the syncpoint was counted
+  # or not depending on how fast the machine ran. Falls back to --since for state
+  # files written before headCommit existed.
   # wc, not `grep -c`: grep exits 1 on a zero count, so `| grep -c . || echo "?"`
   # printed BOTH the count and the fallback, splitting the line in two.
-  if [[ -n "$recorded" ]]; then
+  if [[ -n "$head" ]] && git -C "$ROOT" rev-parse -q --verify "$head^{commit}" >/dev/null 2>&1; then
+    commits=$(git -C "$ROOT" log --oneline "$head..HEAD" -- "$SRCDIR" | wc -l | tr -d '[:space:]')
+  elif [[ -n "$recorded" ]]; then
     commits=$(git -C "$ROOT" log --oneline --since="$recorded" -- "$SRCDIR" | wc -l | tr -d '[:space:]')
   else
     commits="?"
@@ -302,8 +309,12 @@ write_marker() {  # $1 = import|export
 stored_stamp() { if [[ -f "$STATE" ]]; then json_get "$STATE" builderStamp; fi; }
 
 write_state() {  # $1 = syncpoint commit, $2 = builder stamp
-  printf '{"appId":%s,"appAlias":"%s","syncpoint":"%s","builderStamp":"%s","recordedAt":"%s"}\n' \
-    "$APP_ID" "$ALIAS" "$1" "$2" "$(now_iso)" > "$STATE"
+  # headCommit pins the payload's commit count to a revision instead of a clock:
+  # `git log --since=<recordedAt>` has one-second granularity, so a commit made in
+  # the same second as the syncpoint was counted or not depending on timing.
+  local head; head=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo "")
+  printf '{"appId":%s,"appAlias":"%s","syncpoint":"%s","builderStamp":"%s","recordedAt":"%s","headCommit":"%s"}\n' \
+    "$APP_ID" "$ALIAS" "$1" "$2" "$(now_iso)" "$head" > "$STATE"
 }
 
 # ------------------------------------------------------------- commands
