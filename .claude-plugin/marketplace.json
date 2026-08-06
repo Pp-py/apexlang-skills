@@ -6,7 +6,7 @@
     {
       "name": "apexlang-toolkit",
       "description": "Architecture + sync-guard + runtime-verification skills for Oracle APEX apps in APEXlang (.apx).",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "source": "./",
       "author": { "name": "Pablo Portillo", "email": "pabloportillo095@gmail.com" }
     }
