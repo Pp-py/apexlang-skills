@@ -13,6 +13,8 @@ description: Use when an APEXlang page or component was just imported or changed
 
 This skill is the runtime verification gate for the APEXlang loop. It does **not** export/validate/import — that's the official `apex` skill. It pairs with `apexlang-architecture`: each check here confirms the behavior a construction recipe there promises (an editable IG routes writes through its package; a duplicate raises a *friendly* error; a modal closes; a KPI renders a number).
 
+The official APEXlang package ships its own post-import check (`apexctl runtime verify-ui`), but it is **off by default, never blocks a successful import, and through the CLI only fetches the page's HTML** — it does not replace this gate; see *Relationship to `apexctl runtime verify-ui`* below.
+
 **REQUIRED SUB-SKILL:** `apex` (official) for the (re-)import. **PAIRS WITH:** `apexlang-architecture`. **REINFORCES (optional, if installed):** `superpowers:verification-before-completion`.
 
 ## Prerequisites — hard, this skill does NOT degrade gracefully
@@ -105,9 +107,9 @@ Verify the **rejection/negative path** first (duplicate code → error, illegal 
 
 ## Relationship to `apexctl runtime verify-ui`
 
-The APEXlang package ships its own post-import browser check (`apexctl … runtime verify-ui`, providers `chrome-devtools-mcp` / `http-fallback`, opt-in via `--require-runtime-verification`). Its own contract (`references/ops/runtime-gates.md` §10–11) places it **after** `import_status = pass` and treats its findings as **diagnostics** that never overturn a successful import.
+The APEXlang package ships its own post-import browser check (`apexctl … runtime verify-ui`), **opt-in** via `--require-runtime-verification` — without that flag the runtime roundtrip records *"Post-import runtime verification is disabled by default."* Its own contract (`references/ops/runtime-gates.md` §Canonical Validation 10–11) places it **after** `import_status = pass` and treats its findings as **diagnostics**: *"do not rewrite a successful import to fail."* The implementation agrees — a non-zero verification result only appends a note and a recommended next action; the roundtrip still exits 0.
 
-That is the shallow lane, and it agrees with this skill's sequencing — verification is post-import, never a pre-import gate (the pre-import gate is `apex-sync-guard`). Where they differ: `verify-ui` records that a page responded; this skill holds one logged-in APEX session across the whole loop, drives the archetype's actual interaction (save the grid, close the modal, land the transition), and confirms the row in the database afterwards. If your team already runs `verify-ui`, keep it — and still run this loop before saying the change works, because "reported no findings" is not "I saw it save".
+That is the shallow lane, and it agrees with this skill's sequencing — verification is post-import, never a pre-import gate (the pre-import gate is `apex-sync-guard`). Where they differ is **scope**: `verify-ui` advertises a `chrome-devtools-mcp` provider, but the CLI path never wires one up, so every run falls back to HTTP — it fetches the page's HTML, checks status/redirects/expected text, and reports *"Console inspection is unavailable in the HTTP fallback provider."* It records that a page responded; it never drives the UI. This skill holds one logged-in APEX session across the whole loop, drives the archetype's actual interaction (save the grid, close the modal, land the transition), and confirms the row in the database afterwards. If your team already runs `verify-ui`, keep it — and still run this loop before saying the change works, because "reported no findings" is not "I saw it save".
 
 ## Red flags — you have NOT verified
 

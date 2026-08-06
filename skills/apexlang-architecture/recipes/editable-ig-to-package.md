@@ -7,10 +7,10 @@
 ## Shape
 
 1. An `interactiveGrid` region over a SQL query, `edit.enabled: true`.
-2. An `executeCode` process bound to the region (`editableRegion`), point `afterSubmit`, that runs **once per changed row**, branches on `:APEX$ROW_STATUS`, and calls `pkg_x.save_row`.
+2. An `executeCode` process bound to the region (`editableRegion`), point `afterSubmit`, that runs **once per changed row** — the grammar's `executeCondition: forEachRow`, a property of the process's `serverSideCondition` group — branches on `:APEX$ROW_STATUS`, and calls `pkg_x.save_row`.
 3. A package `save_row` adapter routing `C`/`U`/`D` to `create_row`/`update_row`/`delete_row`.
 
-The built-in *Interactive Grid – Automatic Row Processing (DML)* is **not** used. Delete it if APEX scaffolds it.
+The built-in *Interactive Grid – Automatic Row Processing (DML)* is **not** used. Delete it if APEX scaffolds it. This is the exception the official standard already carves out — `apex.interactive-grid-page.md:49`: *"do not substitute custom PL/SQL **unless invoking a dedicated API**."* `pkg_sectors` is that API.
 
 ## `.apx` — region
 
