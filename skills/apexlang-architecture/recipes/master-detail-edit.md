@@ -72,6 +72,6 @@ process save-members (
 
 | Tempting | Why wrong |
 |---|---|
-| Bind the detail IG's automatic DML to the child table | Bypasses the child package's invariants (e.g. "employee already assigned elsewhere"). |
+| Bind the detail IG's automatic DML to the child table | Bypasses the child package's invariants (e.g. "employee already assigned elsewhere"). Replacing it with a per-row process (`executeCondition: forEachRow`) is sanctioned by `apex.interactive-grid-page.md:49` — *"unless invoking a dedicated API"*; `pkg_employees` is that API. |
 | Write child rows from the master's process | Couples two tables' rules in one place; the child package becomes bypassable. Keep them separate. |
 | Forget to stamp the parent FK | New child rows land with a null/inherited FK. Set it from the master PK item in the detail process. |
