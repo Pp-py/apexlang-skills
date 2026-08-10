@@ -8,6 +8,7 @@ Pick and configure the backend once (§0), then get the four APEX-specific block
 
 ```bash
 <skill-dir>/scripts/pw.sh open <base-url>   # resolves launcher, pins workspace, writes TLS config
+<skill-dir>/scripts/pw.sh login             # signs the test user in, prints the session token (§2)
 <skill-dir>/scripts/pw.sh eval "() => document.title"
 <skill-dir>/scripts/pw.sh close-all         # when the loop is done
 ```
@@ -50,7 +51,9 @@ Whichever backend: the per-check technique for keeping context small is `SKILL.m
 
 ## 1. Resolve the base URL and handle TLS
 
-APEX has no fixed topology. The runtime may be ORDS standalone (Jetty), ORDS on Tomcat/WebLogic, any of those behind a reverse proxy (nginx, Apache, a load balancer), or a managed/cloud deployment (Autonomous DB / APEX Service) on a custom domain. **Host, port, scheme, and even the path prefix are whatever that deployment exposes — discover them, don't assume** `:8443` or `/ords`.
+If the project's `apex-sync.json` carries a `runtimeUrl` (§2), that is the answer — skip the discovery. Otherwise:
+
+APEX has no fixed topology. The runtime may be ORDS standalone (Jetty), ORDS on Tomcat/WebLogic, any of those behind a reverse proxy (nginx, Apache, a load balancer), or a managed/cloud deployment (Autonomous DB / APEX Service) on a custom domain. **Host, port, scheme, and even the path prefix are whatever that deployment exposes — discover them, don't assume** `:8443` or `/ords`. Once discovered, record it as `runtimeUrl` so the next run doesn't pay for it again.
 
 Then handle the cert per case:
 
@@ -66,22 +69,52 @@ Then handle the cert per case:
 
 **Never route around a cert wall by changing the URL.** Dropping `https://host:8443` to a plain `http://host:8080` that happens to answer will make the page load, and it invalidates the run: you are then verifying a different transport than the one under test, and blind to every defect that only shows on the real one (mixed content, `secure` cookies, proxy-only rewrites, HSTS). Same for swapping host or port. Fix the backend's TLS setting, or stop and report — see `SKILL.md` §"Red flags".
 
-## 2. Login — use the right credentials
+## 2. Login — a parameterised test user
 
-The APEX **runtime app** login is its own authentication scheme — most commonly APEX accounts (a workspace/application user). It is **not** the ORDS/instance-admin password and **not** the DB schema password; using either typically yields **"Invalid Login Credentials"**. If the app uses SSO/social/custom auth instead, follow that flow.
+The APEX **runtime app** login is its own authentication scheme — most commonly APEX accounts (a workspace/application user). It is **not** the ORDS/instance-admin password and **not** the DB schema password; using either typically yields **"Invalid Login Credentials"**. If the app uses SSO/social/custom auth instead, none of the below applies — follow that flow.
 
-**Don't assume where the credential lives.** It may be in a project env file, a secrets manager, CI variables, or the APEX workspace user list — read the actual values from *this* project's setup; don't hardcode a path or variable name.
+Nearly every APEX app opens on a login page, so the credential is configuration, not something to rediscover each run:
 
-```
-navigate   https://<base-url>/r/<workspace>/<APP-ALIAS>/   # <base-url> = whatever §1 resolved, e.g. host[:port]/ords
-   → redirects to .../login
-snapshot    → find Username / Password textboxes + "Sign In"
-fill form   Username=<app-user>  Password=<app-pass>
-click       Sign In
-   → lands on /home
+```bash
+<skill-dir>/scripts/pw.sh login [url]      # prints the ?session= token on stdout
 ```
 
-**Login throttling:** failed attempts trigger an escalating wait ("wait 5 / 10 seconds to sign in again"). If you fat-finger the password, wait (~12 s) before retrying — hammering just raises the timer.
+**Use a dedicated, low-privilege test user** — created for verification runs, not a personal account and never an admin. Verification writes rows and trips error paths; whatever it does should be attributable and disposable.
+
+### Where it is configured
+
+The **username and the runtime URL are ordinary config** — two optional fields in `apex-sync.json`, alongside the app they belong to:
+
+```json
+{ "appId": 100, "appAlias": "demo-app", "…": "…",
+  "testUser":   "TEST_QA",
+  "runtimeUrl": "https://host:8443/ords/r/demo_ws/demo-app/" }
+```
+
+The **password never goes there** — that file is committed. It is read from, in order:
+
+1. `$APEX_TEST_PASSWORD`
+2. `APEX_TEST_PASSWORD=…` in the repo root's `.env` — **gitignore it first**
+3. `"password"` in `~/.apex-sentinel.json` (or `$APEX_TEST_FILE`)
+
+If a project keeps its env file somewhere other than the repo root, point `$APEX_TEST_ENV` at it. **Ask where it is — don't go hunting**, and don't assume a layout: the answer is different in every project, and a wrong guess reads secrets that were never meant for this.
+
+`$APEX_TEST_USER` overrides the username the same way, and a URL argument overrides `runtimeUrl`. With no password anywhere, `pw.sh login` **stops and says what to set** — it never prompts and never guesses.
+
+### Four things that make a hand-rolled login silently wrong
+
+`login` handles these; on the MCP path you have to yourself.
+
+- **Navigating to the app root without a token opens a NEW session** and bounces to login. So a login routine that starts with "go to the app" destroys the session it was meant to protect, and calling it twice silently costs you the login. Check the page you are already holding *first* — `apex.env.APP_USER` is `nobody` when the session is anonymous — and navigate only if you are not signed in.
+- **The login page re-navigates itself on first load**, appending the browser timezone (`?tz=…`). Values filled before that lands are discarded and the submit never happens — while a check like "is the password field gone?" reads the reload as *success*. Wait for the URL to stop changing before filling, and again after submitting.
+- **The item ids are `P<n>_USERNAME` / `P<n>_PASSWORD`, and `<n>` is not always 101** (a real app answered on `P9999`). Match the id *suffix*; matching field labels breaks on any translated app.
+- **`?session=<token>` is on the login page too**, so a token proves nothing. Decide by whether you actually left the login page.
+
+And keep the password out of **argv** — it is world-readable through `/proc/<pid>/cmdline`, so `fill <ref> <password>` leaks it. `login` writes the snippet to a mode-600 file, passes `--filename`, deletes it on exit, and uses `--raw` because plain `run-code` echoes the code it ran back into your transcript.
+
+If you are on the MCP fallback instead, resolve the same variables yourself and batch the same sequence into one `browser_run_code_unsafe` call.
+
+**Login throttling:** failed attempts trigger an escalating wait ("wait 5 / 10 seconds to sign in again"). If you fat-finger the password, wait (~12 s) before retrying — hammering just raises the timer. `login` reports the failure with the page's notification text, which is where "Invalid Login Credentials" shows up.
 
 ## 3. Preserve the session (the #1 gotcha)
 
@@ -95,7 +128,7 @@ A deep link without the token will silently send you to login — if you land on
 
 **Keep one browser session for the whole loop.** With the Playwright CLI daemon this is automatic *as long as every command resolves the same workspace* — which is what `pw.sh` guarantees; the browser and login then survive between commands and between checks. Never issue a bare `open` mid-loop to "make sure" the browser is up: on a live session that restarts it and throws the login away (`pw.sh open` handles this for you). With an MCP, don't close/reopen tabs between checks; hold the tab, and re-login only if you actually get bounced. Logging in is 3–4 round-trips — pay it once.
 
-**Batch the login.** The navigate → fill → click Sign In sequence needs no reasoning between steps: run it as one `run code` snippet (or one batched CLI sequence) instead of stepwise with a snapshot after each action.
+**Batch the login.** The navigate → fill → click Sign In sequence needs no reasoning between steps — `pw.sh login` already runs it as one snippet. On the MCP path, do the same by hand in one `run code` call instead of stepwise with a snapshot after each action.
 
 ## 4. Modal/detail pages need their page items
 

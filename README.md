@@ -32,8 +32,8 @@ Installs the three skills and auto-registers the sync-guard hook (it no-ops in p
 ## Requirements
 
 - Official `apex` skill (SQLcl) — generate/validate/import `.apx`
-- **Platform:** the scripts are bash — Linux and macOS natively, Windows through **Git Bash or WSL** (not PowerShell/cmd; Claude Code's Bash tool on Windows already uses Git Bash). Paths crossing into SQLcl or node are converted with `cygpath`
-- **apex-sentinel:** a browser-automation tool + SQLcl. Playwright CLI preferred and driven through `skills/apex-sentinel/scripts/pw.sh` (no install needed — it falls back to `npx`); any browser-MCP works as a fallback. No browser → it stops and reports; it never fakes verification
+- **Platform:** the scripts are bash — Linux and macOS natively, Windows through **Git Bash or WSL** (not PowerShell/cmd; Claude Code's Bash tool on Windows already uses Git Bash). Paths crossing into SQLcl or node are converted with `cygpath`. That constraint is about *running* the scripts; the sync-guard hook itself watches **both** shell tools (`Bash|PowerShell`), and is registered as `bash "<path>"` so it works whichever shell the hook runner picks — `bash` only has to be on PATH
+- **apex-sentinel:** a browser-automation tool + SQLcl. Playwright CLI preferred and driven through `skills/apex-sentinel/scripts/pw.sh` (no install needed — it falls back to `npx`); any browser-MCP works as a fallback. No browser → it stops and reports; it never fakes verification. Since APEX apps open on a login page, a **test user** is configuration: `testUser`/`runtimeUrl` in `apex-sync.json`, password from `$APEX_TEST_PASSWORD` / a gitignored `.env` / a json outside the repo, then `pw.sh login` ([`setup.md` §2](skills/apex-sentinel/setup.md))
 - **apex-sync-guard:** `git`, SQLcl, `jq` *or* `python3`. Validate a machine with `skills/apex-sync-guard/scripts/apex-sync-check.sh doctor`
 
 ## Examples

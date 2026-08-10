@@ -46,6 +46,7 @@ This skill names browser operations generically. Map them to your backend; both 
 | Operation | What it does | Playwright CLI via `pw.sh` (preferred) | Playwright MCP |
 |---|---|---|---|
 | navigate | open a URL | `pw.sh open <url>` / `pw.sh goto <url>` | `browser_navigate` |
+| login | sign the test user into the runtime app, once, and hold it | `pw.sh login` → prints the session token | navigate + fill + click, batched into one `browser_run_code_unsafe` |
 | snapshot | capture the **accessibility tree** (rows, error regions, state as text) | `pw.sh snapshot` → YAML file on disk (Grep it), or `pw.sh find <text>` | `browser_snapshot` (streams into context — see Snapshot diet) |
 | screenshot | pixel capture (fallback when the a11y tree is thin — e.g. canvas charts) | `pw.sh screenshot [ref]` | `browser_take_screenshot` |
 | click | click an element | `pw.sh click <ref>` | `browser_click` |
@@ -77,7 +78,7 @@ The checks in `checks/` are written against these rules; `setup.md` §0 configur
 
 ## The loop
 
-1. **Connect** — resolve runtime URL, log in, hold the session. See `setup.md` (this is where the friction is — do it first).
+1. **Connect** — resolve runtime URL, log in (`pw.sh login`, with the test user configured per `setup.md` §2), hold the session. See `setup.md` (this is where the friction is — do it first).
 2. **Navigate** to the changed page, preserving the session (append `?session=<token>`; a bare `goto` drops it → login).
 3. **Read the page state cheaply** — `eval` the specific facts you need (see *Snapshot diet*); take a full snapshot only to discover refs you must click. Screenshot only when the text tree is insufficient (canvas charts).
 4. **Exercise** the archetype's behavior (interact + assert, fixed sequences batched into one round-trip) — see `checks/`.
