@@ -4,7 +4,8 @@
 # dir (the fake Builder), so no database or real SQLcl is needed.
 set -euo pipefail
 
-SKILL_DIR=$(cd "$(dirname "$0")/../skills/apex-sync-guard" && pwd)
+REPO=$(cd "$(dirname "$0")/.." && pwd)
+SKILL_DIR="$REPO/skills/apex-sync-guard"
 CHK="$SKILL_DIR/scripts/apex-sync-check.sh"
 HOOK="$SKILL_DIR/scripts/apex-sync-hook.sh"
 
@@ -68,7 +69,7 @@ expect_out() {  # $1 = description, $2 = ERE the combined output must match, res
     while IFS= read -r l; do printf '       | %s\n' "$l"; done <<<"$out"
   fi
 }
-hook_in_proj()  { printf '{"tool_input":{"command":"%s"},"cwd":"%s"}' "$1" "$WORK/proj" | "$HOOK"; }
+hook_in_proj()  { printf '{"tool_name":"%s","tool_input":{"command":"%s"},"cwd":"%s"}' "${2:-Bash}" "$1" "$WORK/proj" | "$HOOK"; }
 hook_out_repo() { printf '{"tool_input":{"command":"apex import"},"cwd":"/"}' | "$HOOK"; }
 
 # --- wrapper protocol
@@ -180,10 +181,25 @@ expect     "doctor fails when the app is invisible to the connection" 1 \
            env FAKE_APP_COUNT=0 "$CHK" doctor
 expect_out "doctor reports the platform"                           'bash .* on ' "$CHK" doctor
 
+# --- the registered matcher. Every payload below is piped straight into the script,
+# which bypasses Claude Code's own matcher dispatch entirely — so a matcher regression
+# would pass this suite green. Assert it statically instead, in BOTH places it lives:
+# hooks/hooks.json (plugin install) and setup.md (local-clone install) drift apart
+# silently otherwise. PowerShell is a separate tool, not an alias of Bash, so a
+# Bash-only matcher stops policing a Windows-native session without any symptom.
+MATCHER='"matcher": "Bash|PowerShell"'
+expect "matcher: hooks.json covers both shell tools"         0 grep -qF "$MATCHER" "$REPO/hooks/hooks.json"
+expect "matcher: setup.md documents the same string"         0 grep -qF "$MATCHER" "$SKILL_DIR/setup.md"
+
 # --- enforcement hook
 expect "hook: fresh marker allows apex import"               0 hook_in_proj "apex import -applicationid 100"
+expect "hook: fresh marker allows it under PowerShell too"   0 hook_in_proj "apex import -applicationid 100" PowerShell
 rm -f "$WORK/proj/.git/apex-sync/demo/"check-ok.*
 expect "hook: no marker blocks apex import"                  2 hook_in_proj "apex import -applicationid 100"
+# The verdict must come from the command TEXT, never from which shell tool asked:
+# both tools carry the same tool_input.command, and the hook runs nothing of the
+# caller's shell. That is what makes widening the matcher safe.
+expect "hook: no marker blocks it under PowerShell too"      2 hook_in_proj "apex import -applicationid 100" PowerShell
 expect "hook: no marker blocks apex export"                  2 hook_in_proj "sql <<< 'apex export -dir x'"
 expect "hook: unrelated command passes"                      0 hook_in_proj "ls -la"
 expect "hook: outside an onboarded repo passes"              0 hook_out_repo

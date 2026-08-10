@@ -19,6 +19,7 @@ Committed at the **project repo root**. Everything the guard needs to know about
 - `apexlangDir` — the directory passed to `apex export -dir` (its child `<appAlias>/` holds the `.apx` tree).
 - `sqlclConnection` — SQLcl saved connection name (`sql -name <conn>`); the schema must be able to read `APEX_APPLICATION_PAGES` for the app.
 - `ignorePaths` (optional) — paths relative to the app dir that exist only on one side by design (repo-only artifacts living inside the app dir, e.g. an `apex-exports/` folder with legacy SQL exports). Excluded from all comparisons.
+- `testUser` / `runtimeUrl` (optional) — read by **apex-sentinel**, not by the guard: the runtime app's test user and its URL, so a verification run doesn't rediscover them. Both are ordinary config; the password is **not** and never belongs in this file, which is committed (see `skills/apex-sentinel/setup.md` §2).
 
 Dependencies: `git`, SQLcl on PATH, and `jq` *or* `python3` (JSON parsing falls back automatically). The scripts probe the parser by **running** it, so a `python3` that exists without executing — the Microsoft Store stub — is rejected with that named as the likely cause instead of failing mid-run.
 
@@ -39,7 +40,9 @@ With no BASE yet, `check-import` cannot 3-way compare; it degrades to REMOTE-vs-
 
 ## 3. Enforcement hook (Claude Code)
 
-Layer 2 on top of process discipline: a `PreToolUse` hook that blocks any Bash command containing `apex import` / `apex export` unless a fresh sync-check marker exists (TTL 10 min).
+Layer 2 on top of process discipline: a `PreToolUse` hook that blocks any shell command containing `apex import` / `apex export` unless a fresh sync-check marker exists (TTL 10 min).
+
+The matcher names **both** shell tools — `Bash|PowerShell` — because Claude Code exposes them as two separate tools (`PowerShell` is not an alias of `Bash`, so a `Bash`-only matcher never fires on a Windows-native session). Widening it is safe precisely because the hook is **shell-agnostic**: both tools carry the same `tool_input.command` field, and the hook reads that text and pattern-matches it. It executes nothing from the caller's shell, so there is no shell syntax for it to get wrong. A matcher of that shape (letters and pipes only) is compared by **exact tool name**, not as a loose regex — it matches those two tools and nothing else.
 
 **Installed as a plugin?** Nothing to do — the plugin registers the hook itself (repo-root `hooks/hooks.json`, resolved via `${CLAUDE_PLUGIN_ROOT}`). It is safe globally: in a repo without `apex-sync.json` (or outside a git repo) the hook exits 0 and polices nothing.
 
@@ -50,7 +53,7 @@ Layer 2 on top of process discipline: a `PreToolUse` hook that blocks any Bash c
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",

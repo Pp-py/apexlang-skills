@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# apex-sync-guard — Claude Code PreToolUse hook (matcher: Bash).
+# apex-sync-guard — Claude Code PreToolUse hook (matcher: Bash|PowerShell).
+# Shell-agnostic by design: it reads tool_input.command — the field BOTH shell
+# tools carry — and decides by matching that text. Nothing from the caller's
+# shell is ever executed here, which is what makes covering a second tool a
+# matcher change and not a rewrite.
 # Blocks `apex import` / `apex export` unless a fresh matching sync-check
 # PASS marker exists (TTL 10 min). Direction-aware: an import needs a
 # check-import PASS, an export needs a check-export PASS.
