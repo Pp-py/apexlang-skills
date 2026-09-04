@@ -3,7 +3,7 @@
 **Use for:** input a user cannot give in one screen — an onboarding, a claim with several sections, a
 purchase request that collects a header and then its lines. Several steps, one outcome.
 
-**REQUIRED BACKGROUND:** `back-end-conventions.md` (single write-path, no COMMIT, error catalog).
+**REQUIRED BACKGROUND:** `back-end-conventions.md` (single write-path, no COMMIT, error catalog); `package-boundaries.md` §Test 1 if a step writes a second entity.
 
 **Contents:** the one decision (where partial state lives) · when the package writes · the shell ·
 validation across steps · going back · abandoned drafts · common mistakes · verify.
@@ -34,7 +34,10 @@ conditional.
 and is not one: it lives and dies with the session (so it does not give you resumability), it is
 untyped, no constraint or foreign key protects it, and nothing outside APEX can read it — which means
 you cannot test the wizard's logic without a browser session. If the wizard needs a place to put rows,
-that place is a table your package owns.
+that place is a table your package owns. A staging table is the one child the satellite test cannot
+classify — there is no parent row yet to carry a `NOT NULL` FK to (`package-boundaries.md` §Test 1,
+clause 1) — so ownership follows the operation instead: the package that will create the entity owns
+its staging area, and clears it when it does.
 
 ## When the package writes
 
@@ -53,6 +56,11 @@ PROCEDURE create_request (p_employee_id IN NUMBER,
 One call, at the final step, inside one transaction: header, lines and any derived rows land together
 or not at all. APEX commits on submit, the package does not (`back-end-conventions.md` §4), so a
 `-20xxx` from the last validation leaves the database exactly as it was.
+
+This stays on **one entity package** because the lines are a satellite of the header — `NOT NULL` FK
+to it, nothing else writes them, meaningless without it (`package-boundaries.md` §Test 1). A wizard
+whose final step also writes a second *independent* entity — reserving stock, moving a quota — puts
+the entry point on a `_flow` package that coordinates both instead.
 
 Per-step writes are the exception, and only with the draft-row model. Then each step gets its own
 procedure (`save_step_1`, `add_line`), and each one must leave the row **valid for its own status** —

@@ -23,14 +23,17 @@ PROCEDURE new_vigency (
     l_id      hr_surcharges.surcharge_id%TYPE;
     l_type    hr_surcharges.surcharge_type%TYPE;
     l_version hr_surcharges.version_no%TYPE;
+    l_from    hr_surcharges.valid_from%TYPE;
 BEGIN
-    -- locate the open vigency for this key
-    SELECT surcharge_id, surcharge_type, version_no
-      INTO l_id, l_type, l_version
+    -- Locate the open vigency for this key AND lock it: two concurrent calls must
+    -- not both close the same row.
+    SELECT surcharge_id, surcharge_type, version_no, valid_from
+      INTO l_id, l_type, l_version, l_from
       FROM hr_surcharges
-     WHERE code = p_code AND valid_to IS NULL;
+     WHERE code = p_code AND valid_to IS NULL
+       FOR UPDATE;
 
-    IF TRUNC(p_valid_from) <= (SELECT valid_from FROM hr_surcharges WHERE surcharge_id = l_id) THEN
+    IF TRUNC(p_valid_from) <= l_from THEN
         RAISE_APPLICATION_ERROR(pkg_errors.k_surcharge_invalid_date,
             'The new vigency must start after the current one.');
     END IF;
@@ -46,7 +49,15 @@ BEGIN
 END new_vigency;
 ```
 
-Invariant "one open row per key" is enforced by a partial unique index (`back-end-conventions.md` §6), not by the UI.
+Two details in there are not decoration:
+
+- **`valid_from` comes back in the same `SELECT INTO`.** PL/SQL does not accept a subquery in a
+  procedural expression, so `IF TRUNC(p_valid_from) <= (SELECT valid_from FROM ...)` does not compile
+  (`PLS-00405`). Fetch the value you are going to compare.
+- **`FOR UPDATE` on the open row.** The invariant "one open row per key" is enforced by a partial
+  unique index (`back-end-conventions.md` §6), not by the UI — but without the lock two concurrent
+  `new_vigency` calls both find the same open row, both close it, both insert, and the second one
+  surfaces as a raw `ORA-00001` instead of the friendly message the package exists to give.
 
 ## `.apx` — master (open rows only)
 
