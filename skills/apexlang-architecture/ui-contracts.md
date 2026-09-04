@@ -29,7 +29,7 @@ under *Cards*. That is the material for the split:
 | Related information (counts) | content row | the payload is a number, not an image |
 | Search results | either | cards when a thumbnail helps recognition; content row when the text is the signal |
 | Decision & action list (approve/reject) | either | see the full-card trap below |
-| Selectable master list | content row | it is the one with a documented selection contract (§7) |
+| Selectable master list | content row | it is the one with a documented selection contract (§8) |
 | People / users | either | cards for a directory grid, content row for a sidebar roster |
 | Product / media catalog | **cards** | media is the point: `media { source: urlColumn ... }` |
 | Timeline / activity feed | **content row** | grouping (`plugin-grouping`) has no cards equivalent |

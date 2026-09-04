@@ -20,7 +20,8 @@ CREATE OR REPLACE PACKAGE pkg_sectors AS
    * No internal COMMIT (the caller / APEX commits).
    * Business exceptions via pkg_errors (-208xx codes).
    */
-  PROCEDURE create_row (p_code IN VARCHAR2, p_name IN VARCHAR2);
+  PROCEDURE create_row (p_code IN VARCHAR2, p_name IN VARCHAR2,
+                        p_sector_id OUT hr_sectors.sector_id%TYPE);
   PROCEDURE update_row (p_sector_id IN NUMBER, p_code IN VARCHAR2,
                         p_name IN VARCHAR2, p_active_flag IN VARCHAR2);
   PROCEDURE delete_row (p_sector_id IN NUMBER);
@@ -40,7 +41,8 @@ END pkg_sectors;
 Business rules (uniqueness, "cannot delete while referenced", domain checks) are enforced **inside the package**, raising a named error. The UI is for *field-shape* hints only.
 
 ```plsql
-PROCEDURE create_row (p_code IN VARCHAR2, p_name IN VARCHAR2) IS
+PROCEDURE create_row (p_code IN VARCHAR2, p_name IN VARCHAR2,
+                      p_sector_id OUT hr_sectors.sector_id%TYPE) IS
   l_cnt PLS_INTEGER;
 BEGIN
   IF TRIM(p_code) IS NULL OR TRIM(p_name) IS NULL THEN
@@ -53,8 +55,11 @@ BEGIN
     RAISE_APPLICATION_ERROR(pkg_errors.k_sector_code_duplicate,
       'A sector with code ' || TRIM(p_code) || ' already exists.');
   END IF;
+  -- The generated PK comes back from the INSERT itself. Never re-SELECT it by a
+  -- mutable business column such as `code`.
   INSERT INTO hr_sectors (code, name, active_flag)
-  VALUES (UPPER(TRIM(p_code)), TRIM(p_name), 'Y');
+  VALUES (UPPER(TRIM(p_code)), TRIM(p_name), 'Y')
+  RETURNING sector_id INTO p_sector_id;
 END create_row;
 ```
 

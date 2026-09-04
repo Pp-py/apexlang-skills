@@ -37,9 +37,12 @@ guard from §7 and the recipes, not from here.
 
 ## Grammar status & gotchas
 
-Both `.apx` files pass `apex validate` against APEX 26.1 (SQLcl 26.1). Still re-validate
-against **your** APEX version before `apex import`, and make sure the example page numbers
-(30, 60, 62) and aliases don't collide with pages already in your app.
+All five `.apx` files across the three slices validate against the APEXlang package **2026.08.01**
+(`apexctl.mjs apexlang validate`, no database needed), with the two diagnostics that remain by
+design — the app-level breadcrumb entry and an Interactive Grid column `lov {}` block — documented
+in the repo README and in the slice that reports them. Still re-validate against **your** APEX
+version before `apex import`, and make sure the example page numbers (30, 41, 42, 60, 62) and
+aliases don't collide with pages already in your app.
 
 Non-obvious grammar rules these files respect (the parser rejects violations):
 

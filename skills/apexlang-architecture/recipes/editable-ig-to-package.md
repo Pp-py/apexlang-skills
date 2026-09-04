@@ -121,10 +121,9 @@ PROCEDURE save_row (
 BEGIN
     CASE p_row_status
         WHEN 'C' THEN
-            create_row(p_code, p_name);
-            SELECT sector_id INTO p_sector_id          -- return generated PK
-              FROM hr_sectors                          -- so the IG finalizes the new row
-             WHERE UPPER(code) = UPPER(TRIM(p_code));
+            -- create_row uses INSERT ... RETURNING sector_id INTO, so the PK comes
+            -- straight back. Never re-SELECT it by a mutable business column.
+            create_row(p_code, p_name, p_sector_id);
         WHEN 'U' THEN update_row(p_sector_id, p_code, p_name, NVL(p_active_flag,'Y'), p_row_version);
         WHEN 'D' THEN delete_row(p_sector_id, p_row_version);
         ELSE NULL;                                     -- unchanged rows don't reach here
