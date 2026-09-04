@@ -53,6 +53,7 @@ the whole folder "just in case".
 | Many fields in sections and its own URL — or edited without losing the list behind it | form page, drawer, `dialogFooter`, `pullOutEnd`, `formAutoRowProcessing` | `recipes/form-page-to-package.md` |
 | Parent plus its child collection in one screen | master-detail, header + lines, FK stamped on save | `recipes/master-detail-edit.md` |
 | The value has a validity period and history matters | vigency, rate/price history, `valid_from`/`valid_to`, append-only | `recipes/versioned-vigency-record.md` |
+| Input the user cannot give in one screen | wizard, multi-step, `@/wizard-modal-dialog`, draft row, staging | `recipes/wizard-multi-step.md` |
 | The verb is approve / reject / cancel, not "save" | workflow, state machine, status badge, transition guard | `recipes/workflow-state-transitions.md` |
 
 **The screen only reads** — how does the user find the row?
@@ -61,8 +62,10 @@ the whole folder "just in case".
 |---|---|---|
 | Filters over known columns, then browse | faceted search, facets, `filteredRegion`, cards, content row, directory | `recipes/master-faceted-search.md` |
 | Pick on the left, read the detail on the right — list or hierarchy | split view, list + detail, `fullRowLink`, tree, `selectedNodePageItem` | `recipes/split-view-selection.md` |
+| One record on its own page: facts, collections, comments, activity | item detail, `@/marquee`, tabs, `regionDisplaySelector`, contextual info, timeline | `recipes/item-detail-page.md` |
 | Glanceable numbers and trends | dashboard, KPI, `metricCard`, chart, landing page | `recipes/dashboard-kpis-charts.md` |
-| Aggregated pivots; sort, personalise, export | interactive report, IR, monthly/weekly view, `savedReport` | `recipes/analytical-report.md` |
+| The working list of an entity: sort, filter, save a view, act on a row | interactive report, IR, browse list, row actions, `savedReport` | `recipes/browse-interactive-report.md` |
+| Aggregated pivots and charts over the same data | analytical report, monthly/weekly view, `v_*` aggregation | `recipes/analytical-report.md` |
 
 **Alongside the recipe, always:**
 
@@ -90,7 +93,7 @@ Three sources, three jobs — do not blur them:
 | What should this pattern look like, and when is it the right pattern? | Oracle's UX Pattern Catalog app (26.1.4) |
 | Where does the logic live, what must the data layer project, and when may we deviate? | **this skill** |
 
-The read-side recipes were cross-checked against that catalog page by page. Where the catalog and the official page standards disagree — and they do, on the faceted-search results region, on hidden region headers, on projecting theme classes from SQL — the disagreement is resolved in `ui-contracts.md`, and any deviation must carry its reason in the region's `comments` block.
+The read-side recipes were built against that catalog. It is an Oracle sample app, not part of this skill, so recipes name its **patterns** (*Item Detail – Full*, *Faceted Search – Cards*) and never its page numbers, which are version-specific; a recipe cites it only where the citation carries an argument — usually a place where this skill deliberately does something else. Where the catalog and the official page standards disagree — and they do, on the faceted-search results region, on hidden region headers, on projecting theme classes from SQL — the disagreement is resolved in `ui-contracts.md`, and any deviation must carry its reason in the region's `comments` block.
 
 ## Common mistakes (from agent baselines)
 
