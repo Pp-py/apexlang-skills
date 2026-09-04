@@ -25,7 +25,7 @@ region sectors (
         type: sqlQuery
         sqlQuery:
             ```sql
-            select sector_id, code, name, active_flag
+            select sector_id, code, name, active_flag, row_version
               from hr_sectors
              order by code
             ```
@@ -36,6 +36,10 @@ region sectors (
     column SECTOR_ID (
         type: hidden
         source { databaseColumn: SECTOR_ID  dataType: number  primaryKey: true }
+    )
+    column ROW_VERSION (
+        type: hidden                                  -- lost-update guard, back-end-conventions.md §7
+        source { databaseColumn: ROW_VERSION  dataType: number }
     )
     column CODE (
         type: textField
@@ -93,7 +97,8 @@ process save-sectors (
                         p_sector_id   => :SECTOR_ID,  -- IN OUT: receives PK on insert
                         p_code        => :CODE,
                         p_name        => :NAME,
-                        p_active_flag => :ACTIVE_FLAG);
+                        p_active_flag => :ACTIVE_FLAG,
+                        p_row_version => :ROW_VERSION);
                 end if;
             end;
             ```
@@ -110,7 +115,8 @@ PROCEDURE save_row (
     p_sector_id   IN OUT hr_sectors.sector_id%TYPE,
     p_code        IN     hr_sectors.code%TYPE,
     p_name        IN     hr_sectors.name%TYPE,
-    p_active_flag IN     hr_sectors.active_flag%TYPE
+    p_active_flag IN     hr_sectors.active_flag%TYPE,
+    p_row_version IN     hr_sectors.row_version%TYPE   -- ignored on 'C'
 ) IS
 BEGIN
     CASE p_row_status
@@ -119,8 +125,8 @@ BEGIN
             SELECT sector_id INTO p_sector_id          -- return generated PK
               FROM hr_sectors                          -- so the IG finalizes the new row
              WHERE UPPER(code) = UPPER(TRIM(p_code));
-        WHEN 'U' THEN update_row(p_sector_id, p_code, p_name, NVL(p_active_flag,'Y'));
-        WHEN 'D' THEN delete_row(p_sector_id);
+        WHEN 'U' THEN update_row(p_sector_id, p_code, p_name, NVL(p_active_flag,'Y'), p_row_version);
+        WHEN 'D' THEN delete_row(p_sector_id, p_row_version);
         ELSE NULL;                                     -- unchanged rows don't reach here
     END CASE;
 END save_row;
@@ -131,6 +137,7 @@ All validation (uniqueness, "cannot delete while referenced") lives in `create_r
 ## Non-obvious points
 
 - **`p_sector_id` is IN OUT.** On insert it returns the new PK so the IG can finalize the row; on update/delete it carries the existing PK in.
+- **`ROW_VERSION` is projected, hidden, and passed back.** It is the lost-update guard that replaces the one Automatic Row Processing was providing (`back-end-conventions.md` §7). Leave it out and the grid silently overwrites a colleague's save; the IG re-reads the bumped value after each successful save.
 - **Process point is `afterSubmit`**, not `processing` — IG per-row binds (`:CODE`, `:APEX$ROW_STATUS`) are only available there.
 - **Required-field checks go in the process**, because IG column validations don't fire on Save. Use `apex_error.add_error(..., c_inline_in_notification)` for clean inline text.
 - **Two grids on one page:** give each its own `editableRegion`-bound process, ordered by `sequence`.

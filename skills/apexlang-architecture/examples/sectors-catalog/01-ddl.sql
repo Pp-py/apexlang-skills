@@ -5,6 +5,7 @@ CREATE TABLE hr_sectors (
     code         VARCHAR2(30)  NOT NULL,
     name         VARCHAR2(100) NOT NULL,
     active_flag  VARCHAR2(1)   DEFAULT 'Y' NOT NULL,
+    row_version  NUMBER        DEFAULT 1 NOT NULL,   -- lost-update guard, section 7
     CONSTRAINT hr_sectors_pk PRIMARY KEY (sector_id),
     CONSTRAINT hr_sectors_active_ck CHECK (active_flag IN ('Y','N'))
 );

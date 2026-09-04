@@ -108,6 +108,51 @@ derivation belongs, is in `ui-contracts.md` §2–§4.
 - **Soft delete via audit columns:** transactional rows carry `cancelled_at`/`cancelled_by`/`cancel_reason`; queries filter `cancelled_at IS NULL`. Preserves history.
 - **Append-only vigencies:** time-valid rows (rates, assignments) keep history by closing the old row (`valid_to = new_from − 1`) and inserting a new open one, enforcing "one open row per key" with a **partial unique index**: `CREATE UNIQUE INDEX ... ON t (CASE WHEN valid_to IS NULL THEN key END)`. (Use the single-expression CASE form; the multi-column `(key, CASE WHEN ... THEN 1 END)` form misfires on Oracle 23ai.)
 
+## 7. Lost-update protection: the version token
+
+Routing writes through a package removes *Automatic Row Processing* — and with it the row-version
+check APEX was performing for free. Nothing above replaces it, so a package that updates by PK alone
+is **more** exposed to lost updates than the mechanism it displaced: two users open the same employee,
+both save, and the second silently overwrites the first with no error anywhere.
+
+Every `update_row`, `save_row` and state transition therefore takes the version the page read, and
+updates conditionally:
+
+```plsql
+PROCEDURE update_row (p_employee_id IN NUMBER,
+                      p_full_name   IN VARCHAR2,
+                      p_row_version IN NUMBER) IS      -- what the page loaded
+BEGIN
+    UPDATE hr_employees
+       SET full_name   = TRIM(p_full_name),
+           row_version = row_version + 1               -- bumped in the same statement
+     WHERE employee_id = p_employee_id
+       AND row_version = p_row_version;                -- the guard
+
+    IF SQL%ROWCOUNT = 0 THEN
+        -- The row is gone, or someone saved first. Both are conflicts to the user.
+        RAISE_APPLICATION_ERROR(pkg_errors.k_row_changed,
+            'This record was changed by someone else since you opened it. Reload and try again.');
+    END IF;
+END update_row;
+```
+
+- `row_version NUMBER DEFAULT 1 NOT NULL` on every table an interactive screen edits. An `updated_at`
+  timestamp also works, but a counter cannot collide inside one clock tick.
+- **The bump belongs to the same `UPDATE`.** A separate statement reopens the window it closes.
+- **`SQL%ROWCOUNT = 0` is the signal.** Never pre-check with a `SELECT` — that *is* the race.
+- One shared code in `pkg_errors` for it, outside the per-domain bands (§3): every table raises the
+  same conflict and the user reads the same sentence.
+- A transition that reads its row `FOR UPDATE` (`recipes/workflow-state-transitions.md`) is already
+  serialized against other *transitions*, but still needs the token if a form can edit that row's
+  other columns.
+- Delete needs it too when the screen offers delete-after-read; a hard `DELETE ... AND row_version =`
+  with the same `SQL%ROWCOUNT` check. Soft delete via §6 goes through `update_row` and inherits it.
+
+The UI half is one hidden value carried back on submit — a hidden IG column
+(`recipes/editable-ig-to-package.md`) or a hidden page item (`recipes/form-page-to-package.md`). It is
+not optional: a package with the guard and a page that does not send the token fails every save.
+
 ## Layering summary
 
 | Layer | Job |

@@ -82,7 +82,7 @@ the whole folder "just in case".
 
 | Read when | File |
 |---|---|
-| Anything writes | `back-end-conventions.md` — single write-path, `-20xxx` catalog, no-COMMIT, views, soft delete, vigencies |
+| Anything writes | `back-end-conventions.md` — single write-path, `-20xxx` catalog, no-COMMIT, views, soft delete, vigencies, version token |
 | Anything reads | `ui-contracts.md` — state tokens, drill-down URLs, derived columns, `cards` vs `contentRow`, selection state, deviating from an official default |
 | An operation writes more than one table | `package-boundaries.md` — which layer owns it (entity / `_flow` / `_api`), the satellite and cross-entity tests, when NOT a package, the god-package threshold |
 
@@ -136,3 +136,4 @@ Page-level validations follow a fixed skeleton — static ID prefixed `VAL_`, bl
 - A package writes a table it does not own — neither its own entity nor one of that entity's satellites.
 - A `_flow` package contains `INSERT`/`UPDATE`/`DELETE` instead of calling the entity packages.
 - A `_flow` package wraps a single entity, or an operation the `.apx` could just call in sequence.
+- A write-path package updates by PK alone, with no version token — the lost-update guard that Automatic Row Processing used to provide (`back-end-conventions.md` §7).

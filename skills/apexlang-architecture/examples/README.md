@@ -29,6 +29,12 @@ README has the exact commands.
 - **DB constraints as backstop:** unique index / CHECK guarantee correctness; the package gives
   the friendly message.
 
+**One convention these slices do NOT yet carry:** the version token of
+`back-end-conventions.md` §7. The tables declare `row_version` and `00-pkg_errors.sql` reserves
+`k_row_changed`, but the packages still update by primary key alone — so two users editing the same
+row lose one of the two saves. Copy the write-path shape from these files, and the lost-update
+guard from §7 and the recipes, not from here.
+
 ## Grammar status & gotchas
 
 Both `.apx` files pass `apex validate` against APEX 26.1 (SQLcl 26.1). Still re-validate
