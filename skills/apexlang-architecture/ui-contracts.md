@@ -12,14 +12,14 @@ what follows is only the part no one else owns.
 **Contents:** 1 cards vs content row · 2 state tokens, never CSS classes · 3 drill-down URLs as a
 projected column · 4 where a derived column lives · 5 formatting and directives · 6 scoped custom
 CSS · 7 contextual detail actions · 8 selection state on a split view · 9 deviating from an
-official default.
+official default · 10 item defaults in shared components.
 
 ## 1. Cards or Content Row
 
 The official contract stops at "prefer `Cards` **or** `Content Row` for browse/list experiences"
-(`apex.region-contracts.md`) — it does not separate them. Oracle's UX Pattern Catalog builds the same
-catalogue of use cases twice, once per primitive (`p01100-content-rows`, `p01110-cards`), which is
-the material for the split:
+(`apex.region-contracts.md`) — it does not separate them. Oracle's UX Pattern Catalog answers it
+implicitly, by building the same catalogue of use cases twice: once under *Content Rows* and once
+under *Cards*. That is the material for the split:
 
 | Use case | Primitive | Why |
 |---|---|---|
@@ -62,8 +62,9 @@ iconAndBadge { badgeColumn: STATUS_LABEL  badgeCssClasses: u-&BADGE_STATE. }
 ```
 
 The class is composed **in the attribute**; the SQL stays free of presentation. Projecting
-`'u-success'` from the query (as `p01110-cards` does, while `p00210` does it right) puts theme
-class names in the data layer, where a theme upgrade cannot find them.
+`'u-success'` from the query — as the catalog's *Cards* primitive does, while its *Faceted Search –
+Cards* pattern does it right — puts theme class names in the data layer, where a theme upgrade cannot find
+them.
 
 Same rule, stronger: **never project HTML.** The live compiler rejects it
 (`REPORT_SQL_HTML_LITERAL_FORBIDDEN_001`) and it is non-negotiable rule 1 of
@@ -187,3 +188,39 @@ comments {
 ```
 
 No reason in the source means take the default.
+
+## 10. Item defaults belong to shared components
+
+A `componentSetting` fixes an item type's behaviour once for the whole app, in
+`shared-components/component-settings.apx`:
+
+```
+componentSetting (
+    type: item
+    name: switch
+    settings { onValue: Y }
+)
+
+componentSetting (
+    type: item
+    name: checkbox
+    settings { uncheckedValue: N }
+)
+```
+
+This looks like a preference and is a **data contract**. The value a switch stores has to agree with
+the `CHECK (active_flag IN ('Y','N'))` on the column and with every `WHERE active_flag = 'Y'` in the
+app (`back-end-conventions.md` §6). Declared once, that agreement lives in one file and changes in
+one place. Declared per item, it is restated on every page — and the fiftieth item is the one that
+stores `'YES'`.
+
+`uncheckedValue` deserves its own line, because an unchecked HTML checkbox posts **nothing**. That
+setting is what makes "unchecked" mean `N` rather than null. Without it a `NOT NULL` column rejects
+the row at runtime, and a nullable one quietly grows a third state the model does not have.
+
+Override on the item only when that entity genuinely stores something else, and say why in its
+`comments` (§9).
+
+One hygiene note: enabling a component is a decision, not a default. Oracle's catalog ships settings
+for `map`, `geocodedAddress` and REST sources that no page uses — dead configuration advertising
+capabilities the app does not have. Keep the file to what the app actually uses.

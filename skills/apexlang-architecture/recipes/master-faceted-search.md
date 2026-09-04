@@ -65,7 +65,7 @@ needs sorting, personalisation, export → `interactiveReport`.
 
 **This is a documented deviation.** The official default results region is a Classic Report with its
 header visible, and hiding a region header is listed there as an anti-pattern — yet the catalog's
-own browse patterns (`p00210` cards, `p00220` content row) hide it, because the count and the active
+own *Faceted Search – Cards* and *Faceted Search – Content Row* patterns hide it, because the count and the active
 facets move up into the title bar. Fine, provided the reason is in the region's `comments`
 (`ui-contracts.md` §9). No reason in the source means take the default.
 
