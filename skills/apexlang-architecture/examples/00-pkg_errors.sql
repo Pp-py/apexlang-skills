@@ -14,6 +14,15 @@ CREATE OR REPLACE PACKAGE pkg_errors AS
   e_sector_invalid_data   EXCEPTION;  PRAGMA EXCEPTION_INIT(e_sector_invalid_data,   -20801);
   e_sector_in_use         EXCEPTION;  PRAGMA EXCEPTION_INIT(e_sector_in_use,         -20802);
 
+  -- Employees band: -20810 .. -20819
+  k_employee_invalid_data     CONSTANT NUMBER := -20810;
+  k_employee_email_duplicate  CONSTANT NUMBER := -20811;
+  k_employee_sector_inactive  CONSTANT NUMBER := -20812;
+
+  e_employee_invalid_data     EXCEPTION;  PRAGMA EXCEPTION_INIT(e_employee_invalid_data,    -20810);
+  e_employee_email_duplicate  EXCEPTION;  PRAGMA EXCEPTION_INIT(e_employee_email_duplicate, -20811);
+  e_employee_sector_inactive  EXCEPTION;  PRAGMA EXCEPTION_INIT(e_employee_sector_inactive, -20812);
+
   -- Absences band: -20900 .. -20909
   k_absence_invalid_data   CONSTANT NUMBER := -20900;
   k_absence_invalid_status CONSTANT NUMBER := -20901;
