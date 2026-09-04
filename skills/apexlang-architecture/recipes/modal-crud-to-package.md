@@ -123,3 +123,7 @@ event aliases like `dialogClosed` — they are invalid for `when.event`.
 ## Why modal over IG here
 
 Choose the modal when the entity has many fields, multi-step input, or per-record workflow (approve/reject). Choose the editable IG (other recipe) for flat catalogs edited in bulk. Both route writes through the same package.
+
+Note the official default for a single-row create/edit opened from a report row is the **end/right
+drawer**, with the centred modal dialog reserved for cases that ask for it explicitly. The write path
+is identical either way — `form-page-to-package.md` has the drawer container and its close contract.
