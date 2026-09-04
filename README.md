@@ -10,7 +10,7 @@ Three agent skills for building **Oracle APEX** apps as **APEXlang** declarative
 
 | Skill | Question it answers |
 |---|---|
-| [`apexlang-architecture`](skills/apexlang-architecture/SKILL.md) | **WHERE does logic go?** Every write through one PL/SQL package per table (single write-path), never region-bound Automatic DML. Ships 8 screen-archetype recipes. |
+| [`apexlang-architecture`](skills/apexlang-architecture/SKILL.md) | **WHERE does logic go?** Every write through one PL/SQL package per table (single write-path), never region-bound Automatic DML. Ships 10 screen-archetype recipes. |
 | [`apex-sync-guard`](skills/apex-sync-guard/SKILL.md) | **Is it SAFE to import/export now?** `apex import`/`export` are total silent overwrites. Keeps a syncpoint, gates both directions, drives a 3-way merge when both replicas moved. Wrapper script + blocking `PreToolUse` hook. |
 | [`apex-sentinel`](skills/apex-sentinel/SKILL.md) | **Does it WORK?** Drives the running page in a real browser (Playwright CLI/MCP) before any "it works" claim. Never degrades to "validate passed". |
 
@@ -38,7 +38,7 @@ Installs the three skills and auto-registers the sync-guard hook (it no-ops in p
 
 ## Examples
 
-Two runnable vertical slices (DDL + write-path package + `.apx` + browser-verification walkthrough): an editable Interactive Grid and an approval state machine. Start at [`examples/README.md`](skills/apexlang-architecture/examples/README.md) — and still `apex validate` against **your** APEX version before importing.
+Three runnable vertical slices (DDL + write-path package + `.apx` + browser-verification walkthrough): an editable Interactive Grid, an approval state machine, and a single-entity form (full page + drawer). Start at [`examples/README.md`](skills/apexlang-architecture/examples/README.md) — and still `apex validate` against **your** APEX version before importing.
 
 The `.apx` are validated against the APEXlang package **2026.08.01** (`apexctl.mjs apexlang validate`, no database needed). Two diagnostics remain by design and are documented where they occur: the app-level breadcrumb entry, which only the consuming app's `shared-components/breadcrumbs.apx` can satisfy, and an Interactive Grid column `lov {}` block that the grammar allows but the linter's component table does not list.
 

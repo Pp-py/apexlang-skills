@@ -1,6 +1,6 @@
 # Examples — reproducible vertical slices
 
-Two end-to-end slices that demonstrate the skill's core principle (a thin `.apx` front over
+Three end-to-end slices that demonstrate the skill's core principle (a thin `.apx` front over
 a centralized PL/SQL write-path core) and that you can deploy, import, and then verify with
 the sibling **apex-sentinel** skill.
 
@@ -8,6 +8,7 @@ the sibling **apex-sentinel** skill.
 |---|---|---|---|
 | `sectors-catalog/` | editable Interactive Grid | `recipes/editable-ig-to-package.md` | `apex-sentinel/examples/sectors-catalog.md` |
 | `absences-workflow/` | state machine / transitions | `recipes/workflow-state-transitions.md` | `apex-sentinel/examples/absences-workflow.md` |
+| `employees-form/` | single-entity form (full page + drawer) | `recipes/form-page-to-package.md` | `apex-sentinel/checks/form-page.md` |
 
 ## Shared core (deploy once)
 

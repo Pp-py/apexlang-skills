@@ -90,6 +90,9 @@ The checks in `checks/` are written against these rules; `setup.md` §0 configur
 |---|---|
 | Editable Interactive Grid | `checks/editable-ig.md` |
 | Master + create/edit modal | `checks/modal-crud.md` |
+| Full-page / drawer form | `checks/form-page.md` |
+| Split view (list or tree + detail) | `checks/split-view.md` |
+| Browse & faceted search | `checks/browse-search.md` |
 | Workflow / state transition | `checks/workflow-state.md` |
 | Dashboard / analytical report | `checks/dashboard-report.md` |
 

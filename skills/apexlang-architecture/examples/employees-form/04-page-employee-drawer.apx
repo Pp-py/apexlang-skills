@@ -1,0 +1,344 @@
+page 42 (
+    name: Employee (drawer)
+    alias: EMPLOYEE-DRAWER
+    title: Employee
+    appearance {
+        pageMode: modalDialog
+        dialogTemplate: @/drawer
+        templateOptions: [
+            #DEFAULT#
+            js-dialog-class-t-Drawer--pullOutEnd
+        ]
+    }
+    dialog {
+        chained: false
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+    }
+    help {
+        helpText: Create or update one employee without leaving the list behind the drawer. A business error keeps the drawer open with the message.
+    }
+
+    region form-employee (
+        name: Employee
+        type: staticContent
+        layout {
+            sequence: 10
+            slot: contentBody
+        }
+        appearance {
+            template: @/blank-with-attributes
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region basic-data (
+        name: Basic data
+        type: staticContent
+        source {
+            htmlCode: <p>Identification and contact.</p>
+        }
+        layout {
+            sequence: 10
+            parentRegion: @form-employee
+            slot: regionBody
+        }
+        appearance {
+            template: @/content-block
+            templateOptions: [
+                #DEFAULT#
+                t-ContentBlock--h2
+            ]
+            renderComponents: belowContent
+        }
+    )
+
+    region form-buttons (
+        name: Buttons
+        type: staticContent
+        layout {
+            sequence: 20
+            slot: dialogFooter
+        }
+        appearance {
+            template: @/buttons-container
+            templateOptions: [
+                #DEFAULT#
+                t-ButtonRegion--noUI
+            ]
+        }
+    )
+
+    pageItem P42_EMPLOYEE_ID (
+        type: hidden
+        layout {
+            sequence: 10
+            region: @basic-data
+            slot: regionBody
+        }
+        security {
+            sessionStateProtection: checksumRequiredSessionLevel
+        }
+    )
+
+    pageItem P42_FULL_NAME (
+        type: textField
+        label {
+            label: Full name
+            alignment: left
+        }
+        layout {
+            sequence: 20
+            region: @basic-data
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/required-floating
+            templateOptions: #DEFAULT#
+        }
+        validation {
+            valueRequired: true
+            maxLength: 120
+        }
+        help {
+            inlineHelpText: Legal name as on the ID document.
+        }
+    )
+
+    pageItem P42_EMAIL (
+        type: textField
+        label {
+            label: Email
+            alignment: left
+        }
+        settings {
+            subtype: email
+        }
+        layout {
+            sequence: 30
+            region: @basic-data
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/required-floating
+            templateOptions: #DEFAULT#
+        }
+        validation {
+            valueRequired: true
+            maxLength: 150
+        }
+        help {
+            inlineHelpText: Work address; must be unique.
+        }
+    )
+
+    pageItem P42_SECTOR_ID (
+        type: selectList
+        label {
+            label: Sector
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                select name  as d,
+                       sector_id as r
+                  from hr_sectors
+                 where active_flag = 'Y'
+                 order by name
+                ```
+            displayNullValue: false
+        }
+        layout {
+            sequence: 40
+            region: @basic-data
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/required-floating
+            templateOptions: #DEFAULT#
+        }
+        validation {
+            valueRequired: true
+        }
+        help {
+            inlineHelpText: Only active sectors are listed.
+        }
+    )
+
+    button cancel (
+        buttonName: CANCEL
+        label: Cancel
+        layout {
+            sequence: 10
+            region: @form-buttons
+            slot: close
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            action: definedByDynamicAction
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    button apply-changes (
+        buttonName: APPLY-CHANGES
+        label: Apply Changes
+        layout {
+            sequence: 20
+            region: @form-buttons
+            slot: next
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+        serverSideCondition {
+            type: itemIsNotNull
+            item: P42_EMPLOYEE_ID
+        }
+    )
+
+    button create (
+        buttonName: CREATE
+        label: Create
+        layout {
+            sequence: 30
+            region: @form-buttons
+            slot: create
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+        serverSideCondition {
+            type: itemIsNull
+            item: P42_EMPLOYEE_ID
+        }
+    )
+
+    dynamicAction cancel-drawer (
+        name: Cancel drawer
+        execution {
+            sequence: 10
+        }
+        when {
+            event: click
+            selectionType: button
+            button: @cancel
+        }
+
+        action native-dialog-cancel (
+            action: cancelDialog
+            execution {
+                sequence: 10
+                fireOnInit: false
+            }
+        )
+
+    )
+
+    process load-employee (
+        name: Load employee
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                begin
+                    if :P42_EMPLOYEE_ID is not null then
+                        select full_name, email, sector_id
+                          into :P42_FULL_NAME, :P42_EMAIL, :P42_SECTOR_ID
+                          from hr_employees
+                         where employee_id = :P42_EMPLOYEE_ID;
+                    end if;
+                end;
+                ```
+        }
+        execution {
+            sequence: 10
+            point: beforeHeader
+        }
+    )
+
+    process create-employee (
+        name: Create employee
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                declare
+                    l_employee_id number;
+                begin
+                    pkg_employees.create_row(
+                        p_full_name   => :P42_FULL_NAME,
+                        p_email       => :P42_EMAIL,
+                        p_sector_id   => :P42_SECTOR_ID,
+                        p_employee_id => l_employee_id
+                    );
+                    :P42_EMPLOYEE_ID := l_employee_id;
+                end;
+                ```
+        }
+        execution {
+            sequence: 20
+        }
+        serverSideCondition {
+            type: requestIsContainedInValue
+            value: CREATE
+        }
+    )
+
+    process update-employee (
+        name: Update employee
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                begin
+                    pkg_employees.update_row(
+                        p_employee_id => :P42_EMPLOYEE_ID,
+                        p_full_name   => :P42_FULL_NAME,
+                        p_email       => :P42_EMAIL,
+                        p_sector_id   => :P42_SECTOR_ID
+                    );
+                end;
+                ```
+        }
+        execution {
+            sequence: 30
+        }
+        serverSideCondition {
+            type: requestIsContainedInValue
+            value: APPLY-CHANGES
+        }
+    )
+
+    process close-drawer (
+        name: Close drawer
+        type: closeDialog
+        execution {
+            sequence: 90
+        }
+        serverSideCondition {
+            type: requestIsContainedInValue
+            value: CREATE,APPLY-CHANGES
+        }
+    )
+
+)

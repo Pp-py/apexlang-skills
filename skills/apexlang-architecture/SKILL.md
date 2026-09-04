@@ -1,6 +1,6 @@
 ---
 name: apexlang-architecture
-description: Use when deciding WHERE business logic, validation, or DML belongs in an Oracle APEX app written as APEXlang (.apx) — routing every write through one PL/SQL package per table instead of region-bound Automatic DML, and architecting screens that write (editable Interactive Grids, modal CRUD, master-detail, workflows, versioned/vigency records) or read (dashboards, faceted search, analytical reports). NOT for .apx grammar/validate/import/round-trip (use the official `apex` skill) or one-off read-only pages with no reuse.
+description: Use when deciding WHERE business logic, validation, or DML belongs in an Oracle APEX app written as APEXlang (.apx) — routing every write through one PL/SQL package per table instead of region-bound Automatic DML, and architecting screens that write (editable Interactive Grids, modal CRUD, full-page and drawer forms, master-detail, workflows, versioned/vigency records) or read (dashboards, faceted search, split-view browsers, analytical reports), including what the SQL/view must project to feed cards, content rows, badges and drill-down links. NOT for .apx grammar/validate/import/round-trip (use the official `apex` skill) or one-off read-only pages with no reuse.
 ---
 
 # APEXlang Architecture
@@ -38,22 +38,59 @@ DML in page processes                  All DML behind the package API
 
 **This is not a deviation from the official standard — it is the exception the standard itself names.** `apex.interactive-grid-page.md` lists Automatic Row Processing as non-negotiable rule 6 (line 12), then carves it out under *Process Guidance* (line 49): *"do not substitute custom PL/SQL **unless invoking a dedicated API**."* The write-path package **is** that dedicated API. The per-row process is equally official: `executeCondition: forEachRow`, a property of the process's `serverSideCondition` group (paired with `executionScope`) in the APEXlang grammar — not a workaround.
 
-## Recipes (one per screen archetype)
+## Which file to open
 
-| Building | Recipe |
+Read the **one** recipe the signal points to, plus its background file below. Two recipes at most,
+and only when the screen genuinely combines archetypes (a faceted list that opens a drawer). Never
+the whole folder "just in case".
+
+**The screen writes** — what shape is the edit?
+
+| Signal | Keywords | Read |
+|---|---|---|
+| Flat catalog, several rows edited in one sitting | interactive grid, inline edit, bulk edit, `save_row`, `APEX$ROW_STATUS` | `recipes/editable-ig-to-package.md` |
+| One row at a time, few fields, opened from a master list | modal, popup, edit icon on a report row | `recipes/modal-crud-to-package.md` |
+| Many fields in sections and its own URL — or edited without losing the list behind it | form page, drawer, `dialogFooter`, `pullOutEnd`, `formAutoRowProcessing` | `recipes/form-page-to-package.md` |
+| Parent plus its child collection in one screen | master-detail, header + lines, FK stamped on save | `recipes/master-detail-edit.md` |
+| The value has a validity period and history matters | vigency, rate/price history, `valid_from`/`valid_to`, append-only | `recipes/versioned-vigency-record.md` |
+| The verb is approve / reject / cancel, not "save" | workflow, state machine, status badge, transition guard | `recipes/workflow-state-transitions.md` |
+
+**The screen only reads** — how does the user find the row?
+
+| Signal | Keywords | Read |
+|---|---|---|
+| Filters over known columns, then browse | faceted search, facets, `filteredRegion`, cards, content row, directory | `recipes/master-faceted-search.md` |
+| Pick on the left, read the detail on the right — list or hierarchy | split view, list + detail, `fullRowLink`, tree, `selectedNodePageItem` | `recipes/split-view-selection.md` |
+| Glanceable numbers and trends | dashboard, KPI, `metricCard`, chart, landing page | `recipes/dashboard-kpis-charts.md` |
+| Aggregated pivots; sort, personalise, export | interactive report, IR, monthly/weekly view, `savedReport` | `recipes/analytical-report.md` |
+
+**Alongside the recipe, always:**
+
+| Read when | File |
 |---|---|
-| Editable catalog (inline add/edit/delete) | `recipes/editable-ig-to-package.md` |
-| Master list + create/edit modal | `recipes/modal-crud-to-package.md` |
-| Parent + child collection edited together | `recipes/master-detail-edit.md` |
-| Time-versioned value (rate/price history) | `recipes/versioned-vigency-record.md` |
-| Request/approval state machine | `recipes/workflow-state-transitions.md` |
-| Searchable master with filters | `recipes/master-faceted-search.md` |
-| Home dashboard (KPIs + charts) | `recipes/dashboard-kpis-charts.md` |
-| Analytical report (IRs + charts) | `recipes/analytical-report.md` |
+| Anything writes | `back-end-conventions.md` — single write-path, `-20xxx` catalog, no-COMMIT, views, soft delete, vigencies |
+| Anything reads | `ui-contracts.md` — state tokens, drill-down URLs, derived columns, `cards` vs `contentRow`, selection state, deviating from an official default |
 
-The PL/SQL core conventions every recipe relies on — single write-path, error catalog, no-COMMIT, views, vigencies/soft-delete — are in `back-end-conventions.md`. **Read it before the recipes.**
+Unsure which term the source uses? Search before opening:
 
-Two runnable end-to-end slices (DDL + package + `.apx`, deploy-and-verify) live in `examples/` — start at `examples/README.md`. Recipe snippets are architectural shorthand, not import-ready grammar; the examples' `.apx` are `apex validate`-green — copy grammar from them (or the official `apex` skill), architecture from the recipes.
+```bash
+grep -rln "drawer\|closeDialog" skills/apexlang-architecture/recipes/
+grep -rn  "badgeCssClasses\|BADGE_STATE" skills/apexlang-architecture/
+```
+
+Three runnable end-to-end slices (DDL + package + `.apx`, deploy-and-verify) live in `examples/` — start at `examples/README.md`. Recipe snippets are architectural shorthand, not import-ready grammar; the examples' `.apx` are `apex validate`-green — copy grammar from them (or the official `apex` skill), architecture from the recipes.
+
+## Where each layer's authority comes from
+
+Three sources, three jobs — do not blur them:
+
+| Question | Authority |
+|---|---|
+| Is this valid `.apx`? Which properties, templates, slots exist? | official `apex` skill (APEXlang 2026.08.01) |
+| What should this pattern look like, and when is it the right pattern? | Oracle's UX Pattern Catalog app (26.1.4) |
+| Where does the logic live, what must the data layer project, and when may we deviate? | **this skill** |
+
+The read-side recipes were cross-checked against that catalog page by page. Where the catalog and the official page standards disagree — and they do, on the faceted-search results region, on hidden region headers, on projecting theme classes from SQL — the disagreement is resolved in `ui-contracts.md`, and any deviation must carry its reason in the region's `comments` block.
 
 ## Common mistakes (from agent baselines)
 

@@ -76,6 +76,10 @@ Packages are the **write** path. Reads go straight to SQL:
 
 Do not route reporting through the write-path package.
 
+Views and inline reads project **data and plain tokens** — a state token, a `apex_page.get_url` link,
+a count — never CSS class names or HTML. What each UI pattern needs projected, and where that
+derivation belongs, is in `ui-contracts.md` §2–§4.
+
 ## 6. Recurring data patterns
 
 - **Soft delete via flag:** catalogs carry `active_flag` ('Y'/'N'); queries filter `active_flag='Y'`. Inactivation is blocked while referenced.
