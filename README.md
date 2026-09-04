@@ -29,7 +29,7 @@ They close one loop: **architect → build (`.apx` + package) → sync-check →
 
 | Skill | Question it answers |
 |---|---|
-| [`apexlang-architecture`](skills/apexlang-architecture/SKILL.md) | **WHERE does logic go?** Every write through one PL/SQL package per table (single write-path), never region-bound Automatic DML. Ships 13 screen-archetype recipes. |
+| [`apexlang-architecture`](skills/apexlang-architecture/SKILL.md) | **WHERE does logic go?** Every write through a PL/SQL package (single write-path), never region-bound Automatic DML — plus which package owns it: the entity, a multi-entity flow, or neither. Ships 13 screen-archetype recipes. |
 | [`apex-sync-guard`](skills/apex-sync-guard/SKILL.md) | **Is it SAFE to import/export now?** `apex import`/`export` are total silent overwrites. Keeps a syncpoint, gates both directions, drives a 3-way merge when both replicas moved. Wrapper script + blocking `PreToolUse` hook. |
 | [`apex-sentinel`](skills/apex-sentinel/SKILL.md) | **Does it WORK?** Drives the running page in a real browser (Playwright CLI/MCP) before any "it works" claim. Never degrades to "validate passed". |
 

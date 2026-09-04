@@ -1,6 +1,6 @@
 ---
 name: apexlang-architecture
-description: Use when deciding WHERE business logic, validation, or DML belongs in an Oracle APEX app written as APEXlang (.apx) — routing every write through one PL/SQL package per table instead of region-bound Automatic DML, and architecting screens that write (editable Interactive Grids, modal CRUD, full-page and drawer forms, master-detail, workflows, versioned/vigency records) or read (dashboards, faceted search, split-view browsers, analytical reports), including what the SQL/view must project to feed cards, content rows, badges and drill-down links. NOT for .apx grammar/validate/import/round-trip (use the official `apex` skill) or one-off read-only pages with no reuse.
+description: Use when deciding WHERE business logic, validation, or DML belongs in an Oracle APEX app written as APEXlang (.apx) — routing every write through a PL/SQL package instead of region-bound Automatic DML and deciding which package owns it (one entity, a multi-entity flow, an external system) or whether the rule belongs in a database constraint, the UI, or no package at all, and architecting screens that write (editable Interactive Grids, modal CRUD, full-page and drawer forms, master-detail, workflows, versioned/vigency records) or read (dashboards, faceted search, split-view browsers, analytical reports), including what the SQL/view must project to feed cards, content rows, badges and drill-down links. NOT for .apx grammar/validate/import/round-trip (use the official `apex` skill) or one-off read-only pages with no reuse.
 ---
 
 # APEXlang Architecture
@@ -10,6 +10,10 @@ description: Use when deciding WHERE business logic, validation, or DML belongs 
 APEXlang turns an APEX app into declarative `.apx` source. Generating components correctly is solved (the official `apex` skill). What stays unsolved is **architecture**: a thin declarative front over a centralized PL/SQL core, instead of DML and rules scattered across pages.
 
 **Core principle: the `.apx` only orchestrates. A PL/SQL package validates and writes. No region performs direct DML.**
+
+The `.apx` may call two packages in sequence. What it never does is decide *where* a rule lives, or
+coordinate an operation whose invariant spans entities — that belongs to a flow package
+(`package-boundaries.md`).
 
 Same front/back separation every serious web app uses, applied to APEX-as-code — and the part an agent does worst alone: it will bolt automatic table-bound DML onto each grid and call it "simple."
 
@@ -24,9 +28,16 @@ Same front/back separation every serious web app uses, applied to APEX-as-code �
 
 **Not for:** pure read-only one-off pages with no write path and no reuse; learning `.apx` grammar (use `apex`).
 
-## The one decision that matters
+## The two decisions that matter
 
-**Does the region write data?** If yes → route every Create/Update/Delete through one package per table (the *single write-path*); the `.apx` process calls it and never issues DML itself, nor uses the built-in *Interactive Grid – Automatic Row Processing (DML)*. If no → reads use inline SQL or a `v_*` view.
+**1. Does the region write data?** If yes → every Create/Update/Delete goes through a PL/SQL package (the *single write-path*); the `.apx` process calls it and never issues DML itself, nor uses the built-in *Interactive Grid – Automatic Row Processing (DML)*. If no → reads use inline SQL or a `v_*` view.
+
+**2. Which package owns it?** One package per table is the **default, not the obligation**. An entity
+package owns its table and its satellites; a `_flow` package coordinates an operation whose invariant
+spans entities and writes nothing itself; a `_api` package isolates one external system. Some rules
+belong in a constraint, in the UI, or in no package at all. The ordered procedure is in
+`package-boundaries.md` — read it before adding a package, and whenever an operation writes more than
+one entity.
 
 ```
 ❌ Anti-pattern (agent default)        ✅ This skill
@@ -36,7 +47,7 @@ Validation in IG column                Validation + rules inside the package
 DML in page processes                  All DML behind the package API
 ```
 
-**This is not a deviation from the official standard — it is the exception the standard itself names.** `apex.interactive-grid-page.md` lists Automatic Row Processing as non-negotiable rule 6 (line 12), then carves it out under *Process Guidance* (line 49): *"do not substitute custom PL/SQL **unless invoking a dedicated API**."* The write-path package **is** that dedicated API. The per-row process is equally official: `executeCondition: forEachRow`, a property of the process's `serverSideCondition` group (paired with `executionScope`) in the APEXlang grammar — not a workaround.
+**This is not a deviation from the official standard — it is the exception the standard itself names.** `apex.interactive-grid-page.md` lists Automatic Row Processing as non-negotiable rule 6 (line 12), then carves it out under *Process Guidance* (line 49): *"do not substitute custom PL/SQL **unless invoking a dedicated API**."* The package the `.apx` calls — entity or flow — **is** that dedicated API. The per-row process is equally official: `executeCondition: forEachRow`, a property of the process's `serverSideCondition` group (paired with `executionScope`) in the APEXlang grammar — not a workaround.
 
 ## Which file to open
 
@@ -73,6 +84,7 @@ the whole folder "just in case".
 |---|---|
 | Anything writes | `back-end-conventions.md` — single write-path, `-20xxx` catalog, no-COMMIT, views, soft delete, vigencies |
 | Anything reads | `ui-contracts.md` — state tokens, drill-down URLs, derived columns, `cards` vs `contentRow`, selection state, deviating from an official default |
+| An operation writes more than one table | `package-boundaries.md` — which layer owns it (entity / `_flow` / `_api`), the satellite and cross-entity tests, when NOT a package, the god-package threshold |
 
 Unsure which term the source uses? Search before opening:
 
@@ -104,6 +116,8 @@ The read-side recipes were built against that catalog. It is an Oracle sample ap
 | "I'll add the package later when real rules appear" | Retrofitting a write-path after pages already do direct DML means rewriting every page that touched the table. Start with the seam. |
 | "Uniqueness belongs in an IG column validation" | UI validations fire only in that grid — bypassed by jobs, SQLcl, REST, and your next page. The rule must live in the package (DB constraint as backstop), surfaced to the UI, not the other way around. |
 | "It's read-only, so put the package there too" | No. Reads use inline SQL or a `v_*` view. Packages are the *write* path only. Don't invert it. |
+| "The order is the centre of the business, so it all goes in `pkg_orders`" | That package now writes inventory, payments and customers — it is a flow package wearing an entity's name. One entity package per entity, one `_flow` to coordinate them (`package-boundaries.md` §God package). |
+| "Every operation should have a service layer" | A `_flow` wrapping a single entity, or an `_api` with no external system, is a layer with nothing to abstract. Two tables is not by itself a reason for a third package (`package-boundaries.md` §When NOT a package). |
 
 ## Report contracts the live compiler enforces
 
@@ -119,3 +133,6 @@ Page-level validations follow a fixed skeleton — static ID prefixed `VAL_`, bl
 - You used `Automatic Row Processing (DML)`, or bound a region directly to a table for writing.
 - An `executeCode` process contains `INSERT`/`UPDATE`/`DELETE` instead of a package call.
 - A business rule (uniqueness, "in use" guard) lives in a page/validation a job or REST call could bypass, instead of once in the package.
+- A package writes a table it does not own — neither its own entity nor one of that entity's satellites.
+- A `_flow` package contains `INSERT`/`UPDATE`/`DELETE` instead of calling the entity packages.
+- A `_flow` package wraps a single entity, or an operation the `.apx` could just call in sequence.

@@ -2,9 +2,16 @@
 
 The spine of a well-architected APEXlang app is a small, disciplined PL/SQL core that owns every write and every business rule. These conventions are domain-agnostic — they hold for HR, inventory, billing, anything.
 
-## 1. Single write-path package per table
+## 1. Single write-path: one owner per table
 
-For each table that gets written, there is **exactly one package** that is the only thing allowed to INSERT/UPDATE/DELETE it. Every page, job, and REST handler goes through it. State the contract in the package header so it is unambiguous:
+For each table that gets written, there is **exactly one package** that is the only thing allowed to INSERT/UPDATE/DELETE it. Every page, job, and REST handler goes through it.
+
+That owner is the table's **entity package**, and it also owns the entity's satellite tables (lines,
+event rows, per-entity history). A `_flow` package coordinating several entities issues no DML of its
+own, so it never becomes a second writer. One package per table is how you *choose* the owner — it is
+not a CRUD mapping, and it is a default rather than an obligation: `package-boundaries.md` has the
+ordered procedure and the satellite test. State the contract in the package header so it is
+unambiguous:
 
 ```plsql
 CREATE OR REPLACE PACKAGE pkg_sectors AS
@@ -17,13 +24,16 @@ CREATE OR REPLACE PACKAGE pkg_sectors AS
   PROCEDURE update_row (p_sector_id IN NUMBER, p_code IN VARCHAR2,
                         p_name IN VARCHAR2, p_active_flag IN VARCHAR2);
   PROCEDURE delete_row (p_sector_id IN NUMBER);
+  -- Intent-named operations belong here too, next to the CRUD -- as long as
+  -- they write only this entity and its satellites (package-boundaries.md).
+  PROCEDURE deactivate (p_sector_id IN NUMBER);
   -- IG adapter: see recipes/editable-ig-to-package.md
   PROCEDURE save_row (p_row_status IN VARCHAR2,
                       p_sector_id IN OUT NUMBER, ...);
 END pkg_sectors;
 ```
 
-**Why single write-path:** all invariants live in one testable place; the UI cannot bypass them; the same API serves a second UI (mobile, ORDS REST) for free. This is the architectural rule everything else hangs on.
+**Why single write-path:** all invariants live in one testable place; the UI cannot bypass them; the same API serves a second UI (mobile, ORDS REST) for free; and the `.apx` states an intent instead of describing a mutation, so a page diff stops being a business-logic diff. This is the architectural rule everything else hangs on — developed in `package-boundaries.md` §Why a package at all, which also answers *which* package owns a given rule.
 
 ## 2. Validation lives in the package, not the UI
 
@@ -66,15 +76,27 @@ Reserve a band per domain (e.g. `-20800..-20809` sectors). To show clean text in
 
 The caller owns the transaction. APEX commits on page submit; jobs commit explicitly (`BEGIN pkg_x.do(); COMMIT; END;`). The one documented exception is high-throughput batch ingestion, which commits once per batch — and says so in its header. State the convention in every header so it is not accidentally broken.
 
+This holds for flow packages too: a `_flow` is a boundary of **atomicity**, not of transaction. It
+guarantees atomicity by not committing between steps, and **declares in its header the order in which
+it takes `FOR UPDATE` locks** — two flows locking the same entities in opposite orders deadlock. It
+reaches for `SAVEPOINT` only when it must undo one step and *carry on*; letting an exception propagate
+already unwinds everything, because nothing committed in between. The
+pattern is in `package-boundaries.md` §Atomicity and locking in a flow package.
+
 ## 5. Reads: inline SQL or a view — never the package
 
 Packages are the **write** path. Reads go straight to SQL:
 
 - Region/IR/chart `source.sqlQuery` inline for page-local queries and KPI scalars.
 - A `v_*` view when the aggregation is complex or reused (reports, charts).
-- An `f_*` package **function** only for LOV/lookup values that encapsulate resolution logic.
+- An `f_*` package **function** only for LOV/lookup values that encapsulate resolution logic — on the entity package that owns the value.
 
 Do not route reporting through the write-path package.
+
+Reading in order to **decide** is a different thing and is always allowed, in any package: a package
+may query another entity to enforce a rule — `pkg_employees` checks that the sector is active before
+writing an employee. What it may not do is *write* that other entity, or become the path a report
+reads through.
 
 Views and inline reads project **data and plain tokens** — a state token, a `apex_page.get_url` link,
 a count — never CSS class names or HTML. What each UI pattern needs projected, and where that
@@ -91,7 +113,9 @@ derivation belongs, is in `ui-contracts.md` §2–§4.
 | Layer | Job |
 |---|---|
 | DB constraints (PK/FK/UQ/CHECK) | last-line integrity, race backstop |
-| Write-path package | business rules, the only DML, friendly `-20xxx` errors |
+| Entity package `pkg_<entity>` | one entity's business rules; the only DML on its table and its satellites; friendly `-20xxx` errors |
+| Flow package `pkg_<flow>_flow` | the order of a multi-entity operation and the invariant spanning it — no DML of its own |
+| Integration package `pkg_<system>_api` | one external system's protocol — no business rule, no entity DML |
 | `.apx` process (`afterSubmit`) | normalize input, call the package, surface errors |
 | `.apx` validation / column hints | field-shape only (required, maxLength) |
 | `v_*` views / inline SQL | all reads |

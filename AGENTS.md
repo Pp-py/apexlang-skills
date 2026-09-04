@@ -8,8 +8,11 @@ designing, changing, or verifying anything.
 ## The three skills
 
 1. **`skills/apexlang-architecture/SKILL.md`** — read it when deciding WHERE business logic,
-   validation, or DML belongs. Core rule: every write goes through one PL/SQL package per table
-   (single write-path); never use region-bound Automatic Row Processing (DML). Archetype recipes
+   validation, or DML belongs. Core rule: every write goes through a PL/SQL package (single
+   write-path); never use region-bound Automatic Row Processing (DML). One package per table is the
+   default for choosing that owner, not a CRUD mapping: which layer owns an operation (entity /
+   multi-entity flow / external-system integration) and when the answer is no package at all are in
+   `skills/apexlang-architecture/package-boundaries.md`. Archetype recipes
    live in `skills/apexlang-architecture/recipes/`, backend conventions in
    `skills/apexlang-architecture/back-end-conventions.md`, and the read-side contract — what the
    SQL/view must project to feed cards, content rows, badges and drill-down links — in

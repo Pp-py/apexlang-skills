@@ -1,6 +1,6 @@
 # UI contracts — what the data layer must project
 
-`back-end-conventions.md` governs the **write** side: one package per table, rules inside it. This
+`back-end-conventions.md` governs the **write** side: one owner per table, rules inside it (and `package-boundaries.md` decides which package is that owner). This
 file governs the **read** side: given a declarative UI pattern, *what must the SQL or view project,
 and where does that derivation live?*
 
