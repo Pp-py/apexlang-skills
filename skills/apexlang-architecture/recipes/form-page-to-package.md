@@ -6,9 +6,9 @@ purchase request header, a contract.
 
 **REQUIRED BACKGROUND:** `back-end-conventions.md` (single write-path, error catalog, no COMMIT).
 
-Oracle's UX Pattern Catalog demonstrates both containers (`p00410` full page, `p00420` drawer) —
-but its forms read from `source.location: sampleData` and **never persist**: the drawer's "Apply
-Changes" only closes the dialog. The layout is the catalog's; the write path below is the part it
+Oracle's UX Pattern Catalog demonstrates both containers, as *Data Entry – Simple Form* and
+*Data Entry – Drawer Form* — but its forms read from `source.location: sampleData` and
+**never persist**: the drawer's "Apply Changes" only closes the dialog. The layout is the catalog's; the write path below is the part it
 does not have.
 
 **Contents:** shape · why no `form` region (and the documented deviation) · `.apx` container,

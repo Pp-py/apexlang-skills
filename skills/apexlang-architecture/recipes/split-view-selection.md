@@ -8,8 +8,8 @@ Read-only page: **no write-path package here.** Edits leave to a drawer or modal
 (`form-page-to-package.md`, `modal-crud-to-package.md`) and the page refreshes when it closes.
 Read the data-side rules in `ui-contracts.md` §8 first.
 
-Oracle's UX Pattern Catalog ships both variants: `p00330-item-selection` (list + faceted search) and
-`p00240-tree-selection` (tree).
+Oracle's UX Pattern Catalog ships both variants, as *Item Selection* (list + faceted search) and
+*Tree Selection*.
 
 **Contents:** shape · `.apx` selection sets a hidden item (`fullRowLink`) · `.apx` the detail side ·
 tree variant (`selectedNodePageItem`, no JS) · variant with visible row selection · non-obvious
@@ -145,9 +145,9 @@ copied one into the other by a dynamic action that fires only on real change, so
 The cost is reconciliation: after a facet changes or the list pages, the component's selection may
 point at a row that is no longer there. Oracle's catalog solves it with a static file
 (`js/split-view-selection.js`: reselect the same row silently if it survived the filter, otherwise
-select the first row and notify). That file is Oracle sample code — copy it from the catalog app if
-you take this variant; this skill does not redistribute it, and the tree variant above needs none of
-it.
+select the first row and notify). That file is Oracle sample code, which this skill does not
+redistribute — copy it from the catalog app if you have it, or write those twenty lines against the
+contract just described. The tree variant above needs none of it.
 
 ## Non-obvious points
 
