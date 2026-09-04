@@ -11,7 +11,9 @@ designing, changing, or verifying anything.
    validation, or DML belongs. Core rule: every write goes through one PL/SQL package per table
    (single write-path); never use region-bound Automatic Row Processing (DML). Archetype recipes
    live in `skills/apexlang-architecture/recipes/`, backend conventions in
-   `skills/apexlang-architecture/back-end-conventions.md`.
+   `skills/apexlang-architecture/back-end-conventions.md`, and the read-side contract — what the
+   SQL/view must project to feed cards, content rows, badges and drill-down links — in
+   `skills/apexlang-architecture/ui-contracts.md`.
 
 2. **`skills/apex-sync-guard/SKILL.md`** — read it BEFORE running any `apex import` or
    `apex export`. Both are total silent overwrites (import replaces the whole app in the
@@ -59,6 +61,6 @@ not to this repo.
 
 ## Runnable examples
 
-`skills/*/examples/` contains two complete vertical slices (DDL + package + `.apx` + verification
-walkthrough): `sectors-catalog` (editable Interactive Grid) and `absences-workflow` (state
-machine). Start at `skills/apexlang-architecture/examples/README.md`.
+`skills/*/examples/` contains three complete vertical slices (DDL + package + `.apx` + verification
+walkthrough): `sectors-catalog` (editable Interactive Grid), `absences-workflow` (state machine) and
+`employees-form` (single-entity form, full page + drawer). Start at `skills/apexlang-architecture/examples/README.md`.
