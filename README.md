@@ -4,17 +4,34 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Agent Skills](https://img.shields.io/badge/agent--skills-SKILL.md-6e56cf)](https://agentskills.io)
 
-Three agent skills for building **Oracle APEX** apps as **APEXlang** declarative source (`.apx`) — architecture, sync safety, and runtime verification. They close one loop:
+Three agent skills for building **Oracle APEX** apps as **APEXlang** declarative source (`.apx`) — architecture, sync safety, and runtime verification.
 
-**architect → build (`.apx` + package) → sync-check → import → verify in the browser**
+## What problem does this solve?
+
+APEXlang turns an APEX app into declarative `.apx` source — what makes an APEX app tractable for a coding agent at all. Generating that source correctly is solved, and it belongs to the official **`apex`** skill (required): grammar, `validate`, `import`, round-trip.
+
+Valid `.apx` is not a sound application, though. Three failure modes survive a clean `validate`:
+
+- **Logic scatters.** Left alone, an agent bolts region-bound Automatic DML onto every grid and calls it simple — leaving no single place where a business rule holds.
+- **A sync erases work.** `apex import` replaces the whole app in the Builder; `apex export` replaces the whole working tree. Whichever replica held unsynchronized changes loses them, irreversibly and without a prompt.
+- **"It works" gets claimed from a green import.** `validate` proves grammar and `import` loads metadata; neither renders the page — a process can call a package procedure that doesn't exist and still validate.
+
+`apexlang-skills` is the engineering layer over those three:
+
+```text
+official apex skill  →  valid .apx: generate · validate · import
+apexlang-skills      →  architecture · sync safety · runtime proof
+                        ──────────────────────────────────────────
+                        an APEX app you can ship with evidence
+```
+
+They close one loop: **architect → build (`.apx` + package) → sync-check → import → verify in the browser**
 
 | Skill | Question it answers |
 |---|---|
 | [`apexlang-architecture`](skills/apexlang-architecture/SKILL.md) | **WHERE does logic go?** Every write through one PL/SQL package per table (single write-path), never region-bound Automatic DML. Ships 13 screen-archetype recipes. |
 | [`apex-sync-guard`](skills/apex-sync-guard/SKILL.md) | **Is it SAFE to import/export now?** `apex import`/`export` are total silent overwrites. Keeps a syncpoint, gates both directions, drives a 3-way merge when both replicas moved. Wrapper script + blocking `PreToolUse` hook. |
 | [`apex-sentinel`](skills/apex-sentinel/SKILL.md) | **Does it WORK?** Drives the running page in a real browser (Playwright CLI/MCP) before any "it works" claim. Never degrades to "validate passed". |
-
-Out of scope: `.apx` grammar, `validate`, `import`, round-trip — that's the official **`apex`** skill (required).
 
 ## Install
 
