@@ -82,7 +82,7 @@ derivation belongs, is in `ui-contracts.md` §2–§4.
 
 ## 6. Recurring data patterns
 
-- **Soft delete via flag:** catalogs carry `active_flag` ('Y'/'N'); queries filter `active_flag='Y'`. Inactivation is blocked while referenced.
+- **Soft delete via flag:** catalogs carry `active_flag` ('Y'/'N'); queries filter `active_flag='Y'`. Inactivation is blocked while referenced. The UI half of that agreement — which value a switch or checkbox stores — is declared once in shared components, not per item (`ui-contracts.md` §10).
 - **Soft delete via audit columns:** transactional rows carry `cancelled_at`/`cancelled_by`/`cancel_reason`; queries filter `cancelled_at IS NULL`. Preserves history.
 - **Append-only vigencies:** time-valid rows (rates, assignments) keep history by closing the old row (`valid_to = new_from − 1`) and inserting a new open one, enforcing "one open row per key" with a **partial unique index**: `CREATE UNIQUE INDEX ... ON t (CASE WHEN valid_to IS NULL THEN key END)`. (Use the single-expression CASE form; the multi-column `(key, CASE WHEN ... THEN 1 END)` form misfires on Oracle 23ai.)
 
