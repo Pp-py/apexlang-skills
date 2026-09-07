@@ -141,6 +141,35 @@ exit
 EOF
 }
 
+# Does the app exist in the target workspace at all?
+#
+# A workspace that has never received this app is not a failure mode: there is
+# no second replica, so the premise of this whole gate — Builder-side work that
+# an import would silently overwrite — is absent. Without this, export_builder
+# died on the empty scratch dir and check-import could never PASS, which made
+# the guard block the only operation able to populate the workspace. That is
+# exactly the shape of a fresh PROD deploy: create the workspace, then publish.
+# Three outcomes, not two, and the difference is the whole point:
+#   0 = the app is there        1 = definitively absent        2 = cannot tell
+#
+# Only a clean numeric 0 counts as absent. An empty answer, a SQLcl error or
+# anything non-numeric returns 2 and the caller takes the normal path, which
+# ends in an informative die if the export really is empty. Collapsing this to
+# a two-way `[[ "$n" == "1" ]]` made every unreadable answer look like "no app
+# here", i.e. it opened the gate on failure — the exact mistake this script
+# warns about where it refuses to wave a call through without a JSON parser.
+remote_app_exists() {
+  local n rc=0
+  n=$(run_sql "select /* apex-sync-appcount */ count(*) from apex_applications where application_id=$APP_ID;") || rc=1
+  (( rc == 0 )) || return 2
+  n=$(tr -d '[:space:]' <<<"$n")
+  case "$n" in
+    0)            return 1 ;;
+    ''|*[!0-9]*)  return 2 ;;
+    *)            return 0 ;;
+  esac
+}
+
 # Latest Builder modification the dictionary can see. Best-effort: APEXlang
 # import recreates components with NULL audit columns, so right after an
 # import this is 'unavailable' until someone edits in the Builder. The guard's
@@ -173,7 +202,7 @@ export_builder() {  # exports REMOTE (the Builder) to a scratch dir; prints its 
   # below points at TMPDIR if it still fails.
   [[ "$native" == *" "* ]] && native="\"$native\""
   run_sql "apex export -applicationid $APP_ID -expType APEXLANG -dir $native" >/dev/null
-  [[ -f "$scratch/$ALIAS/application.apx" ]] || die "apex export produced no $ALIAS/application.apx in $scratch (SQLcl was given -dir $native) — check connection/app id; if that path holds spaces, point TMPDIR at one that does not"
+  [[ -f "$scratch/$ALIAS/application.apx" ]] || die "the Builder export produced no $ALIAS/application.apx in $scratch (SQLcl was given -dir $native) — check the connection and app id; if app $APP_ID does not exist in the workspace yet, remote_app_exists should have caught it before here; if that path holds spaces, point TMPDIR at one that does not"
   echo "$scratch"
 }
 
@@ -311,6 +340,11 @@ payload_report() {  # $1 = materialized BASE app dir
 
 write_marker() {  # $1 = import|export
   printf '{"check":"%s","at":"%s"}\n' "$1" "$(now_iso)" > "$STATE_DIR/check-ok.$1"
+  # Printed on purpose: the hook resolves the repo from the tool payload's cwd
+  # and this script from its own, so a check run inside a command that `cd`s
+  # elsewhere leaves the marker where the hook will not look. Showing both
+  # halves of that path turns a silent mismatch into a one-line comparison.
+  note "marker: $STATE_DIR/check-ok.$1"
 }
 
 stored_stamp() { if [[ -f "$STATE" ]]; then json_get "$STATE" builderStamp; fi; }
@@ -327,6 +361,17 @@ write_state() {  # $1 = syncpoint commit, $2 = builder stamp
 # ------------------------------------------------------------- commands
 cmd_check_import() {
   echo "apex-sync-guard: check-import (app $APP_ID '$ALIAS' via $CONN)"
+
+  local app_rc=0; remote_app_exists || app_rc=$?
+  if (( app_rc == 1 )); then
+    write_marker import
+    echo "PASS: app $APP_ID does not exist in the target workspace — first publication."
+    echo "  Nothing to overwrite: there is no second replica that could hold unexported"
+    echo "  Builder work. Run record-sync right afterwards to create the first"
+    echo "  syncpoint, so the next one is gated against a real BASE."
+    return 0
+  fi
+
   local scratch; scratch=$(export_builder)
   echo "  Builder exported to scratch: $scratch"
 

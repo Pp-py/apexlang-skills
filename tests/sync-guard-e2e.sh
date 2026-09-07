@@ -27,6 +27,11 @@ if grep -q 'apex export' <<<"$stmts"; then
   mkdir -p "$dir/demo" && cp -r "$FAKE_REMOTE/demo/." "$dir/demo/"
 elif grep -q 'greatest' <<<"$stmts"; then
   echo "2026-07-17T10:00:00"
+elif grep -q 'apex-sync-appcount' <<<"$stmts"; then
+  # Unset means "1 row" — the app exists, which every other case here assumes.
+  # Empty means the answer came back unreadable, which the guard must treat as
+  # "cannot tell", never as "no app".
+  printf '%s\n' "${FAKE_REMOTE_APP_COUNT-1}"
 elif grep -q 'apex-sync-doctor' <<<"$stmts"; then
   echo "apex-sync-doctor ${FAKE_APP_COUNT:-1}"
 fi
@@ -191,6 +196,23 @@ MATCHER='"matcher": "Bash|PowerShell"'
 expect "matcher: hooks.json covers both shell tools"         0 grep -qF "$MATCHER" "$REPO/hooks/hooks.json"
 expect "matcher: setup.md documents the same string"         0 grep -qF "$MATCHER" "$SKILL_DIR/setup.md"
 
+# --- first publication into a workspace that has never held this app.
+# There is no second replica, so the premise of the gate is absent and blocking
+# would leave no way to populate the workspace at all — which is the shape of a
+# fresh PROD deploy: create the workspace, then publish. The shortcut must be
+# taken ONLY on a definitive answer: an unreadable count means "cannot tell",
+# and treating that as "no app" would open the gate on failure.
+rm -f "$WORK/proj/.git/apex-sync/demo/"check-ok.*
+expect_out "check-import PASSes when the app is not in the workspace yet" \
+  "does not exist in the target workspace" env FAKE_REMOTE_APP_COUNT=0 "$CHK" check-import
+expect "and it writes the marker, so the publication is allowed" \
+  0 hook_in_proj "apex import -input src/app"
+
+rm -f "$WORK/proj/.git/apex-sync/demo/"check-ok.*
+expect_out "an unreadable count does NOT take the shortcut (fails closed)" \
+  "Builder exported to scratch" env FAKE_REMOTE_APP_COUNT= "$CHK" check-import
+"$CHK" check-import >/dev/null                       # restore the marker for the hook section
+
 # --- enforcement hook
 expect "hook: fresh marker allows apex import"               0 hook_in_proj "apex import -applicationid 100"
 expect "hook: fresh marker allows it under PowerShell too"   0 hook_in_proj "apex import -applicationid 100" PowerShell
@@ -202,6 +224,23 @@ expect "hook: no marker blocks apex import"                  2 hook_in_proj "ape
 expect "hook: no marker blocks it under PowerShell too"      2 hook_in_proj "apex import -applicationid 100" PowerShell
 expect "hook: no marker blocks apex export"                  2 hook_in_proj "sql <<< 'apex export -dir x'"
 expect "hook: unrelated command passes"                      0 hook_in_proj "ls -la"
+
+# --- mentioning the subcommand is not invoking it. These five all used to be
+# blocked, because the matcher looked for the bare phrase anywhere in the
+# command text. That made ordinary work impossible while the guard was on: a
+# grep whose PATTERN contains the phrase, a commit message that explains what
+# the guard does, and — the one that forced the change — editing the guard's own
+# source. A gate that obstructs reading itself is a gate people disable.
+# The rule now is that a flag the subcommand cannot run without must also be
+# present, which every real invocation carries.
+expect "hook: a grep whose pattern mentions it passes"       0 hook_in_proj "grep -n 'apex export' file.sh"
+expect "hook: a commit message that mentions it passes"      0 hook_in_proj "git commit -m 'why apex import clobbers the replica'"
+expect "hook: reading the guard source passes"               0 hook_in_proj "sed -n '1,40p' apex-sync-check.sh"
+
+# The flag is searched for anywhere in the command, not right after the
+# subcommand: grep is line-based, so a heredoc that puts the flag on the next
+# line would otherwise slip through the narrowed matcher.
+expect "hook: flag on the next line of a heredoc still blocks" 2 hook_in_proj "sql <<EOF\napex import -input src/app\nEOF"
 expect "hook: outside an onboarded repo passes"              0 hook_out_repo
 
 # --- APEXlang 2026.08.01 routes the canonical import through apexctl, which runs
