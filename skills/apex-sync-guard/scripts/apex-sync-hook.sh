@@ -73,13 +73,37 @@ fi
 #     reaches this hook, so matching only it stopped catching real imports.
 #     Gated whatever the --import-intent says: the flag defaults to importing, and
 #     one extra 20 s check-import is the cheap side of this trade.
+# A subcommand only counts as an invocation when a flag it cannot run without
+# is also present. Matching the bare phrase blocked commands that merely
+# MENTIONED it: a grep pattern, a `git commit -m` message, and — the one that
+# forced this change — editing this very file. A guard that obstructs reading
+# its own source is a guard people switch off, which costs more than the rare
+# miss this narrowing admits.
+#
+# The flag is looked for anywhere in the command, not right after the
+# subcommand, so a heredoc that puts it on the next line still counts (grep is
+# line-based and would not see across the newline otherwise).
+apex_subcommand() {  # $1 = import|export ; $2… = the flags that make it real
+  local sub="$1"; shift
+  local flags; flags=$(IFS='|'; echo "$*")
+  grep -qiE "apex[[:space:]]+$sub([[:space:]]|$)" <<<"$cmd" || return 1
+  # DEGRADED means no JSON parser was found and `$cmd` is the raw payload (or a
+  # regex-scraped guess at it), so there is no telling what is a command and
+  # what is incidental text. The narrowing below exists to stop blocking
+  # commands that merely mention the phrase; when we cannot even parse the
+  # input, suspicion beats precision and the bare phrase is enough. Same
+  # principle as refusing to wave the call through without a parser.
+  (( DEGRADED )) && return 0
+  grep -qiE "(^|[[:space:]])($flags)([[:space:]=]|$)" <<<"$cmd"
+}
+
 needs=()
-if grep -qiE 'apex[[:space:]]+import' <<<"$cmd" \
+if apex_subcommand import -input -id -applicationid \
    || grep -qiE 'apexctl[^;|&]*runtime[[:space:]]+roundtrip' <<<"$cmd" \
    || grep -qiE 'import-intent[[:space:]=]+validate-and-import' <<<"$cmd"; then
   needs+=(import)
 fi
-grep -qiE 'apex[[:space:]]+export' <<<"$cmd" && needs+=(export)
+apex_subcommand export -applicationid -dir -expType -id && needs+=(export)
 [[ ${#needs[@]} -eq 0 ]] && exit 0
 
 if (( DEGRADED )); then cwd=$(raw_get cwd); else cwd=$(printf '%s' "$input" | json_get - cwd); fi
@@ -96,6 +120,12 @@ for d in "${needs[@]}"; do
   if [[ ! -f "$m" ]] || (( now - $(mtime "$m") >= TTL )); then
     echo "apex-sync-guard: BLOCKED apex $d — no check-$d PASS in the last $((TTL/60)) min for app '$ALIAS'." >&2
     echo "Run first (from the repo root): <apex-sync-guard skill dir>/scripts/apex-sync-check.sh check-$d" >&2
+    # Naming the path is not noise. This hook resolves the repo from the tool
+    # payload's cwd, while the check resolves it from ITS OWN cwd — so running
+    # the check inside a command that `cd`s elsewhere writes the marker in one
+    # repo while this looks in another, and the block is indistinguishable from
+    # never having run the check. The path makes that visible in one read.
+    echo "  (looked for the marker at: $m — this repo was resolved from cwd '${cwd:-.}')" >&2
     echo "Then retry. Rationale: the $d would silently overwrite the other replica (skill: apex-sync-guard)." >&2
     (( DEGRADED )) && echo "(No working jq/python was found, so this decision was made by scanning the raw tool payload.)" >&2
     exit 2
