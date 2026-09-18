@@ -60,6 +60,11 @@ page 41 (
         layout { region: @basic-data }
         security { sessionStateProtection: checksumRequiredSessionLevel } )
 
+    pageItem P41_ROW_VERSION (
+        type: hidden                    -- lost-update guard, back-end-conventions.md section 7
+        layout { region: @basic-data }
+        security { sessionStateProtection: checksumRequiredSessionLevel } )
+
     pageItem P41_FULL_NAME (
         type: textField
         label { label: Full name }
@@ -114,8 +119,8 @@ process load-employee (
     type: executeCode
     source { plsqlCode: ```plsql
         if :P41_EMPLOYEE_ID is not null then
-          select full_name, sector_id, email
-            into :P41_FULL_NAME, :P41_SECTOR_ID, :P41_EMAIL
+          select full_name, sector_id, email, row_version
+            into :P41_FULL_NAME, :P41_SECTOR_ID, :P41_EMAIL, :P41_ROW_VERSION
             from hr_employees
            where employee_id = :P41_EMPLOYEE_ID;
         end if;``` }
@@ -140,7 +145,8 @@ process update-employee (
             p_employee_id => :P41_EMPLOYEE_ID,
             p_full_name   => :P41_FULL_NAME,
             p_sector_id   => :P41_SECTOR_ID,
-            p_email       => :P41_EMAIL);``` }
+            p_email       => :P41_EMAIL,
+            p_row_version => :P41_ROW_VERSION);``` }
     execution { point: afterSubmit }
     serverSideCondition { type: requestIsContainedInValue  value: APPLY-CHANGES }
 )

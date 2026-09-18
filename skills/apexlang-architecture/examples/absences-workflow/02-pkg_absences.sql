@@ -44,7 +44,9 @@ CREATE OR REPLACE PACKAGE BODY pkg_absences AS
     UPDATE hr_absences
        SET status = 'APPROVED', approved_by = p_approver, approved_at = SYSTIMESTAMP
      WHERE absence_id = p_absence_id;
-    -- side effect (deduct quota, etc.) would live here, inside the package.
+    -- A quota deduction does NOT belong here. The quota fails the satellite test:
+    -- its FK points at the employee, and payroll writes it too. It belongs to
+    -- pkg_quotas, coordinated by pkg_absence_flow (package-boundaries.md, Test 1).
   END approve;
 
   PROCEDURE reject (p_absence_id IN NUMBER, p_reason IN VARCHAR2) IS
@@ -70,7 +72,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_absences AS
   BEGIN
     SELECT status INTO l_status FROM hr_absences
      WHERE absence_id = p_absence_id AND cancelled_at IS NULL FOR UPDATE;
-    -- if it was APPROVED, the reversal of its effect (give back quota) would go here.
+    -- Likewise, giving the quota back belongs to pkg_quotas via pkg_absence_flow,
+    -- not here: this package writes hr_absences and nothing else.
     UPDATE hr_absences
        SET cancelled_at = SYSTIMESTAMP, cancelled_by = p_user, cancel_reason = TRIM(p_reason)
      WHERE absence_id = p_absence_id;

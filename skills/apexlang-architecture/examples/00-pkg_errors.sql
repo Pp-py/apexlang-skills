@@ -23,6 +23,11 @@ CREATE OR REPLACE PACKAGE pkg_errors AS
   e_employee_email_duplicate  EXCEPTION;  PRAGMA EXCEPTION_INIT(e_employee_email_duplicate, -20811);
   e_employee_sector_inactive  EXCEPTION;  PRAGMA EXCEPTION_INIT(e_employee_sector_inactive, -20812);
 
+  -- Cross-cutting: not a per-domain band. Every table raises the same conflict
+  -- so the user always reads the same sentence (back-end-conventions.md section 7).
+  k_row_changed CONSTANT NUMBER := -20999;
+  e_row_changed EXCEPTION;  PRAGMA EXCEPTION_INIT(e_row_changed, -20999);
+
   -- Absences band: -20900 .. -20909
   k_absence_invalid_data   CONSTANT NUMBER := -20900;
   k_absence_invalid_status CONSTANT NUMBER := -20901;

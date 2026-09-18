@@ -177,6 +177,10 @@ packages populate as part of the same transaction that changed the row — one i
 transition, written by the package, never by the page. If the packages do not write it, the timeline
 is a decoration that quietly lies about what happened.
 
+That event table is a **satellite** of the entity — `NOT NULL` FK to it, no other entity writes it,
+meaningless without it — so the entity's own package owns it (`package-boundaries.md` §Test 1). It
+needs no package of its own and no flow to coordinate it.
+
 A union view over "comments + status changes + file uploads" is a legitimate shape for the read side;
 what is not legitimate is deriving activity by diffing audit columns at render time.
 

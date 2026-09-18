@@ -41,7 +41,8 @@ page 81 (
 
     region form-sector ( type: staticContent )
 
-    pageItem P81_SECTOR_ID ( type: hidden )
+    pageItem P81_SECTOR_ID  ( type: hidden )
+    pageItem P81_ROW_VERSION ( type: hidden )   -- lost-update guard, back-end-conventions.md section 7
     pageItem P81_CODE ( type: textField  label { label: Code }
         layout { region: @form-sector  slot: regionBody } )
     pageItem P81_NAME ( type: textField  label { label: Name } )
@@ -60,7 +61,8 @@ page 81 (
         type: executeCode
         source { plsqlCode: ```plsql
             if :P81_SECTOR_ID is not null then
-              select code, name into :P81_CODE, :P81_NAME
+              select code, name, row_version
+                into :P81_CODE, :P81_NAME, :P81_ROW_VERSION
                 from hr_sectors where sector_id = :P81_SECTOR_ID;
             end if;``` }
         execution { point: beforeHeader }
@@ -70,9 +72,11 @@ page 81 (
         type: executeCode
         source { plsqlCode: ```plsql
             if :P81_SECTOR_ID is null then
-              pkg_sectors.create_row(:P81_CODE, :P81_NAME);
+              -- OUT: the new PK lands in the hidden item for the caller to use
+              pkg_sectors.create_row(:P81_CODE, :P81_NAME, :P81_SECTOR_ID);
             else
-              pkg_sectors.update_row(:P81_SECTOR_ID, :P81_CODE, :P81_NAME, 'Y');
+              pkg_sectors.update_row(:P81_SECTOR_ID, :P81_CODE, :P81_NAME, 'Y',
+                                     :P81_ROW_VERSION);
             end if;``` }
         execution { point: afterSubmit }
     )

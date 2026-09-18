@@ -9,6 +9,7 @@ CREATE TABLE hr_employees (
     sector_id    NUMBER        NOT NULL,
     hired_on     DATE          DEFAULT TRUNC(SYSDATE) NOT NULL,
     active_flag  VARCHAR2(1)   DEFAULT 'Y' NOT NULL,
+    row_version  NUMBER        DEFAULT 1 NOT NULL,   -- lost-update guard, section 7
     CONSTRAINT hr_employees_pk PRIMARY KEY (employee_id),
     CONSTRAINT hr_employees_sector_fk FOREIGN KEY (sector_id)
         REFERENCES hr_sectors (sector_id),
