@@ -4,23 +4,8 @@
 # Prints only the diagnostics that belong to OUR files.
 set -uo pipefail
 
-# Resolve the APEXlang package: the plugin install first (versioned cache dir),
-# then a skills-directory install. Override with PKG=<path/to/apexlang>.
-if [[ -z "${PKG:-}" ]]; then
-  PKG=$(find "$HOME/.claude/plugins/cache/oracle-skills/apex" -maxdepth 2 -type d -name apexlang 2>/dev/null | sort | tail -1)
-  [[ -z "$PKG" && -d "$HOME/.agents/skills/apex/apexlang" ]] && PKG="$HOME/.agents/skills/apex/apexlang"
-  [[ -z "$PKG" && -d "$HOME/.claude/skills/apex/apexlang" ]] && PKG="$HOME/.claude/skills/apex/apexlang"
-  # WSL: the plugin may be installed on the Windows side only.
-  if [[ -z "$PKG" ]]; then
-    PKG=$(find /mnt/c/Users/*/.claude/plugins/cache/oracle-skills/apex \
-               /mnt/c/Users/*/.claude/plugins/marketplaces/oracle-skills/apex \
-               -maxdepth 2 -type d -name apexlang 2>/dev/null | sort | tail -1)
-  fi
-fi
-[[ -n "$PKG" && -d "$PKG" ]] || {
-  echo "APEXlang package not found. Install it with: claude plugin install apex@oracle-skills" >&2
-  exit 2
-}
+# shellcheck source=tests/lib/resolve-apexlang-pkg.sh
+. "$(dirname "$0")/lib/resolve-apexlang-pkg.sh"
 REPO=${REPO:-$(cd "$(dirname "$0")/.." && pwd)}
 V=$(mktemp -d "${TMPDIR:-/tmp}/apexval-XXXXXX")
 trap 'rm -rf "$V"' EXIT

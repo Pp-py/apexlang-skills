@@ -65,6 +65,34 @@ END create_row;
 
 A DB unique index on `UPPER(code)` is the **backstop** for the check-then-insert race — not the user-facing mechanism. Keep both: index = correctness, package check = friendly message.
 
+### Reconciling this with the official validation ladder
+
+`apex.logic.md` §*Native Validation Selection Ladder* is non-negotiable about **which** native
+validation to reach for; it routes duplicate checks to a "SQL validation (`noRowsReturned`/
+`rowsReturned`)" (§*Prompt Pattern Mapping*) and states flatly *"Do not convert validation
+requirements into page processes"*. Read as "uniqueness belongs to the page", that would undo §1 —
+but it does not say that. The ladder ranks native validation *types* against each other for a rule
+the page is expressing; it never claims the page is the only place the rule may live. Two properties
+decide that, and neither is about validation style:
+
+- **Reach.** A `noRowsReturned` validation fires on that page's submit and nowhere else — a job, ORDS,
+  SQLcl and your next page all write straight past it. The package is the one chokepoint every writer
+  crosses (§1).
+- **Timing.** Under concurrency that validation is a `SELECT`, and the insert is a separate statement:
+  the check-then-insert race the unique index backstops above. A uniqueness invariant cannot be
+  decided safely *before* the DML — from the page or from anywhere else.
+
+The official contract names that exit itself: process-level raised errors are reserved for "packaged
+API exceptions, optimistic-lock conflicts, or **DML invariants that cannot be checked safely in
+advance**" (`validations._common.md` §*Conditional Rendering Rules*). Uniqueness under concurrency is
+that third case; the package raising `-20xxx` is the first.
+
+So the rule lives in the package and the index. A native duplicate validation is **optional UX** on
+top — it lands the message on the right item before submit — never the only defence, and never a
+reason to drop the package check. In an editable IG, skip it outright — column validations don't fire
+on Save at all (`recipes/editable-ig-to-package.md`), so there the package is not merely the owner of
+the rule, it is the only thing that runs.
+
 ## 3. Centralized error catalog
 
 One package (`pkg_errors`) owns all `-20xxx` codes, in reserved bands per domain, each as a constant **and** a named exception:
@@ -158,6 +186,12 @@ The UI half is one hidden value carried back on submit — a hidden IG column
 (`recipes/editable-ig-to-package.md`) or a hidden page item (`recipes/form-page-to-package.md`). It is
 not optional: a package with the guard and a page that does not send the token fails every save.
 
+This is also where the official contract expects the conflict to surface: process-level raised errors
+are reserved for "packaged API exceptions, **optimistic-lock conflicts**, or DML invariants that
+cannot be checked safely in advance" (`validations._common.md` §*Conditional Rendering Rules*). The
+guard belongs to the package and the message to the process that called it — never to a page
+validation, which would be the pre-check this section forbids.
+
 ## Layering summary
 
 | Layer | Job |
@@ -167,5 +201,5 @@ not optional: a package with the guard and a page that does not send the token f
 | Flow package `pkg_<flow>_flow` | the order of a multi-entity operation and the invariant spanning it — no DML of its own |
 | Integration package `pkg_<system>_api` | one external system's protocol — no business rule, no entity DML |
 | `.apx` process (`afterSubmit`) | normalize input, call the package, surface errors |
-| `.apx` validation / column hints | field-shape only (required, maxLength) |
+| `.apx` validation / column hints | field-shape only (required, maxLength) — plus, optionally, a duplicate pre-check that never replaces the package's (§2) |
 | `v_*` views / inline SQL | all reads |

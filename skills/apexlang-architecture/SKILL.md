@@ -47,7 +47,16 @@ Validation in IG column                Validation + rules inside the package
 DML in page processes                  All DML behind the package API
 ```
 
-**This is not a deviation from the official standard — it is the exception the standard itself names.** `apex.interactive-grid-page.md` lists Automatic Row Processing as non-negotiable rule 6 (line 12), then carves it out under *Process Guidance* (line 49): *"do not substitute custom PL/SQL **unless invoking a dedicated API**."* The package the `.apx` calls — entity or flow — **is** that dedicated API. The per-row process is equally official: `executeCondition: forEachRow`, a property of the process's `serverSideCondition` group (paired with `executionScope`) in the APEXlang grammar — not a workaround.
+**This is not a deviation from the official standard — it is the exception the standard itself names.** `apex.interactive-grid-page.md` lists Automatic Row Processing as non-negotiable rule 6 (§*Rules (Non-Negotiable)*: *"Enable automatic row processing"*), then carves it out under §*Process Guidance*: *"do not substitute custom PL/SQL **unless invoking a dedicated API**."* The package the `.apx` calls — entity or flow — **is** that dedicated API. The per-row process is equally official: `executeCondition: forEachRow`, a property of the process's `serverSideCondition` group (paired with `executionScope`) in the APEXlang grammar — not a workaround.
+
+And everywhere else the standard talks about server-side code, it already leans this way: "page
+processes default to `invokeApi`" (`apex.logic.md` §*2. Universal Guardrails*), "server-side work
+should be packaged and referenced via `invokeApi` by default" (§*5. Dynamic Actions*), and inline
+PL/SQL over 4000 characters is a hard failure whose fix is to "extract it into a package API"
+(`PLSQL_INLINE_BLOCK_001`, §*2. Universal Guardrails* — it *blocks final output*). Form pages are told
+to "offload logic to views or packages when possible" (`apex.form.md` §*Notes*). Automatic Row
+Processing is the single place the standard points the other way. This skill takes the direction the
+rest of it already sets, and removes that exception.
 
 ## Which file to open
 
@@ -82,7 +91,7 @@ the whole folder "just in case".
 
 | Read when | File |
 |---|---|
-| Anything writes | `back-end-conventions.md` — single write-path, `-20xxx` catalog, no-COMMIT, views, soft delete, vigencies, version token |
+| Anything writes | `back-end-conventions.md` — single write-path, where the official validation ladder stops, `-20xxx` catalog, no-COMMIT, views, soft delete, vigencies, version token |
 | Anything reads | `ui-contracts.md` — state tokens, drill-down URLs, derived columns, `cards` vs `contentRow`, selection state, deviating from an official default |
 | An operation writes more than one table | `package-boundaries.md` — which layer owns it (entity / `_flow` / `_api`), the satellite and cross-entity tests, when NOT a package, the god-package threshold |
 
@@ -114,7 +123,7 @@ The read-side recipes were built against that catalog. It is an Oracle sample ap
 | "Simple catalog, no business rules — just use Automatic DML" | Catalogs get FK-referenced fast. The day you must block "delete a sector that has employees" or enforce unique code with a friendly message, the rule needs a home. The write-path package is that home — create the seam now, it's one thin adapter. |
 | "A package is ceremony / over-engineering" | The package is ~30 lines. The cost of *not* having it is DML and rules smeared across UI processes — untestable, inconsistent, duplicated per page. |
 | "I'll add the package later when real rules appear" | Retrofitting a write-path after pages already do direct DML means rewriting every page that touched the table. Start with the seam. |
-| "Uniqueness belongs in an IG column validation" | UI validations fire only in that grid — bypassed by jobs, SQLcl, REST, and your next page. The rule must live in the package (DB constraint as backstop), surfaced to the UI, not the other way around. |
+| "Uniqueness belongs in an IG column validation" | UI validations fire only in that grid — bypassed by jobs, SQLcl, REST, and your next page, and under concurrency they are a check-then-insert race. The rule must live in the package (DB constraint as backstop), surfaced to the UI, not the other way around. The official ladder routes duplicates to a native validation; why that does not make the page their owner is settled in `back-end-conventions.md` §2. |
 | "It's read-only, so put the package there too" | No. Reads use inline SQL or a `v_*` view. Packages are the *write* path only. Don't invert it. |
 | "The order is the centre of the business, so it all goes in `pkg_orders`" | That package now writes inventory, payments and customers — it is a flow package wearing an entity's name. One entity package per entity, one `_flow` to coordinate them (`package-boundaries.md` §God package). |
 | "Every operation should have a service layer" | A `_flow` wrapping a single entity, or an `_api` with no external system, is a layer with nothing to abstract. Two tables is not by itself a reason for a third package (`package-boundaries.md` §When NOT a package). |
