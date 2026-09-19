@@ -83,7 +83,7 @@ process save-members (
 
 | Tempting | Why wrong |
 |---|---|
-| Bind the detail IG's automatic DML to the child table | Bypasses the child package's invariants (e.g. "employee already assigned elsewhere"). Replacing it with a per-row process (`executeCondition: forEachRow`) is sanctioned by `apex.interactive-grid-page.md:49` — *"unless invoking a dedicated API"*; `pkg_employees` is that API. |
+| Bind the detail IG's automatic DML to the child table | Bypasses the child package's invariants (e.g. "employee already assigned elsewhere"). Replacing it with a per-row process (`executeCondition: forEachRow`) is sanctioned by `apex.interactive-grid-page.md` §*Process Guidance* — *"unless invoking a dedicated API"*; `pkg_employees` is that API. |
 | Write child rows from the master's process, in Case B | Couples two entities' rules in one place; the child package becomes bypassable. Keep them separate. (In Case A the child is a satellite and one package owns both — that is not this mistake.) |
 | Give a satellite its own package, in Case A | `order_lines` has a `NOT NULL` FK to `orders`, nothing else writes it, and it means nothing alone. A second package there buys no isolation and forces a `_flow` to coordinate what one entity already owns. |
 | Forget to stamp the parent FK | New child rows land with a null/inherited FK. Set it from the master PK item in the detail process. |

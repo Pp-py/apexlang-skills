@@ -27,16 +27,17 @@ mapping traps · which form archetype to pick · verify.
 
 ## Why no `form` region
 
-The official standard binds a `type: form` region to exactly one `formAutoRowProcessing` — Automatic
+The official standard binds a `type: form` region to "exactly one `formAutoRowProcessing`" — Automatic
 Row DML — and, unlike the Interactive Grid standard, it carries **no "dedicated API" carve-out**
-(`apex.form.md:135`; compare `apex.interactive-grid-page.md:49`). A plain item container has no form
+(`apex.form.md` §*Deterministic CRUD Form Routing*; compare `apex.interactive-grid-page.md`
+§*Process Guidance*, *"unless invoking a dedicated API"*). A plain item container has no form
 region, so there is no form contract to break: the items are ordinary page items and the write is an
 ordinary process. This is the same shape `modal-crud-to-package.md` already uses, which keeps all
 three form-shaped recipes consistent.
 
 *Documented deviation, when the entity has 20+ columns and the declarative column mapping earns its
 keep:* use `type: form` with `formInitialization` for the read, replace the ARP with the
-`executeCode` process below, and say so in the region's `comments` — citing `apex.form.md:166`
+`executeCode` process below, and say so in the region's `comments` — citing `apex.form.md` §*Notes*
 ("keep form SQL minimal and offload logic to views or packages when possible"). Everything else in
 this recipe is unchanged.
 

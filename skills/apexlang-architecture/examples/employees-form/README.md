@@ -44,8 +44,9 @@ apex import   -input <apexlang-src-dir>
 
 ## Why no `form` region
 
-The official form standard binds a `type: form` region to exactly one `formAutoRowProcessing`
-(`apex.form.md:135`) and, unlike the Interactive Grid standard, offers no "dedicated API" carve-out.
+The official form standard binds a `type: form` region to "exactly one `formAutoRowProcessing`"
+(`apex.form.md` §*Deterministic CRUD Form Routing*) and, unlike the Interactive Grid standard, offers
+no "dedicated API" carve-out.
 These pages therefore use a plain item container: ordinary page items, a `load` process for the read,
 and one `executeCode` process per intent for the write. Nothing is deviating from the official
 contract because no form region exists — and the single write-path survives intact. The cost is
