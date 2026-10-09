@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Contract tier: the JSON contracts in framework/schemas/ hold — for the schemas
 # themselves, for the fixtures and negatives here, and for every result the tools
-# actually emit. The emitted ones come from running the integration e2e with
+# actually emit — and the surface a reader relies on has not drifted (surface.py).
+# The emitted results come from running the integration e2e with
 # SYNC_RESULT_CAPTURE_DIR set, so a script change that writes an invalid result
 # fails here even when every exit code in the e2e is still right.
 #
@@ -29,4 +30,8 @@ fi
 tail -1 "$CAP/e2e.log"
 
 echo "== schemas, fixtures, negatives, emitted results"
-"$PY" "$HERE/schemas.py" --captured "$CAP/results"
+rc=0
+"$PY" "$HERE/schemas.py" --captured "$CAP/results" || rc=$?
+echo "== surface: links, interface, duplicated patterns, criterion IDs"
+"$PY" "$HERE/surface.py" || rc=$?
+exit "$rc"

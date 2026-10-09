@@ -63,20 +63,21 @@ Grammar status, measured rather than claimed: Oracle's 26.1 local lint (release 
 
 ```bash
 git ls-files -z -- '*.sh' | xargs -0 shellcheck -x   # lint
-tests/integration/sync-guard-e2e.sh                  # offline e2e (stubbed SQLcl)
-tests/integration/pw-wrapper-smoke.sh                # pw.sh (stubbed Playwright CLI)
+tests/contract/run.sh                                # schemas, negatives, every emitted result, docs surface
+tests/integration/sync-guard-e2e.sh                  # sync guard + hook, SQLcl stubbed
+tests/integration/pw-wrapper-smoke.sh                # pw.sh, Playwright CLI stubbed
 tests/integration/config-parity.sh                   # apex-sync.json read alike by the guard and pw.sh
-tests/contract/run.sh                                # JSON contracts: schemas, negatives, every emitted result
 tests/upstream/verify-citations.sh                   # quotes from Oracle's skills still say what we claim
 tests/upstream/validate-examples.sh [--compiler]     # the examples under Oracle's 26.1 lint, or SQLcl apex validate
 ```
 
-The first four run in CI (the contract tier needs `python3-jsonschema`). The `upstream/` scripts need Oracle's APEXlang skills installed — resolved from
-the revision pinned in [`framework/oracle-skills.lock.json`](framework/oracle-skills.lock.json), or
-`APEXLANG_ROOT=<path>/apex/apexlang` — and are run whenever that package is updated. `verify-citations.sh`
-checks each quotation listed in [`tests/upstream/citations.md`](tests/upstream/citations.md) and rejects citing
-one by line number: a line number silently comes to point at a *different* sentence when Oracle edits the file
-above it. Exit codes: 0 PASS, 1 FAIL, 2 BLOCKED — a missing prerequisite never reads as a pass.
+What each tier establishes — and what it does not — is in [`tests/README.md`](tests/README.md).
+Lint, contract and integration run in CI (integration on Ubuntu and Windows). The `upstream/`
+scripts need Oracle's APEXlang skills installed — resolved from the revision pinned in
+[`framework/oracle-skills.lock.json`](framework/oracle-skills.lock.json), or
+`APEXLANG_ROOT=<path>/apex/apexlang` — and their runs are recorded in
+[`framework/CAPABILITIES.md`](framework/CAPABILITIES.md). Exit codes: 0 PASS, 1 FAIL, 2 BLOCKED —
+a missing prerequisite never reads as a pass.
 
 ## License
 

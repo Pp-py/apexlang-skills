@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
 # Checks every passage this repo quotes from Oracle's APEXlang skills against the
-# installed package, and refuses the fragile citation style.
-#
-# Two checks:
-#   1. each anchor phrase in tests/upstream/citations.md still appears EXACTLY once
-#      in its upstream file — missing means the rule was reworded or removed, two
-#      hits mean the anchor is ambiguous and must be made longer;
-#   2. no `<file>.md:<line>` or `(line N)` citation crept back into skills/ — a
-#      line number silently points at a different sentence once Oracle edits the
-#      file above it, which is the failure this manifest exists to prevent.
+# installed package: each anchor phrase in tests/upstream/citations.md must still
+# appear EXACTLY once in its upstream file — missing means the rule was reworded or
+# removed, two hits mean the anchor is ambiguous and must be made longer.
+# (That no citation by line number creeps back is checked offline, in CI, by
+# tests/contract/surface.py.)
 #
 # Needs Oracle's skills installed (claude plugin install apex@oracle-skills) or
 # APEXLANG_ROOT=<oracle-skills>/apex/apexlang. Exit: 0 PASS · 1 FAIL · 2 BLOCKED.
@@ -60,16 +56,5 @@ done < <(awk '/^```citations\r?$/ { inblock = 1; next } /^```/ { inblock = 0 } i
 
 echo
 echo "$ok/$rows anchors still current"
-
-# --- regression guard: the fragile style must not come back -------------------
-stale=$(grep -rnE '[A-Za-z0-9._-]+\.md:[0-9]+|\(line [0-9]+\)' --include='*.md' "$REPO/skills" 2>/dev/null)
-if [[ -n "$stale" ]]; then
-  echo
-  echo "line-number citations found in skills/ — anchor them by section + phrase instead:"
-  printf '%s\n' "$stale" | sed "s|^$REPO/||"
-  bad=$((bad + 1))
-else
-  echo "no line-number citations in skills/ — ok"
-fi
 
 [[ $bad -eq 0 ]] || exit 1
