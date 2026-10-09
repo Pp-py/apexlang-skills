@@ -5,8 +5,8 @@
 set -uo pipefail
 
 # shellcheck source=tests/lib/resolve-apexlang-pkg.sh
-. "$(dirname "$0")/lib/resolve-apexlang-pkg.sh"
-REPO=${REPO:-$(cd "$(dirname "$0")/.." && pwd)}
+. "$(dirname "$0")/../lib/resolve-apexlang-pkg.sh"
+REPO=${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}
 V=$(mktemp -d "${TMPDIR:-/tmp}/apexval-XXXXXX")
 trap 'rm -rf "$V"' EXIT
 

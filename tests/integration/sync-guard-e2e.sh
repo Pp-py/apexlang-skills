@@ -4,7 +4,7 @@
 # dir (the fake Builder), so no database or real SQLcl is needed.
 set -euo pipefail
 
-REPO=$(cd "$(dirname "$0")/.." && pwd)
+REPO=$(cd "$(dirname "$0")/../.." && pwd)
 SKILL_DIR="$REPO/skills/apex-sync-guard"
 CHK="$SKILL_DIR/scripts/apex-sync-check.sh"
 HOOK="$SKILL_DIR/scripts/apex-sync-hook.sh"

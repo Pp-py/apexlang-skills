@@ -62,16 +62,16 @@ The `.apx` are validated against the APEXlang package **2026.08.01** (`apexctl.m
 ## Development
 
 ```bash
-shellcheck -x skills/*/scripts/*.sh tests/*.sh tests/lib/*.sh   # lint
-tests/sync-guard-e2e.sh                                         # offline e2e (stubbed SQLcl)
-tests/pw-wrapper-smoke.sh                                       # pw.sh (stubbed Playwright CLI)
-tests/verify-citations.sh                                       # quotes from the official skill still say what we claim
+git ls-files -z -- '*.sh' | xargs -0 shellcheck -x   # lint
+tests/integration/sync-guard-e2e.sh                  # offline e2e (stubbed SQLcl)
+tests/integration/pw-wrapper-smoke.sh                # pw.sh (stubbed Playwright CLI)
+tests/upstream/verify-citations.sh                   # quotes from the official skill still say what we claim
 ```
 
 The first three run in CI. `verify-citations.sh` needs the official APEXlang package installed (or
 `PKG=<path/to/oracle-skills>/apex/apexlang`), like `validate-examples.sh` — run it whenever that
 package is updated. It checks every sentence this repo quotes from the official skill, listed in
-[`tests/citations.md`](tests/citations.md), and rejects citing one by line number: a line number
+[`tests/upstream/citations.md`](tests/upstream/citations.md), and rejects citing one by line number: a line number
 silently comes to point at a *different* sentence when Oracle edits the file above it.
 
 ## License

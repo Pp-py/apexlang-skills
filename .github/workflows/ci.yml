@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-24.04            # pinned: the ubuntu-latest label moves to a new release on its own schedule
     steps:
       - uses: actions/checkout@v5    # node24 runtime; v4 triggers the Node 20 deprecation notice
-      - name: shellcheck scripts and tests
-        run: shellcheck -x skills/*/scripts/*.sh tests/*.sh tests/lib/*.sh   # -x follows the sourced helper
+      - name: shellcheck every tracked shell script
+        run: git ls-files -z -- '*.sh' | xargs -0 shellcheck -x   # -x follows the sourced helper
 
-  sync-guard-e2e:
+  integration:
     strategy:
       fail-fast: false
       matrix:
@@ -27,7 +27,7 @@ jobs:
         shell: bash          # Git Bash on windows-latest — the only supported Windows shell
     steps:
       - uses: actions/checkout@v5      # .gitattributes keeps *.sh at LF, so bash can run them
-      - name: run offline e2e harness (stubbed SQLcl)
-        run: bash tests/sync-guard-e2e.sh
-      - name: run pw.sh smoke test (stubbed Playwright CLI)
-        run: bash tests/pw-wrapper-smoke.sh
+      - name: sync-guard e2e (stubbed SQLcl)
+        run: bash tests/integration/sync-guard-e2e.sh
+      - name: pw.sh smoke (stubbed Playwright CLI)
+        run: bash tests/integration/pw-wrapper-smoke.sh

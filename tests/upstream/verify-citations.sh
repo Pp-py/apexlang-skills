@@ -3,7 +3,7 @@
 # the installed APEXlang package, and refuses the fragile citation style.
 #
 # Two checks:
-#   1. each anchor phrase in tests/citations.md still appears EXACTLY once in
+#   1. each anchor phrase in tests/upstream/citations.md still appears EXACTLY once in
 #      its upstream file — missing means the rule was reworded or removed,
 #      two hits mean the anchor is ambiguous and must be made longer;
 #   2. no `<file>.md:<line>` or `(line N)` citation crept back into skills/ —
@@ -15,9 +15,9 @@
 set -uo pipefail
 
 # shellcheck source=tests/lib/resolve-apexlang-pkg.sh
-. "$(dirname "$0")/lib/resolve-apexlang-pkg.sh"
-REPO=${REPO:-$(cd "$(dirname "$0")/.." && pwd)}
-MANIFEST="$REPO/tests/citations.md"
+. "$(dirname "$0")/../lib/resolve-apexlang-pkg.sh"
+REPO=${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}
+MANIFEST="$REPO/tests/upstream/citations.md"
 [[ -f "$MANIFEST" ]] || { echo "manifest not found: $MANIFEST" >&2; exit 2; }
 
 trim() { local s=$1; s=${s#"${s%%[![:space:]]*}"}; printf '%s' "${s%"${s##*[![:space:]]}"}"; }

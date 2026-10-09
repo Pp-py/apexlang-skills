@@ -1,6 +1,6 @@
 # Citation anchors — the official APEXlang package
 
-Every sentence this repo quotes from the official `apex` skill, as an anchor `tests/verify-citations.sh`
+Every sentence this repo quotes from the official `apex` skill, as an anchor `tests/upstream/verify-citations.sh`
 can check. The point is the failure mode: a line number silently starts pointing at a *different*
 sentence when Oracle edits the file above it, while a phrase that no longer exists produces an empty
 grep — loud, and greppable.

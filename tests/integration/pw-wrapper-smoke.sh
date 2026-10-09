@@ -10,7 +10,7 @@
 #     that claim is asserted from both sides rather than assumed.
 set -euo pipefail
 
-PW=$(cd "$(dirname "$0")/../skills/apex-sentinel" && pwd)/scripts/pw.sh
+PW=$(cd "$(dirname "$0")/../../skills/apex-sentinel" && pwd)/scripts/pw.sh
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/pw-smoke-XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/bin" "$WORK/badjq" "$WORK/ws"
