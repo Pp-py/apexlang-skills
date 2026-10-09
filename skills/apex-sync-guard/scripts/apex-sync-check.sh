@@ -55,7 +55,7 @@ blocked() { local r=$1; shift; DIE_REASON=$r die "$@"; }
 # step failed part-way): not a verdict on the replicas, and never a PASS.
 unknown() { local r=$1; shift; classify UNKNOWN "$r" "$*"; echo "apex-sync-guard: ERROR: $*" >&2; exit 3; }
 # The check ran to the end and the operation must not proceed. $1 = FAIL|CONFLICT.
-fail()    { local s=$1 r=$2; shift 2; classify "$s" "$r" "$*"; echo ""; echo "FAIL: $*" >&2; exit 1; }
+fail()    { local s=$1 r=$2; shift 2; classify "$s" "$r" "$*"; echo ""; echo "$s: $*" >&2; exit 1; }
 pass()    { classify PASS "$1" "$2"; echo "PASS: $2"; }
 note() { echo "  $*"; }
 mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }   # GNU stat / BSD (macOS) stat

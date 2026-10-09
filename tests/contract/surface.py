@@ -147,6 +147,44 @@ def check_frontmatter():
             ok(f"{rel}: frontmatter (name, description ≤ 1024)")
 
 
+SKILL_BUDGET, AGENTS_BUDGET = 12288, 6144
+CONTRACT_LABELS = ["Does", "Use when", "Decides", "Output", "Evidence", "Gate"]
+
+
+def check_skill_shape():
+    """Progressive disclosure: a SKILL.md opens with its Contract, stays within budget,
+    and every references/ file it points to exists."""
+    for rel in tracked("skills/*/SKILL.md"):
+        text, problems = read(rel), []
+        size = len(text.encode("utf-8"))
+        if size > SKILL_BUDGET:
+            problems.append(f"{size} bytes — over the {SKILL_BUDGET}-byte budget: move detail to references/")
+        sections = re.findall(r"^## (.+)$", text, re.M)
+        if not sections or sections[0] != "Contract":
+            problems.append("the first section is not '## Contract'")
+        else:
+            block = re.search(r"^## Contract\n(.*?)(?=^## )", text, re.M | re.S).group(1).strip("\n")
+            lines = block.splitlines()
+            if len(lines) > 15:
+                problems.append(f"the Contract block is {len(lines)} lines (at most 15)")
+            for label in CONTRACT_LABELS:
+                if not re.search(rf"^- \*\*{label}:\*\*", block, re.M):
+                    problems.append(f"the Contract block has no '{label}:' line")
+        skill_dir = os.path.dirname(rel)
+        for ref in sorted(set(re.findall(r"`(references/[a-z0-9.-]+\.md)`", text))):
+            if not os.path.exists(os.path.join(REPO, skill_dir, ref)):
+                problems.append(f"points to {ref}, which does not exist")
+        if problems:
+            bad(f"{rel}: shape", problems)
+        else:
+            ok(f"{rel}: Contract first, {size} bytes ≤ {SKILL_BUDGET}, its references/ exist")
+    size = len(read("AGENTS.md").encode("utf-8"))
+    if size > AGENTS_BUDGET:
+        bad(f"AGENTS.md is {size} bytes — over the {AGENTS_BUDGET}-byte budget")
+    else:
+        ok(f"AGENTS.md: {size} bytes ≤ {AGENTS_BUDGET}")
+
+
 def check_versions_and_lock():
     plugin = json.loads(read(".claude-plugin/plugin.json"))
     market = json.loads(read(".claude-plugin/marketplace.json"))
@@ -313,6 +351,7 @@ def main():
     check_links()
     check_no_line_citations()
     check_frontmatter()
+    check_skill_shape()
     check_versions_and_lock()
     check_duplicates()
     check_criterion_ids()

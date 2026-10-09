@@ -23,7 +23,7 @@ Multi-step sequences (login, the IG add-row dance) go through `run-code` — one
 
 **Three CLI mechanics the wrapper exists to hide.** Know them, because they explain its failure messages:
 
-- **The session is anchored to a directory, not to you.** The daemon session is keyed by a hash of the nearest ancestor directory containing `.playwright/`. An agent shell resets its cwd between calls, so the same command issued from a different directory sees *no* session and fails with `Browser '<name>' is not open` — the CLI's most common false negative. `pw.sh` `cd`s to one fixed workspace (`$PW_WORKSPACE`) on every call and re-opens the session if the daemon died, warning you that the page state — including the APEX session token — was lost.
+- **The session is anchored to a directory, not to you.** The daemon session is keyed by a hash of the nearest ancestor directory containing `.playwright/`. An agent shell resets its cwd between calls, so the same command issued from a different directory sees *no* session and fails with `Browser '<name>' is not open` — the CLI's most common false negative. `pw.sh` `cd`s to one fixed workspace (`$PW_WORKSPACE`) on every call and re-opens the session if the daemon died, warning you that the page state — including the APEX session token — was lost. That call then exits **3**: whatever it printed describes a logged-out page. Log in again, re-navigate, repeat the step — a runtime-result records it UNKNOWN until then.
 - **`open` is destructive when the session is already open.** It kills the running browser and starts a new one, silently discarding your login. `pw.sh open` on a live session navigates instead, so it is safe to repeat.
 - **Self-signed TLS needs a config file**, `.playwright/cli.config.json`, passed to `open` as `--config <absolute path>`:
 
@@ -33,7 +33,7 @@ Multi-step sequences (login, the IG add-row dance) go through `run-code` — one
 
   `pw.sh` writes it once inside `$PW_WORKSPACE`. Set `PW_INSECURE_TLS=0` if the runtime has a valid cert and you want validation enforced.
 
-**Keep the workspace out of the project.** `$PW_WORKSPACE` defaults to a scratchpad directory precisely so a verification run leaves nothing in the user's APEX repo — `.playwright/cli.config.json` has been accidentally *committed* to a consuming repo this way. If you deliberately point `$PW_WORKSPACE` at a repo (to reuse the login across sessions), add `.playwright/`, `.playwright-cli/` and `.playwright-mcp/` to that repo's `.gitignore` **first**.
+**Keep the workspace out of the project.** `$PW_WORKSPACE` defaults to `${TMPDIR:-/tmp}/apex-sentinel-<uid>/<repo>-<app>-<crc>` — private to you (mode 700, ownership checked), one per project and app, printed on every login — precisely so a verification run leaves nothing in the user's APEX repo — `.playwright/cli.config.json` has been accidentally *committed* to a consuming repo this way. If you deliberately point `$PW_WORKSPACE` at a repo (to reuse the login across sessions), add `.playwright/`, `.playwright-cli/` and `.playwright-mcp/` to that repo's `.gitignore` **first**.
 
 ### Playwright MCP — fallback, only when the CLI probe resolves nothing
 
@@ -100,6 +100,8 @@ The **password never goes there** — that file is committed. It is read from, i
 If a project keeps its env file somewhere other than the repo root, point `$APEX_TEST_ENV` at it. **Ask where it is — don't go hunting**, and don't assume a layout: the answer is different in every project, and a wrong guess reads secrets that were never meant for this.
 
 `$APEX_TEST_USER` overrides the username the same way, and a URL argument overrides `runtimeUrl`. With no password anywhere, `pw.sh login` **stops and says what to set** — it never prompts and never guesses.
+
+**What `pw.sh login` verifies.** It succeeds — exit 0, the session token on stdout — only when APEX itself names the test user as the session's `APP_USER` (compared without case). Landing back on the login page, an anonymous session (`nobody`), another user's session or an unreadable `APP_USER` is refused with exit 2 and the reason: an SSO, social or custom scheme cannot be verified this way, so it is refused rather than assumed.
 
 **Several apps in one repo** (`apps[]` in `apex-sync.json`, see `apex-sync-guard/setup.md` §1): each app takes its own `testUser`/`runtimeUrl` (or the top-level default), and every browser call names its app — `pw.sh --app rrhh login`, `pw.sh --app rrhh eval …` — so it gets that app's credentials **and its own browser** (one workspace per app: two apps never share a login). Without `--app` such a call is refused; `list`, `close-all` and `kill-all` cover every app. Per-app variables come first, the plain ones serve as the shared fallback: `$APEX_TEST_PASSWORD_RRHH`, then `APEX_TEST_PASSWORD_RRHH=` in the `.env`, then `$APEX_TEST_PASSWORD`, … (the alias upper-cased, any other character as `_`: `sales-eu` → `APEX_TEST_PASSWORD_SALES_EU`); `$APEX_TEST_USER_RRHH` likewise. `pw.sh apps` prints what each app resolved to.
 

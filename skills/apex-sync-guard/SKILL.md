@@ -5,6 +5,16 @@ description: Use when about to run `apex import` or `apex export` on an APEXlang
 
 # apex-sync-guard
 
+## Contract
+
+- **Does:** gates every import and export of an APEXlang app behind a Builder↔git divergence check against a recorded syncpoint.
+- **Use when:** before any `apex import` / `apex export` — Oracle's `deploy-apex-app.sh` and `apexctl … roundtrip` included — and right after either (`record-sync`).
+- **Decides:** whether the operation destroys nothing *now*, for one app through one connection — never whether the change is right.
+- **Output:** a `sync-result` (`.git/apex-sync/<alias>/last-<op>.json`; with `--task`, in the evidence dir) and exit 0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN. A check PASS also writes the hook's 10-minute marker.
+- **Evidence:** the Builder export, the comparison (`changes`, `payload`), the syncpoint commit — `references/sync-result.md`.
+- **Gate:** Sync (`framework/GATES.md`); enforced in Claude Code by the `PreToolUse` hook.
+- **Interface:** `scripts/apex-sync-check.sh check-import|check-export|record-sync|status|doctor|apps [--app <alias>] [--task <id>] [--force]`
+
 ## Overview
 
 `apex import` replaces the **entire app** in the Builder with the working tree. `apex export` replaces the **working tree** with the Builder. Both are total, silent overwrites: whichever side held unsynchronized changes loses them, irreversibly. Git and the Builder are two replicas of the same app with no built-in record of their last common state — this skill maintains that record (the **syncpoint**) and gates both directions.
@@ -17,17 +27,7 @@ Division of labor: this skill decides whether it is **SAFE** to import/export *n
 
 ## The model
 
-| Role | What | Materialized as |
-|---|---|---|
-| BASE | last synchronized state | git tree under local ref `refs/apex-sync/<app-alias>` + `.git/apex-sync/<app-alias>/state.json` |
-| LOCAL | your working tree | the APEXlang source dir in the repo |
-| REMOTE | the Builder | `apex export` to a scratch dir (the export is byte-stable: zero diff ⇒ genuinely untouched) |
-
-Same 3-way logic as `git pull` before `push`: if REMOTE moved since BASE, integrate before overwriting.
-
-**Canonical space:** BASE is always snapshotted from an `apex export`, never from the raw working tree — hand-edited `.apx` differ *textually* from the exporter's canonical serialization (whitespace, fenced vs inline blocks, JSON spacing) without differing semantically. BASE↔REMOTE comparisons are therefore noise-free; only the one-time bootstrap (BUILDER vs LOCAL, no BASE yet) can surface formatting-only diffs, which reconcile by adopting the canonical form.
-
-**Comparison is byte-exact and independent of your git config.** Replicas are compared byte for byte (`cmp`, or `git hash-object --no-filters` where `cmp` is unavailable), never with `git diff --no-index`: git applies `.gitattributes` / `core.autocrlf` to whichever side it resolves inside the repo and not to the scratch export, so its verdict tracked the machine's git settings instead of the content (with `core.autocrlf=true` — the Git-for-Windows default — a CRLF and an LF copy of the same file compare *equal*). Files that differ **only** in line endings are reported as `E` and do not gate: that difference cannot carry a Builder-side change, and blocking on it would deadlock since every re-export reintroduces it. Silence them with `*.apx text eol=lf` in the consuming repo's `.gitattributes`.
+BASE is the last synchronized state (a git commit at `refs/apex-sync/<alias>`, always snapshotted from a Builder export), LOCAL the app's source dir, REMOTE the Builder exported to scratch. Same 3-way logic as `git pull` before `push`: if REMOTE moved since BASE, integrate before overwriting. Comparison is byte-exact and independent of your git config; files differing only in line endings are reported as `E` and never gate. Details: `references/model.md`.
 
 ## Protocol
 
@@ -35,12 +35,12 @@ All operations go through `scripts/apex-sync-check.sh` in this skill's directory
 
 **Pre-import** — `apex-sync-check.sh check-import`:
 
-1. Exports REMOTE (the Builder) to scratch — **always**, ~20 s. Dictionary timestamps cannot gate this: an APEXlang import recreates components with NULL audit columns, so `LAST_UPDATED_ON`/`LAST_UPDATED_BY` feed only the best-effort who/when report.
+1. Exports REMOTE (the Builder) to scratch — **always**, ~20 s (dictionary timestamps cannot gate this: `references/model.md`).
 2. Byte-compares REMOTE vs BASE. Zero diff → Builder untouched → **PASS**. Diff, but LOCAL already contains every Builder-side change (captured/merged earlier) → **PASS** — importing rewrites those files identically, losing nothing.
-3. Otherwise **FAIL** with the per-file diff plus the who/when report → resolve (next section), then re-run.
+3. Otherwise **CONFLICT** with the per-file diff plus the who/when report → resolve (next section), then re-run.
 4. On every PASS it then prints the **deploy payload** — BASE vs LOCAL, plus how many commits touched the source dir since the syncpoint. Read it before importing: that is the change set the Builder is about to receive. `status` prints it too, without needing an export.
 
-**What counts as an import.** Not just `apex import`. Oracle's `apexlang-deploy` (26.1 and 26.2 — the only import lane on 26.2) runs `scripts/deploy-apex-app.sh <dir>`, which issues `apex import -input` inside its own heredoc; the 26.1 generation lane runs `apexctl … runtime roundtrip --import-intent validate-and-import` (`apexlang-generation/references/ops/runtime-gates.md` §Canonical Validation 9), which builds a SQLcl script containing `apex import -input …`. Same total overwrite of the Builder, different command text: `check-import` gates them all, and the hook recognizes them. (The roundtrip contract also normalizes CRLF/CR to LF before validate and import, §5 — one more reason the comparator's `E` status must not gate.)
+**What counts as an import.** Not just `apex import`: Oracle's `deploy-apex-app.sh` (26.1 and 26.2 — the only import lane on 26.2) and the 26.1 `apexctl … runtime roundtrip` issue `apex import` where the command line never shows it. Same total overwrite, different text — `check-import` gates them all, and the hook recognizes them: `references/import-lanes.md`.
 
 **Pre-export** — `apex-sync-check.sh check-export`:
 Fails if the APEXlang source dir has uncommitted or untracked changes (other apps' dirs excluded) — the export would clobber them. Commit or stash first, then re-run.
@@ -52,17 +52,7 @@ Updates the syncpoint (tree + timestamps). Skipping this poisons every future co
 
 ## Resolution when the Builder moved
 
-Per differing file (the FAIL report lists them; the Builder export is kept in scratch):
-
-- **File changed only in the Builder** (LOCAL == BASE for it): copy it from the scratch export over the source dir, commit as a "capture Builder changes" commit.
-- **File changed on both sides**: ordinary 3-way text merge, per file — materialize its BASE version from the syncpoint ref and let git merge it:
-  ```bash
-  git show refs/apex-sync/<alias>:<alias>/<file> > /tmp/base.apx
-  git merge-file <source-dir>/<file> /tmp/base.apx <scratch>/<alias>/<file>
-  ```
-  Resolve any conflict markers, commit. (Do NOT merge the syncpoint ref as a branch — it shares no history with yours; `merge-file` is the right tool.)
-
-Then re-run `check-import`: it PASSes once LOCAL contains every Builder-side change (importing rewrites those files identically, losing nothing). `apex validate`, import, `record-sync`.
+Per differing file: changed only in the Builder → copy it from the kept export into LOCAL and commit; changed on both sides → a per-file 3-way merge (`git merge-file` against the BASE version from the syncpoint ref). Re-run `check-import` until it PASSes, then validate, import, `record-sync`. **Never `record-sync` to clear a CONFLICT** — it launders the Builder-only work into BASE. Step by step: `references/resolution.md`.
 
 ## When NOT to use
 
