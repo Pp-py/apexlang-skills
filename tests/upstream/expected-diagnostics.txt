@@ -1,0 +1,12 @@
+# Diagnostics Oracle's 26.1 local lint is EXPECTED to report on our example pages.
+# One per line: <page file> <RULE_ID> [message substring]. validate-examples.sh --lint
+# fails on any diagnostic NOT listed here, and on any listed one that no longer
+# appears (a stale entry hides a fix that the READMEs should then claim).
+#
+# The breadcrumb entries can only be satisfied by the consuming app's
+# shared-components/breadcrumbs.apx; the lov block is allowed by the grammar but not
+# by the lint's component table (both documented in the slice READMEs).
+p00030-sectors-catalog.apx BREADCRUMB_COVERAGE_ENTRY_REQUIRED_001
+p00030-sectors-catalog.apx DSL_RULE_BLOCK does not allow block 'lov'
+p00041-employee-form.apx BREADCRUMB_COVERAGE_ENTRY_REQUIRED_001
+p00060-absence-requests.apx BREADCRUMB_COVERAGE_ENTRY_REQUIRED_001
