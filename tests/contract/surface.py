@@ -190,10 +190,14 @@ def check_versions_and_lock():
     market = json.loads(read(".claude-plugin/marketplace.json"))
     versions = {"plugin.json": plugin.get("version")}
     versions.update({f"marketplace.json:{p['name']}": p.get("version") for p in market.get("plugins", [])})
+    m = re.search(r"^## (\d+\.\d+\.\d+)", read("CHANGELOG.md"), re.M)
+    versions["CHANGELOG.md (latest entry)"] = m.group(1) if m else None
+    fv = re.search(r'^FRAMEWORK_VERSION="([^"]+)"', read("skills/apex-sync-guard/scripts/apex-sync-check.sh"), re.M)
+    versions["apex-sync-check.sh FRAMEWORK_VERSION"] = fv.group(1) if fv else None
     if len(set(versions.values())) == 1:
-        ok(f"plugin manifests agree on version {plugin.get('version')}")
+        ok(f"one version everywhere: {plugin.get('version')} (manifests, CHANGELOG, the version results report)")
     else:
-        bad("plugin manifests disagree on the version", [f"{k}: {v}" for k, v in versions.items()])
+        bad("the version differs between manifests, CHANGELOG and FRAMEWORK_VERSION", [f"{k}: {v}" for k, v in versions.items()])
     lock = json.loads(read("framework/oracle-skills.lock.json"))
     problems = []
     if lock.get("schemaVersion") != 1:
