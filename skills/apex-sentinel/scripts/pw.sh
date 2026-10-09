@@ -36,6 +36,11 @@
 # through a mode-600 snippet file that is deleted on exit, and the CLI is run with
 # --raw so it does not echo the snippet back (plain `run-code` prints the code it ran).
 #
+# Exit codes: 0 OK · 2 refused / a precondition failed / the login could not be
+# verified · 3 the browser had died and was reopened, so whatever the call printed
+# describes a LOGGED-OUT page (re-login, re-navigate, repeat the step) · any other
+# code is the Playwright CLI's own.
+#
 # Runs under bash: Linux, macOS, and Windows via Git Bash or WSL (not PowerShell/cmd).
 set -euo pipefail
 
@@ -255,6 +260,21 @@ case "$CMD" in
     return '';
   };
 
+  const appUser = async () => String(await page.evaluate(
+    () => (window.apex && apex.env && apex.env.APP_USER) || '').catch(() => '')).trim();
+  // Every exit goes through verdict(). Leaving the login page is NOT a login: a public
+  // landing page, an SSO redirect or a change-password interstitial all leave it too.
+  // The only proof is APEX itself naming the test user as the session's APP_USER.
+  const verdict = async () => {
+    if (await onLoginPage())
+      return 'LOGIN-FAILED|' + ((await errorText()) || 'still on the login page');
+    const u = await appUser();
+    if (!u) return 'LOGIN-UNVERIFIED|apex.env.APP_USER is not readable on ' + page.url();
+    if (u.toLowerCase() === 'nobody') return 'LOGIN-UNVERIFIED|the page is anonymous (APP_USER=nobody)';
+    if (u.toUpperCase() !== USER.toUpperCase()) return 'LOGIN-WRONG-USER|' + u;
+    return 'LOGIN-OK|' + u + '|' + page.url();
+  };
+
   // Check the page we are ALREADY holding before navigating anywhere. Going to the app
   // root without a token makes APEX open a fresh session and bounce to login — so a
   // `goto` first would destroy the very login this is supposed to preserve, and calling
@@ -262,15 +282,14 @@ case "$CMD" in
   const signedIn = async () => {
     if (!page.url().startsWith(APP.replace(/\/+$/, ''))) return false;   // some other app
     if (await onLoginPage()) return false;
-    const u = await page.evaluate(
-      () => (window.apex && apex.env && apex.env.APP_USER) || '').catch(() => '');
+    const u = await appUser();
     return !!u && u.toLowerCase() !== 'nobody';        // APEX calls an anonymous session 'nobody'
   };
-  if (await signedIn()) return page.url();
+  if (await signedIn()) return verdict();          // signed in — as whom? verdict() decides
 
   await page.goto(APP, { waitUntil: 'load' });
   await settle();
-  if (!(await onLoginPage())) return page.url();
+  if (!(await onLoginPage())) return verdict();    // a cookie session or a public page: verify it
 
   // APEX names its login items P<n>_USERNAME / P<n>_PASSWORD, and <n> is NOT always 101
   // (a real app answered on P9999). Matching the id SUFFIX survives any page number, and
@@ -283,10 +302,7 @@ case "$CMD" in
 
   await pwd.press('Enter');
   await settle();
-
-  if (await onLoginPage())
-    return 'LOGIN-FAILED ' + ((await errorText()) || 'still on the login page');
-  return page.url();
+  return verdict();
 }
 JS
       } > "$SNIP"
@@ -296,20 +312,37 @@ JS
       rm -f "$SNIP"; die "the login snippet did not run: $OUT"
     }
     rm -f "$SNIP"
-    URL=$(printf '%s' "$OUT" | tr -d '\r"' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-
-    case "$URL" in
-      LOGIN-FAILED*)
-        die "APEX rejected the login for user '$SENTINEL_USER': ${URL#LOGIN-FAILED }
+    # The verdict is the last non-empty line: anything the CLI printed before it (a
+    # banner, a warning) must not decide whether a login happened.
+    V=$(printf '%s\n' "$OUT" | tr -d '\r"' | grep -v '^[[:space:]]*$' | tail -1 \
+        | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//') || V=""
+    upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }      # bash 3.2 has no ${x^^}
+    case "$V" in
+      LOGIN-OK\|*)
+        r=${V#LOGIN-OK|}; APPUSER=${r%%|*}; URL=${r#*|}
+        # Second opinions on the snippet's verdict, because the failure they guard against
+        # is the worst one this skill can produce: reporting a login that never happened.
+        [[ "$(upper "$APPUSER")" == "$(upper "$SENTINEL_USER")" ]] \
+          || die "the page says it is signed in as '$APPUSER', not '$SENTINEL_USER' — NOT verified."
+        # The login page carries a ?session= token of its own, so a token is not evidence.
+        case "$URL" in
+          */login|*/login\?*|*/login#*)
+            die "landed back on the login page as '$SENTINEL_USER' — NOT signed in: $URL
+      Treat any assertion made from here as measuring a logged-out page." ;;
+        esac ;;
+      LOGIN-FAILED\|*)
+        die "APEX rejected the login for user '$SENTINEL_USER': ${V#LOGIN-FAILED|}
       The runtime app login is its own scheme — not the ORDS/instance-admin and not the
       schema password. Failures are throttled with an escalating wait: pause ~12 s before
       retrying, or hammering only raises the timer." ;;
-      # Second opinion on the snippet's verdict, because the failure it guards against is
-      # the worst one this skill can produce: reporting a login that never happened. The
-      # login page carries a ?session= token of its own, so a token is not evidence.
-      */login|*/login\?*|*/login#*)
-        die "landed back on the login page as '$SENTINEL_USER' — NOT signed in: $URL
-      Treat any assertion made from here as measuring a logged-out page." ;;
+      LOGIN-WRONG-USER\|*)
+        die "this browser is signed in as '${V#LOGIN-WRONG-USER|}', not '$SENTINEL_USER'.
+      Run pw.sh close-all, then pw.sh login again." ;;
+      LOGIN-UNVERIFIED\|*)
+        die "cannot verify who is signed in: ${V#LOGIN-UNVERIFIED|}
+      An SSO, social or custom scheme is not handled by pw.sh login (setup.md §2)." ;;
+      *)
+        die "the login snippet returned no verdict — treating it as NOT signed in. Last line: $(printf '%s' "$V" | cut -c1-200)" ;;
     esac
 
     printf '%s\n' "$URL" > "$LAST_URL"
@@ -330,20 +363,25 @@ JS
     ;;
 
   *)
-    # Everything else needs a live session. Recover if the daemon died, but say so
-    # loudly: the restored page has no APEX session token, so an assertion made
-    # right after recovery would be measuring a logged-out page.
+    # Everything else needs a live session. Recover if the daemon died — but the
+    # restored page has no APEX session, so whatever this call prints measures a
+    # logged-out page. A warning alone was easy to miss behind exit 0; the call now
+    # exits 3, which the runtime gate reads as UNKNOWN for that step.
+    recovered=0
     if ! session_open; then
       local_url=""
       [[ -f "$LAST_URL" ]] && local_url=$(cat "$LAST_URL")
       open_session "$local_url" >/dev/null
       warn "session '$PW_SESSION' was not open; reopened${local_url:+ at $local_url}."
       warn "Page state (APEX session token, unsaved edits) was LOST — re-login and re-navigate"
-      warn "with the fresh ?session=<token> before trusting any assertion below."
+      warn "with the fresh ?session=<token>, then repeat this step (exit 3)."
+      recovered=1
     fi
     if [[ "$CMD" == "goto" && -n "${1:-}" ]]; then
       printf '%s\n' "$1" > "$LAST_URL"
     fi
-    pw "$CMD" "$@"
+    rc=0; pw "$CMD" "$@" || rc=$?
+    (( rc == 0 && recovered )) && exit 3
+    exit "$rc"
     ;;
 esac

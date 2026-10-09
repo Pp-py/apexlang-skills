@@ -31,7 +31,7 @@ for a in "$@"; do
   prev=$a
 done
 case " $* " in *" run-code "*) printf '"%s"\n' "${PW_FAKE_URL:-}"; exit 0 ;; esac
-exit 0
+exit "${PW_FAKE_RC:-0}"
 EOF
 chmod +x "$WORK/bin/playwright-cli"
 printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/badjq/jq"      # present but broken
@@ -91,7 +91,8 @@ check "broken jq + closed session -> open" '^-s apex open '
 # is the assertion this whole section exists for.
 export PATH="$PATH_OK"                  # step back off the broken-jq PATH
 SECRET='S3cr3tV4lue'
-export PW_FAKE_URL='https://apex.example/r/ws/APP/home?session=8808821264318'
+# The snippet answers with a verdict; LOGIN-OK carries the APP_USER APEX reported.
+export PW_FAKE_URL='LOGIN-OK|TEST_QA|https://apex.example/r/ws/APP/home?session=8808821264318'
 export APEX_TEST_FILE="$WORK/external.json"
 
 # A real project repo: the username and the runtime URL are ordinary config, the
@@ -160,7 +161,7 @@ printf 'APEX_TEST_PASSWORD=%s\n' "$SECRET" > "$WORK/proj/.env"
 
 # A rejected login must not read as success: APEX re-renders the login page, so the
 # notification text is the only evidence of what went wrong.
-export PW_FAKE_URL='LOGIN-FAILED Credenciales de conexión no válidas'
+export PW_FAKE_URL='LOGIN-FAILED|Credenciales de conexión no válidas'
 run "$OPEN" login
 if [[ $RC -ne 0 ]] && grep -q 'Credenciales' "$WORK/err" && grep -q '12 s' "$WORK/err"; then
   ok "login: a rejected login fails loudly and names the throttling"
@@ -170,11 +171,52 @@ else bad "login: expected a non-zero exit quoting the notification, got exit $RC
 # carries a session token — the login page has one of its own. This is the wrapper's own
 # check, independent of the snippet's verdict, because a false "logged in" would make
 # every later assertion measure a logged-out page.
-export PW_FAKE_URL='https://apex.example/r/ws/APP/login?session=12011062162154&tz=X'
+export PW_FAKE_URL='LOGIN-OK|TEST_QA|https://apex.example/r/ws/APP/login?session=12011062162154&tz=X'
 run "$OPEN" login
 if [[ $RC -ne 0 ]] && grep -q 'NOT signed in' "$WORK/err"; then
   ok "login: a login-page URL is a failure, token or no token"
 else bad "login: expected a non-zero exit rejecting the login-page URL, got exit $RC" "$WORK/err" "$WORK/out"; fi
+
+# Leaving the login page is not a login: a public landing page, an SSO redirect or a
+# change-password interstitial all leave it too. Only APEX naming the test user as the
+# session's APP_USER counts, and the wrapper re-checks the snippet's verdict.
+export PW_FAKE_URL='LOGIN-OK|test_qa|https://apex.example/r/ws/APP/home?session=42'
+run "$OPEN" login
+if [[ $RC -eq 0 ]] && grep -qx '42' "$WORK/out"; then ok "login: APP_USER is compared case-insensitively"
+else bad "login: expected exit 0 and the token, got exit $RC" "$WORK/err"; fi
+export PW_FAKE_URL='LOGIN-OK|SOMEONE_ELSE|https://apex.example/r/ws/APP/home?session=42'
+run "$OPEN" login
+if [[ $RC -eq 2 ]] && grep -q "signed in as 'SOMEONE_ELSE'" "$WORK/err"; then ok "login: an OK for another user is refused by the wrapper"
+else bad "login: expected exit 2 naming the other user, got exit $RC" "$WORK/err"; fi
+export PW_FAKE_URL='LOGIN-WRONG-USER|SOMEONE_ELSE'
+run "$OPEN" login
+if [[ $RC -eq 2 ]] && grep -q 'close-all' "$WORK/err"; then ok "login: a browser held by another user is refused"
+else bad "login: expected exit 2 with the close-all hint, got exit $RC" "$WORK/err"; fi
+export PW_FAKE_URL='LOGIN-UNVERIFIED|the page is anonymous (APP_USER=nobody)'
+run "$OPEN" login
+if [[ $RC -eq 2 ]] && grep -q 'cannot verify who is signed in' "$WORK/err"; then ok "login: an unverifiable session is refused"
+else bad "login: expected exit 2 for an unverified login, got exit $RC" "$WORK/err"; fi
+export PW_FAKE_URL='https://apex.example/r/ws/APP/home?session=42'      # the old, verdict-less answer
+run "$OPEN" login
+if [[ $RC -eq 2 ]] && grep -q 'no verdict' "$WORK/err"; then ok "login: anything but a verdict fails closed"
+else bad "login: expected exit 2 'no verdict', got exit $RC" "$WORK/err"; fi
+check_in "login: the snippet reads apex.env.APP_USER"   "$WORK/snip" 'apex\.env\.APP_USER'
+check_in "login: the snippet compares the user"         "$WORK/snip" 'toUpperCase\(\) !== USER\.toUpperCase\(\)'
+if grep -q 'return page.url()' "$WORK/snip"; then bad "login: the snippet still returns a bare URL as success" "$WORK/snip"
+else ok "login: no bare-URL success path left in the snippet"; fi
+export PW_FAKE_URL='LOGIN-OK|TEST_QA|https://apex.example/r/ws/APP/home?session=8808821264318'
+
+# A command that had to reopen a dead browser ran on a logged-out page: exit 3, so the
+# step reads as UNKNOWN instead of a clean 0 behind a warning.
+run "$SHUT" eval '() => 1'
+if [[ $RC -eq 3 ]] && grep -q 'exit 3' "$WORK/err"; then ok "recovered session: the call exits 3"
+else bad "recovered session: expected exit 3, got $RC" "$WORK/err"; fi
+PW_FAKE_RC=1 run "$SHUT" eval '() => 1'
+if [[ $RC -eq 1 ]]; then ok "recovered session: the CLI's own failure code still wins"
+else bad "recovered session: expected the CLI's exit 1, got $RC" "$WORK/err"; fi
+run "$OPEN" eval '() => 1'
+if [[ $RC -eq 0 ]]; then ok "live session: a passthrough call exits 0"
+else bad "live session: expected exit 0, got $RC" "$WORK/err"; fi
 cd /                                    # the EXIT trap removes $WORK
 
 echo
