@@ -18,6 +18,7 @@ mkdir -p "$WORK/bin" "$WORK/badjq" "$WORK/ws"
 cat > "$WORK/bin/playwright-cli" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$PW_LOG"
+printf '%s\n' "$PWD" >> "${PW_CWD_LOG:-/dev/null}"
 case " $* " in *" --version "*) echo "1.0.0"; exit 0 ;; esac
 prev=""
 for a in "$@"; do
@@ -217,6 +218,62 @@ else bad "recovered session: expected the CLI's exit 1, got $RC" "$WORK/err"; fi
 run "$OPEN" eval '() => 1'
 if [[ $RC -eq 0 ]]; then ok "live session: a passthrough call exits 0"
 else bad "live session: expected exit 0, got $RC" "$WORK/err"; fi
+
+# --- one private workspace per project, never inside it. It used to be one shared
+# /tmp/apex-sentinel-pw: two projects drove the same browser, login and last-url.
+export PW_CWD_LOG="$WORK/cwdlog"
+mkdir -p "$WORK/tmp" "$WORK/proj2" && git -C "$WORK/proj2" init -q
+ws_of() {  # $1 = dir to run from, PW_WORKSPACE unset -> the workspace the CLI ran in
+  : > "$PW_CWD_LOG"; printf '%s\n' "$OPEN" > "$PW_STATE"
+  ( cd "$1" && unset PW_WORKSPACE && export TMPDIR="$WORK/tmp" PW_LOG="$WORK/log" && "$PW" eval '() => 1' ) >/dev/null 2>&1 || true
+  tail -1 "$PW_CWD_LOG"            # the eval itself (the launcher probe runs where pw.sh was called)
+}
+w1=$(ws_of "$WORK/proj"); w2=$(ws_of "$WORK/proj2")
+if [[ "$w1" == "$WORK/tmp/apex-sentinel-$(id -u)/proj-default-"* ]]; then ok "workspace: per user, named after the project"
+else bad "workspace: unexpected default '$w1'"; fi
+if [[ -n "$w1" && -n "$w2" && "$w1" != "$w2" ]]; then ok "workspace: two projects get two workspaces"
+else bad "workspace: '$w1' vs '$w2'"; fi
+if [[ "$w1" != "$WORK/proj"* ]]; then ok "workspace: never inside the project"
+else bad "workspace: '$w1' is inside the project"; fi
+# An explicit PW_WORKSPACE inside the repo is refused unless the repo ignores it.
+RC=0; (cd "$WORK/proj" && PW_WORKSPACE="$WORK/proj/ws" "$PW" list) >/dev/null 2>"$WORK/err" || RC=$?
+if [[ $RC -eq 2 ]] && grep -q 'inside the project repo' "$WORK/err"; then ok "workspace: inside the repo and not ignored -> refused"
+else bad "workspace: expected exit 2 for an unignored in-repo workspace, got $RC" "$WORK/err"; fi
+printf '.playwright/\n.playwright-cli/\n' > "$WORK/proj/.gitignore"
+RC=0; (cd "$WORK/proj" && PW_WORKSPACE="$WORK/proj/ws" "$PW" list) >/dev/null 2>"$WORK/err" || RC=$?
+if [[ $RC -eq 0 ]]; then ok "workspace: inside the repo but ignored -> allowed"
+else bad "workspace: an ignored in-repo workspace was refused (exit $RC)" "$WORK/err"; fi
+rm -f "$WORK/proj/.gitignore"; rm -rf "$WORK/proj/ws"
+unset PW_CWD_LOG
+
+# --- the TLS setting is rewritten when it changes (it used to be written once, so
+# PW_INSECURE_TLS=0 set later changed nothing), but never under a live browser that
+# was launched with the old setting.
+CFGF="$WORK/ws/.playwright/cli.config.json"
+rm -f "$CFGF"
+PW_INSECURE_TLS=0 run "$SHUT" open "https://apex.example/"
+if [[ -f "$CFGF" ]] && ! grep -q ignoreHTTPSErrors "$CFGF"; then ok "tls: PW_INSECURE_TLS=0 writes a validating config"
+else bad "tls: expected a config without ignoreHTTPSErrors" "$CFGF"; fi
+PW_INSECURE_TLS=1 run "$SHUT" open "https://apex.example/"
+if grep -q ignoreHTTPSErrors "$CFGF"; then ok "tls: flipping back to 1 rewrites it"
+else bad "tls: the config was not rewritten" "$CFGF"; fi
+PW_INSECURE_TLS=0 run "$OPEN" eval '() => 1'
+if [[ $RC -eq 2 ]] && grep -q 'close-all first' "$WORK/err" && grep -q ignoreHTTPSErrors "$CFGF"; then
+  ok "tls: a change under an open browser is refused, file untouched"
+else bad "tls: expected exit 2 and an untouched config, got $RC" "$WORK/err"; fi
+PW_INSECURE_TLS=maybe run "$OPEN" list
+if [[ $RC -eq 2 ]]; then ok "tls: a value other than 0/1 is refused"
+else bad "tls: expected exit 2 for PW_INSECURE_TLS=maybe, got $RC" "$WORK/err"; fi
+
+# --- the APEX session token never lands on disk; snapshots go with the session.
+run "$OPEN" goto 'https://apex.example/r/ws/APP/p30?session=123&tz=1'
+if [[ "$(cat "$WORK/ws/.playwright/last-url")" == 'https://apex.example/r/ws/APP/p30?tz=1' ]]; then
+  ok "last-url keeps the page, drops the session token"
+else bad "last-url still carries the token: $(cat "$WORK/ws/.playwright/last-url")"; fi
+mkdir -p "$WORK/ws/.playwright-cli" && : > "$WORK/ws/.playwright-cli/page-1.yml"
+run "$OPEN" close-all
+if [[ $RC -eq 0 && ! -e "$WORK/ws/.playwright-cli" ]]; then ok "close-all purges the snapshots"
+else bad "close-all left the snapshots behind (exit $RC)" "$WORK/err"; fi
 cd /                                    # the EXIT trap removes $WORK
 
 echo

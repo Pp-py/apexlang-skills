@@ -27,7 +27,9 @@
 #
 # Environment (all optional):
 #   PW_WORKSPACE      dir anchoring the daemon session, config and snapshots.
-#                     Default: a scratchpad dir; never the project repo.
+#                     Default: ${TMPDIR:-/tmp}/apex-sentinel-<uid>/<repo>-<app>-<crc>,
+#                     one per project, never inside it. Run pw.sh from inside the
+#                     project repo, or every project shares one browser and login.
 #   PW_SESSION        browser session name (default: apex)
 #   PW_INSECURE_TLS   1 (default) accept self-signed certs; 0 to enforce validation
 #   APEX_TEST_USER / APEX_TEST_PASSWORD / APEX_TEST_FILE   see `login` below
@@ -58,29 +60,55 @@ native_path() {
 }
 
 [[ $# -gt 0 ]] || die "no subcommand — try: $(basename "$0") open <url>"
+CMD=$1; shift
+
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || PROJECT_ROOT=""
 
 # ------------------------------------------------------------------ workspace
-# One stable directory for the whole verification loop. Defaults outside any
+# One stable directory per project for the whole verification loop, outside any
 # repository so a run never leaves .playwright*/ droppings in the user's project.
-: "${PW_WORKSPACE:=${CLAUDE_SCRATCHPAD:-${TMPDIR:-/tmp}}/apex-sentinel-pw}"
+# It used to be one shared /tmp/apex-sentinel-pw: two projects then drove the same
+# browser, the same login and the same last-url.
 : "${PW_SESSION:=apex}"
 : "${PW_INSECURE_TLS:=1}"
-
+case "$PW_INSECURE_TLS" in 0|1) ;; *) die "PW_INSECURE_TLS must be 0 or 1 (got '$PW_INSECURE_TLS')" ;; esac
+slug() { printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-40; }
+if [[ -n "${PW_WORKSPACE:-}" ]]; then
+  WS_FROM=override
+else
+  WS_FROM=default
+  # Per user and private: the login snippet briefly holds the password in here.
+  ws_base="${TMPDIR:-/tmp}/apex-sentinel-$(id -u)"
+  (umask 077; mkdir -p "$ws_base") || die "cannot create $ws_base"
+  [[ -O "$ws_base" ]] || die "$ws_base is not owned by you — refusing to use it (another user could plant files there)"
+  chmod 700 "$ws_base" 2>/dev/null || true
+  if [[ -n "$PROJECT_ROOT" ]]; then
+    ws_crc=$(printf '%s|%s' "$PROJECT_ROOT" "${APP_ALIAS:-}" | cksum | cut -d' ' -f1)
+    PW_WORKSPACE="$ws_base/$(slug "$(basename "$PROJECT_ROOT")")-$(slug "${APP_ALIAS:-default}")-$ws_crc"
+  else
+    PW_WORKSPACE="$ws_base/default"
+    warn "not inside a project repo — using the shared workspace $PW_WORKSPACE. Run pw.sh from inside the APEX project."
+  fi
+fi
 mkdir -p "$PW_WORKSPACE/.playwright" || die "cannot create workspace $PW_WORKSPACE"
-PW_WORKSPACE=$(cd "$PW_WORKSPACE" && pwd)          # absolute; --config needs it
+PW_WORKSPACE=$(cd "$PW_WORKSPACE" && pwd -P)      # absolute; --config needs it
+# Never inside the project unless it is ignored there: .playwright/cli.config.json
+# has been committed to a consuming repo exactly this way.
+if [[ -n "$PROJECT_ROOT" && "$PW_WORKSPACE/" == "$PROJECT_ROOT/"* ]]; then
+  if [[ "$WS_FROM" == default ]] || ! git -C "$PROJECT_ROOT" check-ignore -q "$PW_WORKSPACE/.playwright/cli.config.json"; then
+    die "the Playwright workspace $PW_WORKSPACE is inside the project repo and not gitignored — point PW_WORKSPACE outside the repo, or add .playwright/ and .playwright-cli/ to its .gitignore first"
+  fi
+fi
 CONFIG="$PW_WORKSPACE/.playwright/cli.config.json"
 CONFIG_ARG=$(native_path "$CONFIG")                # what the CLI is handed
 LAST_URL="$PW_WORKSPACE/.playwright/last-url"
 
-# Written once. Absent config => the CLI rejects self-signed certs with
-# net::ERR_CERT_AUTHORITY_INVALID and the loop stalls on the login page.
-if [[ ! -f "$CONFIG" ]]; then
-  if [[ "$PW_INSECURE_TLS" == "1" ]]; then
-    printf '{ "browser": { "contextOptions": { "ignoreHTTPSErrors": true } } }\n' > "$CONFIG"
-  else
-    printf '{ "browser": { "contextOptions": {} } }\n' > "$CONFIG"
-  fi
-fi
+# The URL to reopen after a crash, minus the APEX session token: the token is a
+# credential, and without its cookie it only bounces to the login page anyway.
+remember_url() {
+  printf '%s\n' "$1" \
+    | sed -E 's/([?&])session=[^&#]*/\1/; s/\?&/?/; s/&&/\&/; s/[?&](#|$)/\1/' > "$LAST_URL"
+}
 
 # ------------------------------------------------------------------- launcher
 # Order matters: a global binary if present, otherwise npx. Probed on exit code
@@ -119,11 +147,32 @@ session_open() {
 open_session() {  # $1 = url (optional)
   if [[ -n "${1:-}" ]]; then
     pw open --config "$CONFIG_ARG" "$1"
-    printf '%s\n' "$1" > "$LAST_URL"
+    remember_url "$1"
   else
     pw open --config "$CONFIG_ARG"
   fi
 }
+
+# The TLS setting lives in a config file the browser reads at launch. It used to be
+# written once, so PW_INSECURE_TLS=0 set later silently changed nothing. It is now
+# rewritten whenever it differs — and refused while a browser launched with the old
+# setting is still open, since that browser would keep ignoring certificate errors.
+if [[ "$PW_INSECURE_TLS" == 1 ]]; then
+  WANT_CONFIG='{ "browser": { "contextOptions": { "ignoreHTTPSErrors": true } } }'
+else
+  WANT_CONFIG='{ "browser": { "contextOptions": {} } }'
+fi
+case "$CMD" in
+  list|close-all|kill-all|install|install-browser) ;;   # never launch a browser
+  *)
+    if [[ "$(cat "$CONFIG" 2>/dev/null || true)" != "$WANT_CONFIG" ]]; then
+      if [[ -f "$CONFIG" ]] && session_open; then
+        die "PW_INSECURE_TLS changed, but session '$PW_SESSION' is open with the old setting — run pw.sh close-all first"
+      fi
+      { printf '%s\n' "$WANT_CONFIG" > "$CONFIG.tmp.$$" && mv -f "$CONFIG.tmp.$$" "$CONFIG"; } \
+        || die "cannot write $CONFIG"
+    fi ;;
+esac
 
 # --------------------------------------------------------- test-user credentials
 # Only `login` reads these. A username is not a secret, so it sits with the rest of
@@ -196,15 +245,13 @@ js_str() {  # $1 = raw value -> a JS double-quoted literal, using builtins ONLY 
   printf '"%s"' "$s"
 }
 
-CMD=$1; shift
-
 case "$CMD" in
   open)
     # Idempotent: re-opening an open session would kill the browser and drop the
     # APEX login, so navigate the held session instead.
     if session_open; then
       if [[ -n "${1:-}" ]]; then
-        printf '%s\n' "$1" > "$LAST_URL"
+        remember_url "$1"
         pw goto "$@"
       else
         warn "session '$PW_SESSION' already open — nothing to do."
@@ -345,7 +392,8 @@ JS
         die "the login snippet returned no verdict — treating it as NOT signed in. Last line: $(printf '%s' "$V" | cut -c1-200)" ;;
     esac
 
-    printf '%s\n' "$URL" > "$LAST_URL"
+    remember_url "$URL"
+    warn "workspace: $PW_WORKSPACE"
     TOKEN=${URL##*session=}; TOKEN=${TOKEN%%&*}
     if [[ -n "$TOKEN" && "$TOKEN" != "$URL" ]]; then
       warn "logged in as '$SENTINEL_USER' — session token on stdout."
@@ -359,7 +407,12 @@ JS
 
   list|close-all|kill-all|install|install-browser)
     # Session-independent; never trigger recovery.
-    (cd "$PW_WORKSPACE" && "${LAUNCHER[@]}" "$CMD" "$@")
+    rc=0; (cd "$PW_WORKSPACE" && "${LAUNCHER[@]}" "$CMD" "$@") || rc=$?
+    # Snapshots are page dumps that can hold personal data: gone with the session.
+    if [[ "$CMD" == close-all || "$CMD" == kill-all ]] && (( rc == 0 )); then
+      rm -rf "$PW_WORKSPACE/.playwright-cli"
+    fi
+    exit "$rc"
     ;;
 
   *)
@@ -372,13 +425,13 @@ JS
       local_url=""
       [[ -f "$LAST_URL" ]] && local_url=$(cat "$LAST_URL")
       open_session "$local_url" >/dev/null
-      warn "session '$PW_SESSION' was not open; reopened${local_url:+ at $local_url}."
+      warn "session '$PW_SESSION' was not open; reopened${local_url:+ at $local_url} (workspace $PW_WORKSPACE)."
       warn "Page state (APEX session token, unsaved edits) was LOST — re-login and re-navigate"
       warn "with the fresh ?session=<token>, then repeat this step (exit 3)."
       recovered=1
     fi
     if [[ "$CMD" == "goto" && -n "${1:-}" ]]; then
-      printf '%s\n' "$1" > "$LAST_URL"
+      remember_url "$1"
     fi
     rc=0; pw "$CMD" "$@" || rc=$?
     (( rc == 0 && recovered )) && exit 3
