@@ -62,12 +62,12 @@
       ] } } }] } } }
     },
     {
-      "description": "reason catalog — BLOCKED (the codes before SOURCE_DIR_MISSING stop a run before its app is known, so they reach the exit code, not a file)",
+      "description": "reason catalog — BLOCKED (USAGE … APP_UNKNOWN stop a run before its app is known, so they reach the exit code, never a file)",
       "if": { "properties": { "status": { "const": "BLOCKED" } } },
       "then": { "properties": { "reasons": { "prefixItems": [{ "properties": { "code": { "enum": [
         "USAGE", "UNSUPPORTED_SHELL", "NO_GIT", "NO_SQLCL", "NO_JSON_PARSER", "NO_CONFIG", "CONFIG_INVALID",
-        "APP_REQUIRED", "APP_UNKNOWN", "STATE_UNWRITABLE",
-        "SOURCE_DIR_MISSING", "APP_ID_MISMATCH", "SYNCPOINT_WITHOUT_APP", "NO_FRESH_CHECK"
+        "APP_REQUIRED", "APP_UNKNOWN",
+        "STATE_UNWRITABLE", "SOURCE_DIR_MISSING", "APP_ID_MISMATCH", "SYNCPOINT_WITHOUT_APP", "NO_FRESH_CHECK"
       ] } } }] } } }
     },
     {

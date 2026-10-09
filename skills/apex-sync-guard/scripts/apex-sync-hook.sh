@@ -7,9 +7,11 @@
 #
 # Blocks an import or export (in any of the lanes below) unless a fresh matching
 # check PASS marker exists (TTL 10 min). Direction-aware: an import needs a
-# check-import PASS, an export needs a check-export PASS. It also refuses the
-# commands that would let an agent overrule the guard: record-sync --force and
-# writes to the guard's own markers, refs and state.
+# check-import PASS, an export needs a check-export PASS. With several apps in
+# apex-sync.json, it needs the marker of the app the command acts on — read from
+# the command, never guessed. It also refuses the commands that would let an agent
+# overrule the guard: record-sync --force and writes to the guard's own markers,
+# refs and state.
 #
 # Exit 0 = allow, exit 2 = block (stderr goes back to the agent). Claude Code
 # blocks ONLY on exit 2 — any other exit lets the command run — so once a command
@@ -17,16 +19,13 @@
 set -uo pipefail
 
 TTL=600   # seconds a check PASS authorizes; must equal TTL_SECONDS in apex-sync-check.sh
-# Same pattern as apex-sync-check.sh (a contract test asserts it): an alias names
-# a directory under .git/apex-sync/, so anything looser is a path to somewhere else.
-RE_APP_ALIAS='^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
 
 mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }   # GNU stat / BSD (macOS) stat
 
 # Resolved by EXECUTION, not by `command -v`: the Microsoft Store `python3` stub
-# satisfies presence checks and then exits without running. Deliberately duplicated
-# from apex-sync-check.sh — a hook must stay self-contained; it may be registered by
-# absolute path or symlink, with no readable sibling to source.
+# satisfies presence checks and then exits without running. Resolved here, before
+# anything else, because the payload must be read to know whether the command is
+# relevant at all; apex-sync.json is only read (lib/, below) for those that are.
 JSON_TOOL=()
 if command -v jq >/dev/null 2>&1 && printf '{}' | jq -e . >/dev/null 2>&1; then
   JSON_TOOL=(jq)
@@ -113,30 +112,30 @@ rx() {
 # as a word, or $SQLCL_BIN (how Oracle's scripts name it).
 SQLCL_LAUNCHER='(^|[;&|(`[:space:]/\\])(sql|sql\.exe|sql\.bat|sqlcl)["'"'"']?([[:space:]]|$)|\$\{?SQLCL_BIN\}?'
 
-# A subcommand only counts as an invocation when a flag it runs with is present,
-# or when a SQLcl launcher is. Matching the bare phrase blocked commands that merely
-# MENTIONED it: a grep pattern, a `git commit -m` message — and editing this very
-# file. A guard that obstructs reading its own source is a guard people switch off.
-# The launcher alternative closes the opposite hole: a bare `apex import` with no
-# flag imports the CURRENT DIRECTORY (SQLcl's own help), so `sql -name dev <<<
-# "apex import"` is a real import with no flag in it.
-#
-# The flag is looked for anywhere in the command, not right after the subcommand,
-# so a heredoc that puts it on the next line still counts (grep is line-based).
-apex_subcommand() {  # $1 = import|export ; $2… = the flags that make it real
-  local sub="$1"; shift
-  local flags; flags=$(IFS='|'; echo "$*")
-  # The subcommand ends at any non-word character: `<<< "apex import"` ends in a quote.
-  case "$sub" in
-    import) rx "apex[[:space:]]+import([^[:alnum:]_-]|$)" || return 1 ;;
-    # export-application, export-components, … are exports too
-    export) rx "apex[[:space:]]+export(-[[:alpha:]-]+)?([^[:alnum:]_-]|$)" || return 1 ;;
-  esac
+# SQLcl's own names (`help apex`, SQLcl 26.2): every subcommand has a short form,
+# and so does every option. Missing them let `apex imp -i dir` through.
+IMPORT_SUB='(import|imp)'
+EXPORT_SUB='(export(-[[:alpha:]-]+)?|ex|exaa|exaw|exap|exco|exfe|exin|exsf|exwo)'
+IMPORT_FLAGS='-input|-i|-id|-alias|-al|-deployment|-d|-name|-n|-schema|-sch|-proxy|-pr|-image-prefix|-impr|-workspace|-ws|-workspaceid|-woi|-applicationid|-api'
+EXPORT_FLAGS='-applicationid|-api|-dir|-di|-exptype|-exty|-expcomponents|-exc|-split|-sp|-workspaceid|-woi|-expworkspace|-exwo|-instance|-in|-expsupportingobjects|-exso|-expfiles|-exfi|-expminimal|-exmi|-skipexportdate|-sked|-overwrite-files|-ovf'
+
+# A subcommand only counts as an invocation when one of its options follows it on
+# the same line, or when a SQLcl launcher is in the command. Matching the bare phrase
+# blocked commands that merely MENTIONED it: a grep pattern, a `git commit -m`
+# message — and editing this very file. A guard that obstructs reading its own source
+# is a guard people switch off. Options are looked for AFTER the subcommand: short
+# forms like -i are everywhere else (`grep -i "apex import" …` is a search). The
+# launcher alternative closes the opposite hole: a bare `apex import` imports the
+# CURRENT DIRECTORY, so `sql -name dev <<< "apex import"` is a real import with no
+# option in it — and a heredoc whose options sit on a continuation line has its
+# launcher on the first.
+apex_subcommand() {  # $1 = subcommand ERE, $2 = its options ERE
+  rx "apex[[:space:]]+$1([^[:alnum:]_-]|$)" || return 1
   # DEGRADED means no JSON parser was found and `$cmd` is the raw payload (or a
   # regex-scraped guess at it), so there is no telling what is a command and
   # what is incidental text: suspicion beats precision, the bare phrase is enough.
   (( DEGRADED )) && return 0
-  rx "(^|[[:space:]])($flags)([[:space:]=]|$)" || rx "$SQLCL_LAUNCHER"
+  rx "apex[[:space:]]+$1[^;&|]*[[:space:]]($2)([[:space:]=]|$)" || rx "$SQLCL_LAUNCHER"
 }
 
 # Oracle's apexlang-deploy (26.1 and 26.2) imports through a script: the literal
@@ -166,18 +165,18 @@ deploy_invoked() {
   return 1
 }
 
+# `runtime roundtrip` is gated whatever --import-intent says. Its default is
+# validate-only (apexctl.mjs), so a bare roundtrip is over-blocked on purpose:
+# one 20 s check-import is cheaper than trusting our reading of an upstream default.
+APEXCTL_IMPORT=0
+if rx 'apexctl[^;|&]*runtime[[:space:]]+roundtrip' || rx '(import-intent|runtime-action)[[:space:]=]+validate-and-import'; then
+  APEXCTL_IMPORT=1
+fi
 needs=()
-if apex_subcommand import -input -id -applicationid -alias \
-   || rx 'apexctl[^;|&]*runtime[[:space:]]+roundtrip' \
-   || rx '(import-intent|runtime-action)[[:space:]=]+validate-and-import' \
-   || deploy_invoked; then
-  # `runtime roundtrip` is gated whatever --import-intent says. Its default is
-  # validate-only (apexctl.mjs), so a bare roundtrip is over-blocked on purpose:
-  # one 20 s check-import is cheaper than trusting our reading of an upstream default.
+if apex_subcommand "$IMPORT_SUB" "$IMPORT_FLAGS" || (( APEXCTL_IMPORT )) || deploy_invoked; then
   needs+=(import)
 fi
-apex_subcommand export -applicationid -api -dir -exptype -expcomponents -id -split -woi -workspaceid \
-  && needs+=(export)
+apex_subcommand "$EXPORT_SUB" "$EXPORT_FLAGS" && needs+=(export)
 
 # Commands that would let an agent overrule the guard. They are refused even with a
 # fresh marker: forcing a syncpoint, or writing the markers/refs/state the guard
@@ -217,53 +216,180 @@ CFG="$ROOT/apex-sync.json"
 [[ -n "$guard_override" ]] && block "$guard_override It is the user's call: ask them to run it in their own terminal."
 
 # ---------------------------------------------------------------- config
-# Every alias the config declares — the single-app key, or each apps[] entry. The
-# check script validates the whole file; here only what the hook needs, and any
-# doubt blocks: a config the check refuses must not leave the hook allowing.
-config_aliases() {
-  if [[ "${JSON_TOOL[0]}" == "jq" ]]; then
-    jq -r 'if type != "object" then error("not an object")
-           elif has("apps") then (.apps | if type == "array" then .[] | .appAlias else error("apps") end)
-           else .appAlias end | if type == "string" then . else error("alias") end' "$CFG" 2>/dev/null | strip_cr
-  else
-    "${JSON_TOOL[@]}" -c '
-import json, sys
-c = json.load(open(sys.argv[1]))
-assert isinstance(c, dict)
-apps = c["apps"] if "apps" in c else [c]
-assert isinstance(apps, list)
-for a in apps:
-    assert isinstance(a, dict) and isinstance(a.get("appAlias"), str)
-    print(a["appAlias"])' "$CFG" 2>/dev/null | strip_cr
-  fi
-}
-ALIASES=()
-if (( ${#JSON_TOOL[@]} )); then
-  _list=$(config_aliases) || block "apex-sync.json is unreadable or invalid, so the guard cannot tell what to check. Run: <apex-sync-guard skill dir>/scripts/apex-sync-check.sh doctor"
-  while IFS= read -r _a; do [[ -n "$_a" ]] && ALIASES+=("$_a"); done <<<"$_list"
-else
-  # No parser at all: take every "appAlias" in the file. In practice the check
-  # script cannot run without a parser either, so this mostly decides how to block.
-  while IFS= read -r _a; do [[ -n "$_a" ]] && ALIASES+=("$_a"); done \
-    < <(grep -o '"appAlias"[[:space:]]*:[[:space:]]*"[^"]*"' "$CFG" | sed 's/.*"\([^"]*\)"$/\1/' | strip_cr)
-fi
-(( ${#ALIASES[@]} )) || block "apex-sync.json declares no appAlias, so the guard cannot tell what to check. Run: <apex-sync-guard skill dir>/scripts/apex-sync-check.sh doctor"
-for _a in "${ALIASES[@]}"; do
-  [[ "$_a" =~ $RE_APP_ALIAS ]] || block "apex-sync.json has an invalid appAlias ('$_a'). Run: <apex-sync-guard skill dir>/scripts/apex-sync-check.sh doctor"
+# apex-sync.json is read by the same code as apex-sync-check.sh (lib/), so the hook
+# and the check cannot disagree on which apps exist or where their source lives.
+# Found next to the real file even through a symlink; if it is missing, block.
+_self=${BASH_SOURCE[0]}
+while [[ -L "$_self" ]]; do
+  _d=$(cd -P "$(dirname "$_self")" && pwd); _self=$(readlink "$_self"); [[ "$_self" == /* ]] || _self="$_d/$_self"
 done
+_lib="$(cd -P "$(dirname "$_self")" && pwd)/lib/sync-config.sh"
+# shellcheck source=skills/apex-sync-guard/scripts/lib/sync-config.sh
+. "$_lib" 2>/dev/null || block "incomplete installation: $_lib is missing, so the guard cannot read apex-sync.json."
+
+if (( DEGRADED )); then
+  # No parser: take every "appAlias" in the file, and require all of their markers.
+  # In practice the check script cannot run without a parser either, so this mostly
+  # decides how to block.
+  while IFS= read -r _a; do [[ -n "$_a" ]] && APPS_ALIAS+=("$_a"); done \
+    < <(grep -o '"appAlias"[[:space:]]*:[[:space:]]*"[^"]*"' "$CFG" | sed 's/.*"\([^"]*\)"$/\1/' | strip_cr)
+  (( ${#APPS_ALIAS[@]} )) || block "apex-sync.json declares no appAlias, so the guard cannot tell what to check. Run: <apex-sync-guard skill dir>/scripts/apex-sync-check.sh doctor"
+  for _a in "${APPS_ALIAS[@]}"; do
+    [[ "$_a" =~ $RE_APP_ALIAS ]] || block "apex-sync.json has an invalid appAlias ('$_a'). Run: <apex-sync-guard skill dir>/scripts/apex-sync-check.sh doctor"
+  done
+else
+  cfg_load
+  # A config the check refuses must not leave the hook allowing.
+  (( ${#CFG_ERRORS[@]} )) && block "apex-sync.json is invalid, so the guard cannot tell what to check:$(printf '\n  - %s' "${CFG_ERRORS[@]}")
+Run: <apex-sync-guard skill dir>/scripts/apex-sync-check.sh doctor"
+fi
+NAPPS=${#APPS_ALIAS[@]}
+
+# ---------------------------------------------------------------- targets
+# With one app, every operation is that app's. With several, each needs the marker
+# of the app it acts on, read from the command: a source dir (or a file in one) in
+# -input/-i, --app-path or the deploy script's argument; an app id in -id or
+# -applicationid/-api. What cannot be read is not guessed — it blocks, naming what
+# would make it readable. (Without a parser there is no reading at all: DEGRADED
+# needs every app's marker.)
+WIN=""; [[ "$ROOT" =~ ^[A-Za-z]: ]] && WIN=1     # Git for Windows: C:/… paths, no case
+
+lex_norm() {  # an absolute '/'-separated path → '.' and '..' resolved lexically
+  local p=$1 out="" seg
+  while [[ -n "$p" ]]; do
+    seg=${p%%/*}
+    if [[ "$p" == */* ]]; then p=${p#*/}; else p=""; fi
+    case "$seg" in ""|.) ;; ..) out=${out%/*} ;; *) out+="/$seg" ;; esac
+  done
+  printf '%s' "${out:-/}"
+}
+abs_norm() {  # $1 = a path as a command wrote it → absolute and normalized, comparable with ROOT_N
+  local p=${1//\\//}
+  # shellcheck disable=SC2088   # a literal '~/' as the command wrote it
+  [[ "$p" == "~/"* ]] && p="$HOME/${p#\~/}"
+  [[ -n "$WIN" && "$p" =~ ^/([A-Za-z])/(.*)$ ]] && p="${BASH_REMATCH[1]}:/${BASH_REMATCH[2]}"   # Git Bash /c/…
+  [[ "$p" == /* || "$p" =~ ^[A-Za-z]: ]] || p="$CWD_N/$p"
+  p=$(lex_norm "$p")
+  if [[ -n "$WIN" ]]; then lower "$p"; else printf '%s' "$p"; fi
+}
+ROOT_N=""; CWD_N=""
+if (( ! DEGRADED && NAPPS > 1 )); then
+  CWD_N=$ROOT
+  [[ "$cwd" == /* || "$cwd" =~ ^[A-Za-z]: ]] && CWD_N=$cwd
+  CWD_N=$(abs_norm "$CWD_N"); ROOT_N=$(abs_norm "$ROOT")
+fi
+
+# shellcheck disable=SC2034   # read and written by name: T_$direction
+T_import=" " T_export=" "
+UNRESOLVED=""
+add_target() { local v="T_$1"; [[ "${!v}" == *" $2 "* ]] || printf -v "$v" '%s%s ' "${!v}" "$2"; }
+unresolved() { [[ -n "$UNRESOLVED" ]] || UNRESOLVED=$1; }
+
+# Each invocation's own text: from the subcommand (or script) to the end of its
+# command segment, so another command's options (`grep -i x; apex import …`) are
+# never read as its arguments.
+spans()       { grep -oiE -- "$1" <<<"$cmd" || true; }
+flag_values() {  # $1 = text, $2 = options ERE → every value they take, one per line
+  local rest=$1 re
+  re="(^|[[:space:]])($2)([[:space:]]+|=)(\"([^\"]*)\"|'([^']*)'|([^[:space:];&|()\`<>\"']+))"
+  shopt -s nocasematch
+  while [[ "$rest" =~ $re ]]; do
+    printf '%s\n' "${BASH_REMATCH[5]}${BASH_REMATCH[6]}${BASH_REMATCH[7]}"
+    rest=${rest#*"${BASH_REMATCH[0]}"}
+  done
+  shopt -u nocasematch
+}
+first_arg() {  # $1 = a deploy-script span → the argument after the script, if any
+  local re="^deploy-apex-app\.sh[\"']?[[:space:]]+(\"([^\"]*)\"|'([^']*)'|([^[:space:];&|()\`<>\"']+))"
+  [[ "$1" =~ $re ]] && printf '%s\n' "${BASH_REMATCH[2]}${BASH_REMATCH[3]}${BASH_REMATCH[4]}"
+}
+
+target_of_path() {  # $1 = direction, $2 = a source path from the command
+  local v=$2 r p i src
+  case "$v" in
+    *'$'*|*'`'*)  unresolved "a path is computed at run time ($v)"; return ;;
+    *.zip|*.ZIP)  unresolved "a .zip ($v) cannot be traced to an app's source dir"; return ;;
+  esac
+  p=$(abs_norm "$v")
+  if [[ "$p" != "$ROOT_N"/* ]]; then unresolved "$v is not inside this repository"; return; fi
+  r=${p#"$ROOT_N"/}
+  for (( i = 0; i < NAPPS; i++ )); do
+    src=$(app_src_rel "$i"); [[ -n "$WIN" ]] && src=$(lower "$src")
+    if [[ "$r" == "$src" || "$r" == "$src/"* ]]; then add_target "$1" "${APPS_ALIAS[$i]}"; return; fi
+  done
+  unresolved "$v is not inside any app's source dir"
+}
+target_of_id() {  # $1 = direction, $2 = an app id from the command
+  local i hit="" n=0
+  for (( i = 0; i < NAPPS; i++ )); do
+    [[ "${APPS_ID[$i]}" == "$2" ]] && { hit=${APPS_ALIAS[$i]}; n=$((n + 1)); }
+  done
+  if (( n == 1 )); then add_target "$1" "$hit"; else unresolved "app id $2 is not declared exactly once in apex-sync.json"; fi
+}
+
+resolve_import() {
+  local s v found=0
+  while IFS= read -r s; do
+    [[ -z "$s" ]] && continue
+    while IFS= read -r v; do [[ -n "$v" ]] && { found=1; target_of_path import "$v"; }; done < <(flag_values "$s" '-input|-i')
+    while IFS= read -r v; do [[ -n "$v" ]] && { found=1; target_of_id import "$v"; }; done < <(flag_values "$s" '-id')
+  done < <(spans "apex[[:space:]]+$IMPORT_SUB([^[:alnum:]_-][^;&|]*)?")
+  if (( APEXCTL_IMPORT )); then
+    while IFS= read -r s; do
+      while IFS= read -r v; do [[ -n "$v" ]] && { found=1; target_of_path import "$v"; }; done < <(flag_values "$s" '--app-path')
+    done < <(spans 'apexctl[^;&|]*')
+  fi
+  while IFS= read -r s; do
+    [[ -z "$s" ]] && continue
+    v=$(first_arg "$s")
+    if [[ -n "$v" ]]; then found=1; target_of_path import "$v"; fi
+  done < <(spans 'deploy-apex-app\.sh[^;&|]*')
+  (( found )) || unresolved "the command names no app — no -input, -id, --app-path or deploy-script argument (a bare apex import imports the current directory)"
+}
+
+resolve_export() {
+  local s v ids
+  while IFS= read -r s; do
+    [[ -z "$s" ]] && continue
+    ids=$(flag_values "$s" '-applicationid|-api')
+    if [[ -z "$ids" ]]; then
+      # No app id: a workspace-, instance- or all-applications export writes the
+      # tree of every app it holds — every declared app needs its check.
+      for v in "${APPS_ALIAS[@]}"; do add_target export "$v"; done
+    else
+      while IFS= read -r v; do [[ -n "$v" ]] && target_of_id export "$v"; done <<<"$ids"
+    fi
+  done < <(spans "apex[[:space:]]+$EXPORT_SUB([^[:alnum:]_-][^;&|]*)?")
+}
+
+if (( DEGRADED || NAPPS == 1 )); then
+  for d in "${needs[@]}"; do for _a in "${APPS_ALIAS[@]}"; do add_target "$d" "$_a"; done; done
+else
+  for d in "${needs[@]}"; do
+    case "$d" in import) resolve_import ;; export) resolve_export ;; esac
+    if [[ -n "$UNRESOLVED" ]]; then
+      _dirs=""; _ids=""
+      for (( i = 0; i < NAPPS; i++ )); do _dirs+="${_dirs:+, }$(app_src_rel "$i")"; _ids+="${_ids:+, }${APPS_ID[$i]}"; done
+      block "apex-sync.json declares $NAPPS apps (${APPS_ALIAS[*]}) and this $d cannot be traced to one of them: $UNRESOLVED.
+Name the app in the command, so the guard can require that app's check: its source dir ($_dirs) as the -input, deploy-apex-app.sh or --app-path argument, or its id ($_ids) as -id / -applicationid."
+    fi
+  done
+fi
 
 # ---------------------------------------------------------------- freshness
-# Every app the config declares needs a fresh marker in the needed direction.
+# Every app the operation acts on needs a fresh marker in the needed direction.
 now=$(date +%s)
 [[ "$now" =~ ^[0-9]+$ ]] || block "cannot read the clock, so the marker's age is unknown."
 for d in "${needs[@]}"; do
-  for a in "${ALIASES[@]}"; do
+  _v="T_$d"
+  for a in ${!_v}; do
     m="$ROOT/.git/apex-sync/$a/check-ok.$d"
     t=""; [[ -f "$m" ]] && t=$(mtime "$m" 2>/dev/null)
     # A missing, unreadable, expired — or future-dated (clock skew) — marker is no marker.
     if [[ ! -f "$m" || ! "$t" =~ ^[0-9]+$ ]] || (( now - t >= TTL || now - t < -60 )); then
+      _app=""; (( NAPPS > 1 )) && _app=" --app $a"
       echo "apex-sync-guard: BLOCKED apex $d — no check-$d PASS in the last $((TTL/60)) min for app '$a'." >&2
-      echo "Run first (from the repo root): <apex-sync-guard skill dir>/scripts/apex-sync-check.sh check-$d" >&2
+      echo "Run first (from the repo root): <apex-sync-guard skill dir>/scripts/apex-sync-check.sh check-$d$_app" >&2
       # Naming the path is not noise. This hook resolves the repo from the tool
       # payload's cwd, while the check resolves it from ITS OWN cwd — so running
       # the check inside a command that `cd`s elsewhere writes the marker in one

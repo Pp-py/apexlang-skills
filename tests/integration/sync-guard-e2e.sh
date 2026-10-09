@@ -27,8 +27,13 @@ if grep -q 'apex export' <<<"$stmts"; then
   else
     dir=$(sed -n 's/.*-dir \([^ ]*\).*/\1/p' <<<"$stmts")
   fi
+  # SQLcl writes each app under its own alias dir; the fixture maps ids to aliases
+  # ($FAKE_REMOTE/ids: "<id> <alias>" lines) and means demo when it does not say.
+  id=$(sed -n 's/.*-applicationid \([0-9]*\).*/\1/p' <<<"$stmts" | head -1)
+  alias=$(awk -v id="$id" '$1 == id { print $2 }' "$FAKE_REMOTE/ids" 2>/dev/null)
+  alias=${alias:-demo}
   # FAKE_EXPORT_EMPTY: SQLcl exits 0 and exports nothing (wrong workspace, wrong app id)
-  [[ -n "${FAKE_EXPORT_EMPTY:-}" ]] || { mkdir -p "$dir/demo" && cp -r "$FAKE_REMOTE/demo/." "$dir/demo/"; }
+  [[ -n "${FAKE_EXPORT_EMPTY:-}" ]] || { mkdir -p "$dir/$alias" && cp -r "$FAKE_REMOTE/$alias/." "$dir/$alias/"; }
   # what a real SQLcl prints for the `version` and apex_release lines after the export
   echo "Oracle SQLDeveloper Command-Line (SQLcl) version: 26.2.0.0 build: 26.2.0.181.2110"
   echo "apex-sync-apex-version 24.2.0"
@@ -560,6 +565,112 @@ expect "setup.md §4 row 3: marker past the TTL -> blocked"      2 hook_cmd "$SM
 "$CHK" check-export >/dev/null
 expect "setup.md §4 row 4: export marker only, import -> blocked" 2 hook_cmd "$SMOKE_IMPORT"
 expect "and the bare mention it warns against is not an export" 0 hook_cmd 'echo "apex export"'
+
+# --- SQLcl's short forms are invocations too: `apex imp -i dir` imported unchecked,
+# because only the long names were matched. Options count only AFTER the
+# subcommand — a search like `grep -i "apex import"` is not one.
+rm -f "$MK"/check-ok.*
+expect "hook: apex imp -i (short forms) blocked"               2 hook_cmd 'apex imp -i src/demo'
+expect "hook: apex exap -api (short forms) blocked"            2 hook_cmd 'apex exap -api 100 -dir src'
+expect "hook: apex ex -di (short forms) blocked"               2 hook_cmd 'apex ex -api 100 -di src'
+expect "hook: a grep -i for the phrase passes"                 0 hook_cmd 'grep -i "apex import" README.md'
+expect "hook: an option of another command passes"             0 hook_cmd 'echo "apex import"; ls -i'
+
+# --- several apps in one repo (apps[]): a second app shares the source root and the
+# connection, and the stub exports each app by id. Each app keeps its own syncpoint,
+# markers and results; a gate always names the app it acts on; the hook requires the
+# marker of the app a command acts on and blocks what it cannot trace to one.
+mkdir -p src/sales && printf 'application 200 (\n  name: Sales\n)\n' > src/sales/application.apx
+printf 'page 40 (\n  name: Orders\n)\n' > src/sales/p40.apx
+git add -A && git commit -qm "a second app"
+cp -r src/sales "$WORK/remote/sales"
+printf '100 demo\n200 sales\n' > "$WORK/remote/ids"
+SINGLE_CFG=$(cat "$CFG_FILE")
+MULTI_CFG='{ "apexlangDir": "src", "sqlclConnection": "fake", "ignorePaths": ["apex-exports/"],
+  "apps": [ { "appId": 100, "appAlias": "demo" },
+            { "appId": 200, "appAlias": "sales", "testUser": "QA_SALES", "runtimeUrl": "https://apex.example/ords/r/ws/sales/" } ] }'
+printf '%s\n' "$MULTI_CFG" > "$CFG_FILE"
+MK2="$WORK/proj/.git/apex-sync/sales"
+TAB=$'\t'
+
+expect     "multi: a gate without --app -> BLOCKED"            2 "$CHK" check-import
+expect_out "and it names the apps to choose from"              'name the one to check-import: --app <demo\|sales>' "$CHK" check-import
+expect     "multi: --app naming no app -> BLOCKED"             2 "$CHK" check-import --app nope
+expect_out "and it lists the declared ones"                    "declares no app 'nope' — it declares: demo sales" "$CHK" check-import --app nope
+expect     "multi: --app that is no alias at all -> 2"         2 "$CHK" check-import --app ../x
+expect_out "multi: apps applies the top-level defaults"        "^demo${TAB}100${TAB}src/demo${TAB}fake${TAB}${TAB}\$" "$CHK" apps
+expect_out "multi: and each app's own settings"                "^sales${TAB}200${TAB}src/sales${TAB}fake${TAB}QA_SALES${TAB}https://apex.example/ords/r/ws/sales/\$" "$CHK" apps
+expect     "multi: check-import --app sales bootstraps sales"  0 "$CHK" check-import --app sales
+expect     "and gives sales its own syncpoint"                 0 git rev-parse -q --verify refs/apex-sync/sales
+expect     "and its own marker"                                0 test -f "$MK2/check-ok.import"
+expect_out "and its own result"                                '^sales PASS BOOTSTRAP_IN_SYNC$' rget "$MK2/last-check-import.json" app.appAlias status reasons.0.code
+expect     "multi: demo keeps its own syncpoint"               0 "$CHK" check-import --app demo
+expect_out "multi: status covers every app"                    "status \(app 200 'sales'" "$CHK" status
+expect_out "multi: status --app covers just that one"          "status \(app 100 'demo'" "$CHK" status --app demo
+expect_out_not "and not the other"                             "'sales'" "$CHK" status --app demo
+expect     "multi: doctor covers every app"                    0 "$CHK" doctor
+expect_out "and reports each"                                  "app 200 'sales' — source src/sales" "$CHK" doctor
+
+# An export writes its app's tree under the shared apexlangDir — not the other app's.
+echo "-- wip" >> src/sales/p40.apx
+expect     "multi: sales dirty -> check-export demo PASSes"    0 "$CHK" check-export --app demo
+expect     "multi: sales dirty -> check-export sales FAILs"    1 "$CHK" check-export --app sales
+echo "-- wip" >> src/demo/p30.apx
+expect     "multi: demo dirty -> check-export demo FAILs"      1 "$CHK" check-export --app demo
+git checkout -q -- src/sales/p40.apx src/demo/p30.apx
+
+rm -f "$MK"/check-ok.* "$MK2"/check-ok.*
+"$CHK" check-import --app demo >/dev/null                           # only demo is fresh
+expect "hook multi: demo's import with demo's check"           0 hook_cmd 'sql -name fake <<< "apex import -input src/demo"'
+expect "hook multi: sales' import needs sales' check"          2 hook_cmd 'sql -name fake <<< "apex import -input src/sales"'
+expect_out "and the block names the app and the --app"         "for app 'sales'|check-import --app sales" hook_cmd 'sql -name fake <<< "apex import -input src/sales"'
+expect "hook multi: the deploy script, demo's dir"             0 hook_cmd 'bash /o/deploy-apex-app.sh src/demo'
+expect "hook multi: the deploy script, sales' dir"             2 hook_cmd 'bash /o/deploy-apex-app.sh src/sales'
+expect "hook multi: apexctl --app-path, demo's dir"            0 hook_cmd 'node apexctl.mjs runtime roundtrip --app-path src/demo --db-connection-name fake'
+expect "hook multi: apexctl --app-path, sales' dir"            2 hook_cmd 'node apexctl.mjs runtime roundtrip --app-path src/sales --db-connection-name fake'
+expect "hook multi: an absolute path is traced"                0 hook_cmd "apex import -input $WORK/proj/src/demo"
+expect "hook multi: a path with . and .. is traced"            0 hook_cmd 'apex import -input ./src/../src/demo/'
+expect "hook multi: one .apx inside an app is that app's"      0 hook_cmd 'apex import -input src/demo/application.apx'
+expect "hook multi: a path relative to the session cwd"        0 hook_at "$WORK/proj/src" 'apex import -input demo'
+expect "hook multi: -id names another app (both needed)"       2 hook_cmd 'apex import -input src/demo -id 200'
+expect "hook multi: -id of the same app"                       0 hook_cmd 'apex import -input src/demo -id 100'
+expect "hook multi: the shared parent dir is no app"           2 hook_cmd 'apex import -input src'
+expect_out "and the block says why and what to do"             "cannot be traced to one of them: src is not inside any app's source dir" hook_cmd 'apex import -input src'
+expect "hook multi: a .zip cannot be traced"                   2 hook_cmd 'apex import -input demo.zip'
+expect "hook multi: a bare import (current dir) blocks"        2 hook_cmd 'sql -name fake <<< "apex import"'
+# shellcheck disable=SC2016   # the literal $APP_DIR is the point
+expect "hook multi: a path computed at run time blocks"        2 hook_cmd 'apex import -input "$APP_DIR"'
+expect "hook multi: an app id nobody declared blocks"          2 hook_cmd 'apex import -input src/demo -id 999'
+expect "hook multi: a path outside the repo blocks"            2 hook_cmd 'apex import -input /elsewhere/demo'
+expect "hook multi: the deploy script piped to a shell blocks" 2 hook_cmd 'cat deploy-apex-app.sh | bash -s src/demo'
+expect "hook multi: another command's -i is not the import's"  0 hook_cmd 'grep -i x README.md; apex import -input src/demo'
+"$CHK" check-export --app demo >/dev/null
+expect "hook multi: demo's export by id"                       0 hook_cmd 'sql -name fake <<< "apex export -applicationid 100 -dir src"'
+expect "hook multi: sales' export by id (short forms)"         2 hook_cmd 'sql -name fake <<< "apex exap -api 200 -dir src"'
+expect "hook multi: an export of every app needs every check"  2 hook_cmd 'sql -name fake <<< "apex export-all-applications -woi 1 -dir src"'
+"$CHK" check-export --app sales >/dev/null
+expect "hook multi: ... and passes once every app is fresh"    0 hook_cmd 'sql -name fake <<< "apex export-all-applications -woi 1 -dir src"'
+rm -f "$MK2"/check-ok.*
+# shellcheck disable=SC2030,SC2031
+multi_no_json() { ( export PATH="$WORK/stub:$PATH"; hook_cmd "$1" ); }
+expect "hook multi: without a JSON parser every app is needed" 2 multi_no_json 'apex import -input src/demo'
+"$CHK" check-import --app sales >/dev/null
+expect "hook multi: ... and allowed when all are fresh"        0 multi_no_json 'apex import -input src/demo'
+
+# apex-sync.json with several apps is validated as a whole — by the check and, through
+# the same code, by the hook.
+APPS2='"apexlangDir": "src", "sqlclConnection": "fake"'
+expect     "multi: an unknown key inside an app -> BLOCKED"    2 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"sqlclConection\": \"x\" } ] }" "$CHK" check-import --app demo
+expect_out "and it is named"                                   "apps.0: unknown key 'sqlclConection'" with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"sqlclConection\": \"x\" } ] }" "$CHK" check-import --app demo
+expect     "multi: aliases equal but for case -> BLOCKED"      2 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" }, { \"appId\": 200, \"appAlias\": \"DEMO\" } ] }" "$CHK" check-import --app demo
+expect     "multi: apps[] plus a top-level appId -> BLOCKED"   2 with_config "{ $APPS2, \"appId\": 100, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" } ] }" "$CHK" check-import --app demo
+expect     "multi: the same Builder app twice -> BLOCKED"      2 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" }, { \"appId\": 100, \"appAlias\": \"copy\" } ] }" "$CHK" check-import --app demo
+expect     "multi: overlapping source dirs -> BLOCKED"         2 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" }, { \"appId\": 200, \"appAlias\": \"inner\", \"apexlangDir\": \"src/demo\" } ] }" "$CHK" check-import --app demo
+expect     "multi: an empty apps[] -> BLOCKED"                 2 with_config "{ $APPS2, \"apps\": [] }" "$CHK" check-import
+expect     "multi: evidenceDir inside an app's dir -> BLOCKED" 2 with_config "{ $APPS2, \"evidenceDir\": \"src/demo/ev\", \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" } ] }" "$CHK" check-import --app demo
+"$CHK" check-import --app demo >/dev/null
+expect     "hook multi: a config the check refuses blocks too" 2 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" }, { \"appId\": 200, \"appAlias\": \"Demo\" } ] }" hook_cmd 'apex import -input src/demo'
+printf '%s\n' "$SINGLE_CFG" > "$CFG_FILE"
 
 echo
 echo "$pass passed, $fail failed"

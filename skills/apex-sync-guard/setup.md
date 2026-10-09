@@ -20,6 +20,25 @@ Committed at the **project repo root**. Everything the guard needs to know about
 - `sqlclConnection` — SQLcl saved connection name (`sql -name <conn>`); the schema must be able to read `APEX_APPLICATION_PAGES` for the app.
 - `ignorePaths` (optional) — paths relative to the app dir that exist only on one side by design (repo-only artifacts living inside the app dir, e.g. an `apex-exports/` folder with legacy SQL exports). Excluded from all comparisons.
 - `testUser` / `runtimeUrl` (optional) — read by **apex-sentinel**, not by the guard: the runtime app's test user and its URL, so a verification run doesn't rediscover them. Both are ordinary config; the password is **not** and never belongs in this file, which is committed (see `skills/apex-sentinel/setup.md` §2).
+- `evidenceDir` (optional, default `.apex-evidence`) — where a gate run given `--task <id>` also writes its JSON result (`<evidenceDir>/<id>/sync-<appAlias>-<operation>.json`). Created with a `.gitignore` of `*`, so evidence is never committed by accident; every run also leaves `.git/apex-sync/<appAlias>/last-<operation>.json`.
+
+**Several apps in one repo.** A workspace often holds more than one live app, and one repo can carry all of them. List them in `apps[]`; every top-level key except `appId`/`appAlias` is then a default that each app may override (`ignorePaths` is replaced, never merged):
+
+```json
+{
+  "apexlangDir": "apex/apexlang",
+  "sqlclConnection": "dev_ws",
+  "apps": [
+    { "appId": 100, "appAlias": "rrhh", "testUser": "QA_RRHH", "runtimeUrl": "https://<host>/ords/r/<workspace>/rrhh/" },
+    { "appId": 101, "appAlias": "ventas", "sqlclConnection": "dev_ventas" }
+  ]
+}
+```
+
+- Every gate command then names its app — `check-import --app rrhh`, `record-sync --app rrhh` — and is BLOCKED without one: the guard does not guess. `status`, `doctor` and `apps` (the resolved list) cover every app unless given `--app`.
+- Each app keeps its own syncpoint, markers and results, all keyed by alias. Aliases must differ ignoring case (they name refs and directories), two entries cannot be the same Builder app (same `appId` through the same connection), and source dirs (`<apexlangDir>/<appAlias>`) must not overlap. An unknown key inside an app is an error, not a note: a typo there would silently fall back to the default — the right app checked through the wrong connection.
+- `check-export` of one app ignores dirty files in the other apps' dirs: exporting that app does not write there.
+- The hook requires the check of the app a command acts on, read from the command: `-input`/`-i`, `--app-path` or the deploy script's argument (a source dir, or a file in one), `-id`/`-applicationid` (an app id). What it cannot trace to one app — a bare `apex import` (the current directory), the shared parent dir, a `.zip`, a path computed at run time — is blocked, with the dirs and ids that would make it traceable. An export with no app id (`export-all-applications`, a `-workspaceid` export) needs every app's check.
 
 Dependencies: `git`, SQLcl on PATH, and `jq` *or* `python3` (JSON parsing falls back automatically). The scripts probe the parser by **running** it, so a `python3` that exists without executing — the Microsoft Store stub — is rejected with that named as the likely cause instead of failing mid-run.
 

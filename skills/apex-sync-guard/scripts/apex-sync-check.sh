@@ -7,7 +7,10 @@
 #   apex-sync-check.sh record-sync    # after a successful import/export
 #   apex-sync-check.sh status         # inspect syncpoint + both replicas
 #   apex-sync-check.sh doctor         # validate this machine's wiring end to end
+#   apex-sync-check.sh apps           # the apps apex-sync.json declares, as resolved
 # Options (before or after the subcommand):
+#   --app <alias>  which app; required for check-*/record-sync when apex-sync.json
+#                  declares several (status/doctor/apps then cover all of them)
 #   --task <id>  check-*/record-sync: also write the result to
 #                <evidenceDir>/<id>/sync-<appAlias>-<subcommand>.json
 #   --force      record-sync only: record the syncpoint although nothing proves the
@@ -68,11 +71,13 @@ native_path() {
 
 # ------------------------------------------------------------ arguments
 # Parsed before any setup, so a usage error never depends on SQLcl or a parser.
-USAGE="usage: $(basename "$0") check-import|check-export|record-sync|status|doctor [--task <id>] [--force]"
-SUB=""; OPT_FORCE=0; OPT_TASK=""
+USAGE="usage: $(basename "$0") check-import|check-export|record-sync|status|doctor|apps [--app <alias>] [--task <id>] [--force]"
+SUB=""; OPT_FORCE=0; OPT_TASK=""; OPT_APP=""
 while (( $# )); do
   case "$1" in
     --force)   OPT_FORCE=1 ;;
+    --app)     [[ -n "${2:-}" ]] || die "--app needs a value — $USAGE"; OPT_APP=$2; shift ;;
+    --app=*)   OPT_APP=${1#--app=}; [[ -n "$OPT_APP" ]] || die "--app needs a value — $USAGE" ;;
     --task)    [[ -n "${2:-}" ]] || die "--task needs a value — $USAGE"; OPT_TASK=$2; shift ;;
     --task=*)  OPT_TASK=${1#--task=}; [[ -n "$OPT_TASK" ]] || die "--task needs a value — $USAGE" ;;
     -h|--help) echo "$USAGE"; exit 0 ;;
@@ -83,7 +88,7 @@ while (( $# )); do
 done
 case "$SUB" in
   check-import|check-export|record-sync) R_OP=$SUB ;;
-  status|doctor) ;;
+  status|doctor|apps) ;;
   *) die "$USAGE" ;;
 esac
 (( OPT_FORCE == 0 )) || [[ "$SUB" == record-sync ]] || die "--force is only valid with record-sync"
@@ -99,7 +104,19 @@ fi
 case "${OSTYPE:-}" in
   msys*|cygwin*) command -v cygpath >/dev/null 2>&1 || blocked UNSUPPORTED_SHELL "cygpath not found — run this from Git Bash (Git for Windows), not from a bare MSYS shell" ;;
 esac
-command -v sql >/dev/null || blocked NO_SQLCL "SQLcl (sql) is required on PATH"
+# apex-sync.json is read by lib/sync-config.sh, shared with the hook. Found next to
+# the real file even when this one is reached through a symlink.
+_self=${BASH_SOURCE[0]}
+while [[ -L "$_self" ]]; do
+  _d=$(cd -P "$(dirname "$_self")" && pwd); _self=$(readlink "$_self"); [[ "$_self" == /* ]] || _self="$_d/$_self"
+done
+SCRIPT_DIR=$(cd -P "$(dirname "$_self")" && pwd)
+# shellcheck source=skills/apex-sync-guard/scripts/lib/sync-config.sh
+. "$SCRIPT_DIR/lib/sync-config.sh" || die "incomplete installation: $SCRIPT_DIR/lib/sync-config.sh is missing"
+[[ -z "$OPT_APP" || "$OPT_APP" =~ $RE_APP_ALIAS ]] || die "--app must be an app alias ($RE_APP_ALIAS) — got '$OPT_APP'"
+case "$SUB" in   # doctor reports a missing SQLcl instead of dying on it; apps never needs it
+  check-import|check-export|record-sync|status) command -v sql >/dev/null || blocked NO_SQLCL "SQLcl (sql) is required on PATH" ;;
+esac
 
 # The JSON parser is resolved ONCE and by EXECUTION, never by `command -v`:
 # on Windows the Microsoft Store `python3` stub satisfies `command -v` and then
@@ -121,13 +138,6 @@ resolve_json_tool || blocked NO_JSON_PARSER "no working JSON parser — need jq,
       A 'python3' that exists but does nothing when executed is typically the
       Microsoft Store stub: install real Python (or jq) and put it ahead of it on PATH."
 
-# Every JSON read is stripped of carriage returns: native tooling on Windows writes
-# CRLF, and a trailing \r survives command substitution. Windows then hides the
-# damage for filesystem paths — the OS trims trailing whitespace — while the plain
-# string comparison in ignored() kept failing, so a repo-only ignorePaths entry was
-# reported as a Builder-side deletion and every LOCAL comparison FAILed.
-strip_cr() { tr -d '\r'; }
-
 json_get() {  # $1 = json file ('-' = stdin), $2 = dotted key path
   if [[ "${JSON_TOOL[0]}" == "jq" ]]; then
     jq -r ".$2 // empty" "$1" | strip_cr
@@ -143,160 +153,51 @@ print("" if data is None else data)' "$1" "$2" | strip_cr
   fi
 }
 
-# One reading of apex-sync.json, identical under jq and python: every node becomes
-# "path<TAB>type<TAB>value" ($.appId, $.ignorePaths.0, …). All semantics — types,
-# defaults, validation — then live once, here in bash. Reading keys one at a time
-# with each parser had let them disagree: python iterated a string-valued
-# ignorePaths character by character, so nearly every file was excluded from the
-# comparison and the check PASSed without comparing anything.
-json_flatten() {  # $1 = json file; non-zero exit if it is not valid JSON
-  if [[ "${JSON_TOOL[0]}" == "jq" ]]; then
-    jq -r 'def row($p; $v): [ (["$"] + ($p | map(tostring)) | join(".")), ($v | type),
-             ($v | if type == "string" then . elif type == "array" or type == "object" then (length | tostring)
-                   elif type == "null" then "" else tostring end) ] | @tsv;
-           row([]; .), (paths as $p | row($p; getpath($p)))' "$1" | strip_cr
-  else
-    "${JSON_TOOL[@]}" -c '
-import json, sys
-def esc(s): return s.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r")
-def kind(v):
-    if v is None: return "null"
-    if isinstance(v, bool): return "boolean"
-    if isinstance(v, (int, float)): return "number"
-    if isinstance(v, str): return "string"
-    return "array" if isinstance(v, list) else "object"
-out = []
-def walk(path, v):
-    k = kind(v)
-    val = esc(v) if k == "string" else ("true" if v else "false") if k == "boolean" else "" if k == "null" \
-        else str(len(v)) if k in ("array", "object") else json.dumps(v)
-    out.append(esc(".".join(["$"] + [str(p) for p in path])) + "\t" + k + "\t" + val)
-    for key, sub in (v.items() if k == "object" else enumerate(v) if k == "array" else []):
-        walk(path + [key], sub)
-walk([], json.load(open(sys.argv[1], encoding="utf-8")))
-sys.stdout.buffer.write(("\n".join(out) + "\n").encode("utf-8"))' "$1" | strip_cr
-  fi
-}
-
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || blocked NO_GIT "not inside a git repository"
 CFG="$ROOT/apex-sync.json"
 [[ -f "$CFG" ]] || blocked NO_CONFIG "apex-sync.json not found at repo root ($ROOT) — see setup.md"
 
 # ------------------------------------------------------------- config
-# The rules every key must satisfy. The same alias and connection-name patterns
-# appear in apex-sync-hook.sh, apex-sentinel's pw.sh and framework/schemas —
-# a contract test asserts they stay identical.
-RE_APP_ID='^[1-9][0-9]{0,9}$'
-RE_APP_ALIAS='^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
-RE_CONNECTION='^[^/@[:space:]\"'"'"']{1,128}$'   # a saved-connection NAME: never user/password@host
-
-CFG_FLAT=""
-CFG_ERRORS=()   # every problem found, reported together
-CFG_NOTES=()    # unknown top-level keys: tolerated, listed by doctor
-APPS_ID=(); APPS_ALIAS=(); APPS_DIR=(); APPS_CONN=(); APPS_IGNORE=()   # APPS_IGNORE[i]: newline-separated
-EVIDENCE_DIR=".apex-evidence"
-
-cfg_type()  { awk -F'\t' -v p="$1" '$1 == p { print $2; exit }' <<<"$CFG_FLAT"; }
-cfg_value() { awk -F'\t' -v p="$1" '$1 == p { print $3; exit }' <<<"$CFG_FLAT"; }
-cfg_err()   { CFG_ERRORS+=("$*"); }
-
-rel_path_ok() {  # relative, forward slashes, no '..' segment, no drive letter
-  local p=$1
-  [[ -n "$p" && "$p" != /* && "$p" != *\\* && "$p" != *:* && "/$p/" != */../* ]]
-}
-
-# A string setting of the app at JSON path $1: its own value, else the top-level
-# default. Prints the value; a wrong type is an error, absence prints nothing.
-cfg_string() {  # $1 = app path, $2 = key, $3 = label for messages
-  local p t
-  for p in "$1.$2" "\$.$2"; do
-    t=$(cfg_type "$p")
-    [[ -z "$t" ]] && continue
-    if [[ "$t" == string ]]; then cfg_value "$p"; else cfg_err "$3: $2 must be a string"; fi
-    return 0
-  done
-}
-
-cfg_app() {  # $1 = JSON path of the app object; appends one app or records errors
-  local at=$1 label="apex-sync.json" t id alias dir conn ign="" i n v
-  [[ "$at" == "\$" ]] || label="apex-sync.json ${at#\$.}"
-  t=$(cfg_type "$at.appId"); id=$(cfg_value "$at.appId")
-  case "$t" in
-    number|string) [[ "$id" =~ $RE_APP_ID ]] || cfg_err "$label: appId must be a positive integer (got '$id')" ;;
-    "")            cfg_err "$label: appId is missing" ;;
-    *)             cfg_err "$label: appId must be a positive integer" ;;
-  esac
-  t=$(cfg_type "$at.appAlias"); alias=$(cfg_value "$at.appAlias")
-  if [[ -z "$t" ]]; then cfg_err "$label: appAlias is missing"
-  elif [[ "$t" != string || ! "$alias" =~ $RE_APP_ALIAS ]]; then
-    cfg_err "$label: appAlias must match $RE_APP_ALIAS (letters, digits, '_' and '-'; it names a git ref and a directory)"
-  fi
-  dir=$(cfg_string "$at" apexlangDir "$label")
-  if [[ -z "$dir" ]]; then cfg_err "$label: apexlangDir is missing"
-  elif ! rel_path_ok "$dir"; then cfg_err "$label: apexlangDir must be a relative path with forward slashes and no '..' (got '$dir')"; fi
-  conn=$(cfg_string "$at" sqlclConnection "$label")
-  if [[ -z "$conn" ]]; then cfg_err "$label: sqlclConnection is missing"
-  elif [[ ! "$conn" =~ $RE_CONNECTION ]]; then
-    cfg_err "$label: sqlclConnection must be a saved connection NAME (sql -name <name>), never a connect string — no '/', '@', quotes or spaces"
-  fi
-  # ignorePaths: the app's own list replaces the top-level one (no merging).
-  local ip="$at.ignorePaths"
-  [[ -n "$(cfg_type "$ip")" ]] || ip="\$.ignorePaths"
-  t=$(cfg_type "$ip")
-  if [[ -n "$t" && "$t" != array ]]; then
-    cfg_err "$label: ignorePaths must be an array of paths, e.g. [\"apex-exports/\"] (got a $t)"
-  elif [[ "$t" == array ]]; then
-    n=$(cfg_value "$ip")
-    for (( i = 0; i < n; i++ )); do
-      v=$(cfg_value "$ip.$i")
-      if [[ "$(cfg_type "$ip.$i")" != string ]] || ! rel_path_ok "$v"; then
-        cfg_err "$label: ignorePaths[$i] must be a relative path with forward slashes and no '..'"
-      else
-        ign+="$v"$'\n'
-      fi
-    done
-  fi
-  v=$(cfg_string "$at" runtimeUrl "$label")
-  [[ "$v" != *session=* ]] || cfg_err "$label: runtimeUrl must not carry a session token (session=…): the file is committed"
-  cfg_string "$at" testUser "$label" >/dev/null
-  APPS_ID+=("$id"); APPS_ALIAS+=("$alias"); APPS_DIR+=("$dir"); APPS_CONN+=("$conn"); APPS_IGNORE+=("$ign")
-}
-
-cfg_load() {
-  local k
-  CFG_FLAT=$(json_flatten "$CFG") || { cfg_err "apex-sync.json is not valid JSON"; return 0; }
-  [[ "$(cfg_type '$')" == object ]] || { cfg_err "apex-sync.json must hold a JSON object"; return 0; }
-  if [[ -n "$(cfg_type '$.apps')" ]]; then
-    cfg_err "apex-sync.json: \"apps\" (several apps per repo) is not supported by this version of apex-sync-guard"
-    return 0
-  fi
-  cfg_app '$'
-  if [[ -n "$(cfg_type '$.evidenceDir')" ]]; then
-    EVIDENCE_DIR=$(cfg_string '$' evidenceDir "apex-sync.json")
-    rel_path_ok "$EVIDENCE_DIR" || cfg_err "apex-sync.json: evidenceDir must be a relative path with forward slashes and no '..'"
-  fi
-  while IFS= read -r k; do
-    case "$k" in
-      appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl|evidenceDir|apps) ;;
-      *) CFG_NOTES+=("unknown key '$k' ignored (typo?)") ;;
-    esac
-  done < <(awk -F'\t' '$1 ~ /^\$\.[^.]+$/ { sub(/^\$\./, "", $1); print $1 }' <<<"$CFG_FLAT")
-}
 cfg_load
 if (( ${#CFG_ERRORS[@]} )) && [[ "$SUB" != doctor ]]; then
   blocked CONFIG_INVALID "apex-sync.json is invalid — nothing was checked:$(printf '\n      - %s' "${CFG_ERRORS[@]}")"
 fi
 
-APP_ID=""; ALIAS=""; SRCDIR=""; CONN=""; IGNORE_PATHS=()
+# Which apps this run acts on. A gate acts on exactly one: with several declared,
+# guessing would check one app and authorize an operation on another.
+SEL=()
+if (( ! ${#CFG_ERRORS[@]} )); then
+  if [[ -n "$OPT_APP" ]]; then
+    app_index "$OPT_APP" || blocked APP_UNKNOWN "apex-sync.json declares no app '$OPT_APP' — it declares: ${APPS_ALIAS[*]}"
+    SEL=("$APP_I")
+  elif (( ${#APPS_ALIAS[@]} == 1 )); then
+    SEL=(0)
+  elif [[ -n "$R_OP" ]]; then
+    blocked APP_REQUIRED "apex-sync.json declares ${#APPS_ALIAS[@]} apps — name the one to $R_OP: --app <$(IFS='|'; echo "${APPS_ALIAS[*]}")>"
+  else
+    for (( _i = 0; _i < ${#APPS_ALIAS[@]}; _i++ )); do SEL+=("$_i"); done
+  fi
+fi
+
+APP_ID=""; ALIAS=""; SRCDIR=""; SRC_REL=""; CONN=""; IGNORE_PATHS=(); EXPORT_SCOPE=()
 select_app() {  # $1 = index into the APPS_* arrays; sets the per-app globals
-  local p
+  local p i o
   APP_ID=${APPS_ID[$1]}; ALIAS=${APPS_ALIAS[$1]}; SRCDIR=${APPS_DIR[$1]}; CONN=${APPS_CONN[$1]}
+  SRC_REL=$(app_src_rel "$1")          # the app's source dir, repo-relative
   # Paths (relative to the app dir) that exist only on one side by design,
   # e.g. repo-only artifacts like "apex-exports/". Excluded from comparisons.
   # (while-read, not mapfile: macOS ships bash 3.2)
   IGNORE_PATHS=()
   while IFS= read -r p; do [[ -n "$p" ]] && IGNORE_PATHS+=("$p"); done <<<"${APPS_IGNORE[$1]}"
-  APP_SRC="$ROOT/$SRCDIR/$ALIAS"
+  # What an export may write over: the apexlangDir it is given — minus the dirs of
+  # the other apps that share it, which an export of this app does not touch.
+  EXPORT_SCOPE=("${SRCDIR:-.}")
+  for (( i = 0; i < ${#APPS_ALIAS[@]}; i++ )); do
+    (( i == $1 )) && continue
+    o=$(app_src_rel "$i")
+    [[ -z "$SRCDIR" || "$o/" == "$SRCDIR/"* ]] && EXPORT_SCOPE+=(":(exclude)$o")
+  done
+  APP_SRC="$ROOT/$SRC_REL"
   STATE_DIR="$ROOT/.git/apex-sync/$ALIAS"
   STATE="$STATE_DIR/state.json"
   REF="refs/apex-sync/$ALIAS"
@@ -311,7 +212,7 @@ select_app() {  # $1 = index into the APPS_* arrays; sets the per-app globals
 }
 APP_SRC=""; STATE_DIR=""; STATE=""; REF=""; GIT_HERMETIC=()
 export GIT_ATTR_NOSYSTEM=1
-(( ${#CFG_ERRORS[@]} )) || select_app 0
+[[ -z "$R_OP" ]] || select_app "${SEL[0]}"
 
 TMP_KEEP=""                       # scratch dirs preserved on FAIL for resolution
 TMPS=()
@@ -601,9 +502,9 @@ payload_report() {  # $1 = materialized BASE app dir
   # wc, not `grep -c`: grep exits 1 on a zero count, so `| grep -c . || echo "?"`
   # printed BOTH the count and the fallback, splitting the line in two.
   if [[ -n "$head" ]] && git -C "$ROOT" rev-parse -q --verify "$head^{commit}" >/dev/null 2>&1; then
-    commits=$(git -C "$ROOT" log --oneline "$head..HEAD" -- "$SRCDIR" | wc -l | tr -d '[:space:]')
+    commits=$(git -C "$ROOT" log --oneline "$head..HEAD" -- "$SRC_REL" | wc -l | tr -d '[:space:]')
   elif [[ -n "$recorded" ]]; then
-    commits=$(git -C "$ROOT" log --oneline --since="$recorded" -- "$SRCDIR" | wc -l | tr -d '[:space:]')
+    commits=$(git -C "$ROOT" log --oneline --since="$recorded" -- "$SRC_REL" | wc -l | tr -d '[:space:]')
   else
     commits="?"
   fi
@@ -611,7 +512,7 @@ payload_report() {  # $1 = materialized BASE app dir
   note "This import DEPLOYS the accumulated LOCAL backlog — \`apex import\` replaces the WHOLE app:"
   note "(A = new in LOCAL, M = differs, D = removed from LOCAL)"
   indent <<<"$dif"
-  note "$n file(s), $commits commit(s) touching $SRCDIR since the syncpoint${recorded:+ ($recorded)}"
+  note "$n file(s), $commits commit(s) touching $SRC_REL since the syncpoint${recorded:+ ($recorded)}"
   note "(may include formatting-only entries: LOCAL is hand-edited, BASE is the exporter's canonical form)"
 }
 
@@ -650,7 +551,7 @@ evidence() { R_EVIDENCE+="$1$US$2$US$3$US${4:-}"$'\n'; }   # $1 kind, $2 exit co
 
 repo_rel() {  # tree_diff lines (app-relative) → the same lines, repo-relative
   local st f
-  while IFS=$'\t' read -r st f; do [[ -n "$f" ]] && printf '%s\t%s/%s/%s\n' "$st" "$SRCDIR" "$ALIAS" "$f"; done
+  while IFS=$'\t' read -r st f; do [[ -n "$f" ]] && printf '%s\t%s/%s\n' "$st" "$SRC_REL" "$f"; done
   return 0
 }
 
@@ -788,7 +689,7 @@ source_app_id() {  # prints app.id from deployments/default.json, if the file st
 }
 
 require_source_dir() {
-  [[ -d "$APP_SRC" ]] || blocked SOURCE_DIR_MISSING "the source dir $SRCDIR/$ALIAS does not exist — check apexlangDir/appAlias in apex-sync.json (a first export needs: mkdir -p $SRCDIR/$ALIAS)"
+  [[ -d "$APP_SRC" ]] || blocked SOURCE_DIR_MISSING "the source dir $SRC_REL does not exist — check apexlangDir/appAlias in apex-sync.json (a first export needs: mkdir -p $SRC_REL)"
 }
 
 cmd_check_import() {
@@ -797,7 +698,7 @@ cmd_check_import() {
   require_source_dir
   local sid; sid=$(source_app_id)
   if [[ -n "$sid" && "$sid" != "$APP_ID" ]]; then
-    blocked APP_ID_MISMATCH "$SRCDIR/$ALIAS/deployments/default.json says app $sid, apex-sync.json says $APP_ID — an import would target app $sid while this check compares app $APP_ID. Fix whichever is wrong."
+    blocked APP_ID_MISMATCH "$SRC_REL/deployments/default.json says app $sid, apex-sync.json says $APP_ID — an import would target app $sid while this check compares app $APP_ID. Fix whichever is wrong."
   fi
 
   local app_rc=0; remote_app_exists || app_rc=$?
@@ -889,7 +790,7 @@ cmd_check_import() {
   echo ""
   echo "  Builder export kept at: $scratch"
   echo "  Resolution per file (see SKILL.md):"
-  echo "   - Changed only in the Builder: copy it from the export into $SRCDIR/$ALIAS/, commit as 'capture Builder changes'."
+  echo "   - Changed only in the Builder: copy it from the export into $SRC_REL/, commit as 'capture Builder changes'."
   echo "   - Changed on both sides: git show $REF:$ALIAS/<file> > /tmp/base && git merge-file <local-file> /tmp/base <export-file>"
   echo "   Then re-run check-import (PASSes once LOCAL contains every Builder change), apex validate, import, record-sync."
   fail CONFLICT BUILDER_DIVERGED "importing now would overwrite the Builder changes above."
@@ -903,8 +804,8 @@ cmd_check_export() {
   require_source_dir
   # -z: names are never quoted, and a rename puts its source on the next record.
   local dirty line xy p st skip=0
-  dirty=$(git -C "$ROOT" status --porcelain -z -- "$SRCDIR" | tr '\0' '\n')
-  evidence command 0 "git status --porcelain -- $SRCDIR" "$(grep -c . <<<"$dirty" || true) changed"
+  dirty=$(git -C "$ROOT" status --porcelain -z -- "${EXPORT_SCOPE[@]}" | tr '\0' '\n')
+  evidence command 0 "git status --porcelain -- ${EXPORT_SCOPE[*]}" "$(grep -c . <<<"$dirty" || true) changed"
   if [[ -n "$dirty" ]]; then
     while IFS= read -r line; do
       if (( skip )); then skip=0; continue; fi
@@ -917,7 +818,7 @@ cmd_check_export() {
     fail FAIL LOCAL_DIRTY "the APEXlang source dir has uncommitted/untracked changes — the export would clobber them. Commit or stash first, then re-run."
   fi
   have_base || note "(no syncpoint yet — record-sync after this export will create it)"
-  pass LOCAL_CLEAN "working tree clean under $SRCDIR. Safe to export."
+  pass LOCAL_CLEAN "working tree clean under ${SRCDIR:-the repo root}$( (( ${#EXPORT_SCOPE[@]} > 1 )) && echo " (other apps' dirs excluded)"). Safe to export."
 }
 
 marker_fresh() {  # $1 = import|export — written by a PASS less than TTL_SECONDS ago
@@ -979,63 +880,75 @@ doc_fail() { printf '  FAIL  %s\n' "$*"; DOC_BAD=$((DOC_BAD+1)); }
 # probed by doing it, never by "the binary is on PATH" — that is what let a stub
 # python3 and an unconvertible scratch path through in the first place.
 cmd_doctor() {
-  local which=""; [[ -n "$ALIAS" ]] && which=" (app $APP_ID '$ALIAS')"
-  echo "apex-sync-guard: doctor$which"
+  local e i have_sql=0 sid probe n
+  echo "apex-sync-guard: doctor"
   doc_ok "bash ${BASH_VERSION%%(*} on ${OSTYPE:-unknown}"
   case "${OSTYPE:-}" in
     msys*|cygwin*) doc_ok "cygpath present — SQLcl will be handed e.g. $(native_path "${TMPDIR:-/tmp}")" ;;
     *)             doc_note "not a Windows shell — no path conversion needed" ;;
   esac
   doc_ok "$(git --version)"
-  doc_ok "SQLcl: $(command -v sql)"
+  if command -v sql >/dev/null 2>&1; then have_sql=1; doc_ok "SQLcl: $(command -v sql)"
+  else doc_fail "SQLcl (sql) is not on PATH — every check needs it"; fi
   doc_ok "JSON parser (probed by execution): ${JSON_TOOL[*]}"
   doc_ok "byte comparator: $( [[ "$BYTES_EQ" == cmp ]] && echo "cmp" || echo "git hash-object --no-filters (cmp unavailable)" )"
-  local e
   for e in "${CFG_NOTES[@]:-}"; do [[ -n "$e" ]] && doc_note "$e"; done
   if (( ${#CFG_ERRORS[@]} )); then
     for e in "${CFG_ERRORS[@]}"; do doc_fail "$e"; done
     echo ""; echo "$DOC_BAD check(s) failed — fix apex-sync.json first (setup.md §1)."
     return 1
   fi
-  doc_ok "config: $CFG → dir $SRCDIR, connection $CONN"
-  local sid; sid=$(source_app_id)
-  if [[ -n "$sid" && "$sid" != "$APP_ID" ]]; then
-    doc_fail "deployments/default.json says app $sid, apex-sync.json says $APP_ID"
-  fi
-  if [[ -d "$APP_SRC" ]]; then
-    doc_ok "source dir $SRCDIR/$ALIAS ($(list_files "$APP_SRC" | grep -c . || true) files)"
-  else
-    doc_fail "source dir missing: $APP_SRC"
-  fi
-  if [[ -w "$STATE_DIR" ]]; then doc_ok "state dir writable: .git/apex-sync/$ALIAS"
-  else doc_fail "state dir not writable: $STATE_DIR"; fi
-
-  local probe n
-  if probe=$(run_sql "select 'apex-sync-doctor '||(select count(*) from apex_applications where application_id=$APP_ID) from dual;" 2>&1) \
-     && grep -q apex-sync-doctor <<<"$probe"; then
-    doc_ok "SQLcl connection '$CONN' answers"
-    n=$(sed -n 's/.*apex-sync-doctor \([0-9]*\).*/\1/p' <<<"$probe" | head -1)
-    if [[ "$n" == "0" ]]; then
-      doc_fail "app $APP_ID is not visible through '$CONN' — wrong connection, wrong workspace, or wrong appId"
-    else
-      doc_ok "app $APP_ID visible through '$CONN'"
+  doc_ok "config: $CFG — ${#APPS_ALIAS[@]} app(s): ${APPS_ALIAS[*]}"
+  for i in "${SEL[@]}"; do
+    select_app "$i"
+    echo ""
+    echo "  app $APP_ID '$ALIAS' — source $SRC_REL, connection $CONN"
+    sid=$(source_app_id)
+    if [[ -n "$sid" && "$sid" != "$APP_ID" ]]; then
+      doc_fail "deployments/default.json says app $sid, apex-sync.json says $APP_ID"
     fi
-  else
-    doc_fail "SQLcl connection '$CONN' failed: $(head -3 <<<"$probe" | tr '\n' ' ')"
-  fi
-
-  if have_base; then doc_ok "syncpoint: $(git -C "$ROOT" rev-parse --short "$REF")"
-  else doc_note "no syncpoint yet — run check-import once to bootstrap (setup.md §2)"; fi
+    if [[ -d "$APP_SRC" ]]; then
+      doc_ok "source dir $SRC_REL ($(list_files "$APP_SRC" | grep -c . || true) files)"
+    else
+      doc_fail "source dir missing: $SRC_REL"
+    fi
+    if [[ -w "$STATE_DIR" ]]; then doc_ok "state dir writable: .git/apex-sync/$ALIAS"
+    else doc_fail "state dir not writable: $STATE_DIR"; fi
+    if (( ! have_sql )); then
+      doc_note "connection '$CONN' not probed — no SQLcl"
+    elif probe=$(run_sql "select 'apex-sync-doctor '||(select count(*) from apex_applications where application_id=$APP_ID) from dual;" 2>&1) \
+         && grep -q apex-sync-doctor <<<"$probe"; then
+      doc_ok "SQLcl connection '$CONN' answers"
+      n=$(sed -n 's/.*apex-sync-doctor \([0-9]*\).*/\1/p' <<<"$probe" | head -1)
+      if [[ "$n" == "0" ]]; then
+        doc_fail "app $APP_ID is not visible through '$CONN' — wrong connection, wrong workspace, or wrong appId"
+      else
+        doc_ok "app $APP_ID visible through '$CONN'"
+      fi
+    else
+      doc_fail "SQLcl connection '$CONN' failed: $(head -3 <<<"$probe" | tr '\n' ' ')"
+    fi
+    if have_base; then doc_ok "syncpoint: $(git -C "$ROOT" rev-parse --short "$REF")"
+    else doc_note "no syncpoint yet — run check-import once to bootstrap (setup.md §2)"; fi
+  done
 
   echo ""
   if (( DOC_BAD )); then echo "$DOC_BAD check(s) failed."; return 1; fi
   echo "All checks passed."
 }
 
+cmd_apps() {  # per app, tab-separated: alias, appId, source dir, connection, testUser, runtimeUrl
+  local i
+  for i in "${SEL[@]}"; do
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${APPS_ALIAS[$i]}" "${APPS_ID[$i]}" "$(app_src_rel "$i")" \
+      "${APPS_CONN[$i]}" "${APPS_USER[$i]}" "${APPS_URL[$i]}"
+  done
+}
+
 cmd_status() {
   echo "apex-sync-guard: status (app $APP_ID '$ALIAS' via $CONN)"
   note "repo root:  $ROOT"
-  note "source dir: $SRCDIR/$ALIAS"
+  note "source dir: $SRC_REL"
   if have_base; then
     note "syncpoint:  $(git -C "$ROOT" rev-parse --short "$REF")  recorded $( [[ -f "$STATE" ]] && json_get "$STATE" recordedAt || echo '?')"
     if [[ -f "$STATE" && "$(json_get "$STATE" basis || true)" == forced ]]; then
@@ -1046,8 +959,8 @@ cmd_status() {
     note "syncpoint:  NONE — bootstrap pending (run check-import once)"
   fi
   note "current builderStamp: $(builder_stamp)"
-  local dirty; dirty=$(git -C "$ROOT" status --porcelain -- "$SRCDIR" | wc -l)
-  note "LOCAL dirty files under source dir: $dirty"
+  local dirty; dirty=$(git -C "$ROOT" status --porcelain -- "${EXPORT_SCOPE[@]}" | wc -l | tr -d '[:space:]')
+  note "LOCAL dirty files an export would overwrite: $dirty"
   for d in import export; do
     local m="$STATE_DIR/check-ok.$d"
     if [[ -f "$m" ]]; then
@@ -1066,6 +979,7 @@ case "$SUB" in
   check-import) cmd_check_import ;;
   check-export) cmd_check_export ;;
   record-sync)  cmd_record_sync ;;
-  status)       cmd_status ;;
+  status)       for _i in "${!SEL[@]}"; do (( _i )) && echo ""; select_app "${SEL[$_i]}"; cmd_status; done ;;
   doctor)       cmd_doctor ;;
+  apps)         cmd_apps ;;
 esac

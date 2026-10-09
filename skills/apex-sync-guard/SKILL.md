@@ -31,7 +31,7 @@ Same 3-way logic as `git pull` before `push`: if REMOTE moved since BASE, integr
 
 ## Protocol
 
-All operations go through `scripts/apex-sync-check.sh` in this skill's directory, run from the project repo root. It reads `apex-sync.json` (per-project config: app id, alias, source dir, SQLcl connection — see `setup.md`; setup also covers the first-run bootstrap when no syncpoint exists yet).
+All operations go through `scripts/apex-sync-check.sh` in this skill's directory, run from the project repo root. It reads `apex-sync.json` (per-project config: app id, alias, source dir, SQLcl connection — see `setup.md`; setup also covers the first-run bootstrap when no syncpoint exists yet). When it declares several apps (`apps[]`), every command below takes `--app <alias>` — the guard never guesses which one.
 
 **Pre-import** — `apex-sync-check.sh check-import`:
 
@@ -43,7 +43,7 @@ All operations go through `scripts/apex-sync-check.sh` in this skill's directory
 **What counts as an import.** Not just `apex import`. Oracle's `apexlang-deploy` (26.1 and 26.2 — the only import lane on 26.2) runs `scripts/deploy-apex-app.sh <dir>`, which issues `apex import -input` inside its own heredoc; the 26.1 generation lane runs `apexctl … runtime roundtrip --import-intent validate-and-import` (`apexlang-generation/references/ops/runtime-gates.md` §Canonical Validation 9), which builds a SQLcl script containing `apex import -input …`. Same total overwrite of the Builder, different command text: `check-import` gates them all, and the hook recognizes them. (The roundtrip contract also normalizes CRLF/CR to LF before validate and import, §5 — one more reason the comparator's `E` status must not gate.)
 
 **Pre-export** — `apex-sync-check.sh check-export`:
-Fails if the APEXlang source dir has uncommitted or untracked changes — the export would clobber them. Commit or stash first, then re-run.
+Fails if the APEXlang source dir has uncommitted or untracked changes (other apps' dirs excluded) — the export would clobber them. Commit or stash first, then re-run.
 
 **After every successful import or export** — `apex-sync-check.sh record-sync`:
 Updates the syncpoint (tree + timestamps). Skipping this poisons every future comparison — treat import/export as unfinished until `record-sync` ran.
