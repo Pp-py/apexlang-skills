@@ -426,8 +426,8 @@ write_state() {  # $1 = syncpoint commit, $2 = builder stamp
   # `git log --since=<recordedAt>` has one-second granularity, so a commit made in
   # the same second as the syncpoint was counted or not depending on timing.
   local head; head=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo "")
-  printf '{"appId":%s,"appAlias":"%s","syncpoint":"%s","builderStamp":"%s","recordedAt":"%s","headCommit":"%s"}\n' \
-    "$APP_ID" "$ALIAS" "$1" "$2" "$(now_iso)" "$head" > "$STATE"
+  printf '{"appId":%s,"appAlias":"%s","sqlclConnection":"%s","syncpoint":"%s","builderStamp":"%s","recordedAt":"%s","headCommit":"%s"}\n' \
+    "$APP_ID" "$ALIAS" "$CONN" "$1" "$2" "$(now_iso)" "$head" > "$STATE"
 }
 
 # ------------------------------------------------------------- commands
@@ -437,6 +437,18 @@ cmd_check_import() {
 
   local app_rc=0; remote_app_exists || app_rc=$?
   if (( app_rc == 1 )); then
+    # "Not visible" is only a first publication when there was never a sync. With a
+    # syncpoint on record the same answer means the connection, the workspace or the
+    # appId is wrong — or the app was deleted — and taking the shortcut would let an
+    # import land on whatever app the source really names, unchecked.
+    if have_base; then
+      local was="" via=""; [[ -f "$STATE" ]] && was=$(json_get "$STATE" sqlclConnection || true)
+      [[ -n "$was" ]] && via=", recorded via '$was'"
+      blocked SYNCPOINT_WITHOUT_APP "app $APP_ID is not visible through '$CONN', but '$ALIAS' has a syncpoint ($(git -C "$ROOT" rev-parse --short "$REF")$via).
+      Wrong saved connection, wrong workspace or wrong appId — or the app was deleted. Check with: $(basename "$0") doctor
+      If this really is a first publication into a NEW workspace, the user (not an agent) sets the old syncpoint aside:
+        git update-ref refs/apex-sync-saved/$ALIAS $REF && git update-ref -d $REF"
+    fi
     pass FIRST_PUBLICATION
     echo "PASS: app $APP_ID does not exist in the target workspace — first publication."
     echo "  Nothing to overwrite: there is no second replica that could hold unexported"

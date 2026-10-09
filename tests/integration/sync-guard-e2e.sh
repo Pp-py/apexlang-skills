@@ -271,11 +271,19 @@ expect "matcher: setup.md documents the same string"         0 grep -qF "$MATCHE
 # fresh PROD deploy: create the workspace, then publish. The shortcut must be
 # taken ONLY on a definitive answer: an unreadable count means "cannot tell",
 # and treating that as "no app" would open the gate on failure.
+# And only where no syncpoint exists: with one on record, "not visible" means a wrong
+# connection, workspace or appId (or a deleted app), never a fresh workspace.
 rm -f "$WORK/proj/.git/apex-sync/demo/"check-ok.*
+expect     "app invisible but a syncpoint exists -> BLOCKED"  2 env FAKE_REMOTE_APP_COUNT=0 "$CHK" check-import
+expect_out "and the reason names the syncpoint"               'has a syncpoint' env FAKE_REMOTE_APP_COUNT=0 "$CHK" check-import
+expect     "and it writes no marker"                          1 test -f "$WORK/proj/.git/apex-sync/demo/check-ok.import"
+saved_ref=$(git rev-parse refs/apex-sync/demo)               # the documented escape: set the syncpoint aside
+git update-ref -d refs/apex-sync/demo
 expect_out "check-import PASSes when the app is not in the workspace yet" \
   "does not exist in the target workspace" env FAKE_REMOTE_APP_COUNT=0 "$CHK" check-import
 expect "and it writes the marker, so the publication is allowed" \
   0 hook_in_proj "apex import -input src/app"
+git update-ref refs/apex-sync/demo "$saved_ref"
 
 rm -f "$WORK/proj/.git/apex-sync/demo/"check-ok.*
 expect_out "an unreadable count does NOT take the shortcut (fails closed)" \
