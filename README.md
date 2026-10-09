@@ -4,60 +4,135 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Agent Skills](https://img.shields.io/badge/agent--skills-SKILL.md-6e56cf)](https://agentskills.io)
 
-Three agent skills for building **Oracle APEX** apps as **APEXlang** declarative source (`.apx`) — architecture, sync safety, and runtime verification.
+An engineering framework for building **Oracle APEX** apps as **APEXlang** declarative source
+(`.apx`) with coding agents — on top of Oracle's official APEXlang skills. Three capabilities
+(architecture, sync safety, runtime proof) behind **fail-closed gates** that leave
+**machine-readable evidence**, so "it works" is something a result file shows, not something an
+agent says.
 
 ## What problem does this solve?
 
-APEXlang turns an APEX app into declarative `.apx` source — what makes an APEX app tractable for a coding agent at all. Generating that source correctly is solved, and it belongs to **Oracle's official APEXlang skills** (plugin `apex@oracle-skills`, required): grammar, generation (26.1), `validate`, `import`.
+APEXlang turns an APEX app into source a coding agent can work on. Generating, compiling and
+importing that source is solved — by **Oracle's official APEXlang skills**. Valid `.apx` is not
+a sound application, though. Three failure modes survive a clean `validate`:
 
-Valid `.apx` is not a sound application, though. Three failure modes survive a clean `validate`:
+- **Logic scatters.** Left alone, an agent bolts region-bound Automatic DML onto every grid and
+  calls it simple — leaving no single place where a business rule holds.
+- **A sync erases work.** `apex import` replaces the whole app in the Builder; `apex export`
+  replaces the whole working tree. Whichever replica held unsynchronized changes loses them,
+  irreversibly and without a prompt.
+- **"It works" gets claimed from a green import.** `validate` proves grammar and `import` loads
+  metadata; neither renders the page — a process can call a package procedure that doesn't exist
+  and still validate.
 
-- **Logic scatters.** Left alone, an agent bolts region-bound Automatic DML onto every grid and calls it simple — leaving no single place where a business rule holds.
-- **A sync erases work.** `apex import` replaces the whole app in the Builder; `apex export` replaces the whole working tree. Whichever replica held unsynchronized changes loses them, irreversibly and without a prompt.
-- **"It works" gets claimed from a green import.** `validate` proves grammar and `import` loads metadata; neither renders the page — a process can call a package procedure that doesn't exist and still validate.
-
-`apexlang-skills` is the engineering layer over those three:
+## How it fits
 
 ```text
-Oracle's APEXlang skills  →  valid .apx: generate (26.1) · validate · import
-apexlang-skills           →  architecture · sync safety · runtime proof
-                             ──────────────────────────────────────────
-                             an APEX app you can ship with evidence
+Oracle Official Skills    apex@oracle-skills — the language, inventory, generation (26.1),
+        │                 compile, import/export        (verified revision: framework/oracle-skills.lock.json)
+        ▼
+apexlang-skills           apexlang-architecture · apex-sync-guard · apex-sentinel
+        │                 + framework/: principles, contracts, gates, evidence, capability matrix
+        ▼
+Engineering guardrails    single write path · fail-closed gates · evidence, not claims
 ```
 
-They close one loop: **architect → build (`.apx` + package) → sync-check → import → verify in the browser**
-
-| Skill | Question it answers |
+| Oracle's skills provide | apexlang-skills provides |
 |---|---|
-| [`apexlang-architecture`](skills/apexlang-architecture/SKILL.md) | **WHERE does logic go?** Every write through a PL/SQL package (single write-path), never region-bound Automatic DML — plus which package owns it: the entity, a multi-entity flow, or neither. Ships 13 screen-archetype recipes. |
-| [`apex-sync-guard`](skills/apex-sync-guard/SKILL.md) | **Is it SAFE to import/export now?** `apex import`/`export` are total silent overwrites. Keeps a syncpoint, gates both directions, and stops on a conflict when both replicas moved — the per-file merge that resolves it is documented, never automatic. Wrapper script + blocking `PreToolUse` hook. |
-| [`apex-sentinel`](skills/apex-sentinel/SKILL.md) | **Does it WORK?** Drives the running page in a real browser (Playwright CLI/MCP) before any "it works" claim. Never degrades to "validate passed". |
+| the APEXlang language, its grammar and component inventory | **where logic goes** — [`apexlang-architecture`](skills/apexlang-architecture/SKILL.md): every write through a PL/SQL package, one owner per table and per rule; 13 screen-archetype recipes and the data contracts behind cards, badges and links |
+| generation with policies and a local lint (26.1) | **whether an import/export is safe now** — [`apex-sync-guard`](skills/apex-sync-guard/SKILL.md): Builder↔git divergence against a recorded syncpoint, both directions, several apps per repo; a wrapper script and a blocking `PreToolUse` hook |
+| compilation (`apex validate` through SQLcl) | **whether the change works** — [`apex-sentinel`](skills/apex-sentinel/SKILL.md): the running page in a real browser, as a verified test user, criterion by criterion, with the data read back through SQLcl |
+| import / deploy and export | **the gates, their statuses and their evidence** — [`framework/`](framework/README.md) |
+| | *future capabilities:* **Security** and **UI/UX** gates (Phase 3) |
+
+This repo never duplicates what Oracle's skills do. Where its guidance and Oracle's meet, the
+precedence is explicit — SQLcl `apex validate` > Oracle's 26.1 lint > Oracle's prose > this repo,
+for grammar and components — and every disagreement is recorded as a known conflict
+([`CAPABILITIES.md`](framework/CAPABILITIES.md)), not silently kept.
+
+## The loop, as gates
+
+```text
+Architecture → build (.apx + package) → Validation → Sync → import → record-sync → Runtime
+```
+
+Each gate has one owner and states what its PASS does **not** establish
+([`GATES.md`](framework/GATES.md)). Every verdict is one of `PASS · FAIL · CONFLICT (sync only) ·
+BLOCKED · UNKNOWN`, with exit codes 0 · 1 · 1 · 2 · 3 — and `NOT_RUN`, which only a consumer
+assigns. **PASS ≠ NOT_RUN ≠ UNKNOWN ≠ "the agent says it worked."** Results are JSON validated by
+[`framework/schemas/`](framework/schemas/) — `sync-result` is stable and written by the guard on
+every run; `runtime-result`, `architecture-result` and the task-level `verification-manifest` are
+experimental. A future `apexlang-delivery` orchestrates the gates by reading those files, under
+a contract that lets it add no rule of its own ([`GATES.md` §The orchestration contract](framework/GATES.md#the-orchestration-contract)).
 
 ## Install
 
-**Claude Code (plugin):**
+**Claude Code (plugin)** — Oracle's skills first, then these:
 
 ```text
+/plugin marketplace add oracle/skills
+/plugin install apex@oracle-skills
 /plugin marketplace add Pp-py/apexlang-skills
 /plugin install apexlang-toolkit
 ```
 
-Installs the three skills and auto-registers the sync-guard hook (it no-ops in projects without an `apex-sync.json` — per-project wiring in [`setup.md`](skills/apex-sync-guard/setup.md)).
+Installs the three skills and auto-registers the sync-guard hook (it no-ops in projects without
+an `apex-sync.json` — per-project wiring in [`setup.md`](skills/apex-sync-guard/setup.md)).
 
-**Any other agent** (Codex, opencode, Cursor, …): plain-Markdown [Agent Skills](https://agentskills.io) — symlink `skills/*` into your tool's skill directory, or point the agent at [`AGENTS.md`](./AGENTS.md).
+**Any other agent** (Codex, opencode, Cursor, …): plain-Markdown [Agent Skills](https://agentskills.io)
+— symlink `skills/*` into your tool's skill directory, or point the agent at [`AGENTS.md`](./AGENTS.md).
+Each skill also works on its own.
 
 ## Requirements
 
-- Oracle's official APEXlang skills (`apex@oracle-skills`; the revision this repo was verified against is pinned in [`framework/oracle-skills.lock.json`](framework/oracle-skills.lock.json)) and SQLcl — generate (26.1) / validate / import `.apx`
-- **Platform:** the scripts are bash — Linux and macOS natively, Windows through **Git Bash or WSL** (not PowerShell/cmd; Claude Code's Bash tool on Windows already uses Git Bash). Paths crossing into SQLcl or node are converted with `cygpath`. That constraint is about *running* the scripts; the sync-guard hook itself watches **both** shell tools (`Bash|PowerShell`), and is registered as `bash "<path>"` so it works whichever shell the hook runner picks — `bash` only has to be on PATH
-- **apex-sentinel:** a browser-automation tool + SQLcl. Playwright CLI preferred and driven through `skills/apex-sentinel/scripts/pw.sh` (no install needed — it falls back to `npx`); any browser-MCP works as a fallback. No browser → it stops and reports; it never fakes verification. Since APEX apps open on a login page, a **test user** is configuration: `testUser`/`runtimeUrl` in `apex-sync.json`, password from `$APEX_TEST_PASSWORD` / a gitignored `.env` / a json outside the repo, then `pw.sh login` ([`setup.md` §2](skills/apex-sentinel/setup.md))
-- **apex-sync-guard:** `git`, SQLcl, `jq` *or* `python3`. Validate a machine with `skills/apex-sync-guard/scripts/apex-sync-check.sh doctor`
+| Oracle APEXlang version (`mmdVersion`) | Oracle's skills you get | Notes |
+|---|---|---|
+| 26.1 | generation (policies, local lint, `apexctl`), compile, deploy, inventory | the version Oracle's router defaults to |
+| 26.2 | compile, deploy, inventory | SQLcl 26.2.0 refuses 26.2 apps (UP-2) — Validation is BLOCKED until a newer SQLcl |
+
+- **SQLcl** for compile, import/export and the data-side reads.
+- **apex-sync-guard:** `git`, `jq` *or* `python3`. Check a machine with
+  `skills/apex-sync-guard/scripts/apex-sync-check.sh doctor`.
+- **apex-sentinel:** a browser — the Playwright CLI through `skills/apex-sentinel/scripts/pw.sh`
+  (it falls back to `npx`), or any browser-MCP. No browser → it stops and reports; it never fakes
+  verification. A **test user** for the app's login ([`setup.md` §2](skills/apex-sentinel/setup.md)).
+- **Platform:** the scripts are bash — Linux and macOS natively, Windows through **Git Bash or WSL**
+  (Claude Code's Bash tool on Windows already uses Git Bash). The hook watches both shell tools
+  (`Bash|PowerShell`) and is registered as `bash "<path>"`.
+
+## Configuration
+
+One file at the project root, committed — `apex-sync.json`. One app:
+
+```json
+{ "appId": 100, "appAlias": "hr", "apexlangDir": "apex/apexlang", "sqlclConnection": "dev_hr",
+  "testUser": "QA_HR", "runtimeUrl": "https://<host>/ords/r/<workspace>/hr/" }
+```
+
+Several live apps in one workspace and one repo: list them in `apps[]`, with top-level defaults;
+every gate command then names its app (`--app hr`). Passwords never go in this file. The
+canonical specification is [`apex-sync-guard/setup.md` §1](skills/apex-sync-guard/setup.md).
 
 ## Examples
 
-Three runnable vertical slices (DDL + write-path package + `.apx`; the first two also with a browser-verification walkthrough): an editable Interactive Grid, an approval state machine, and a single-entity form (full page + drawer). Start at [`examples/README.md`](skills/apexlang-architecture/examples/README.md) — and still `apex validate` against **your** APEX version before importing.
+Three runnable vertical slices (DDL + write-path package + `.apx`; the first two also with a
+browser-verification walkthrough): an editable Interactive Grid, an approval state machine, and
+a single-entity form (full page + drawer). Start at
+[`examples/README.md`](skills/apexlang-architecture/examples/README.md).
 
-Grammar status, measured rather than claimed: Oracle's 26.1 local lint (release 2026.09.21 — Oracle itself calls it advisory "syntax hygiene") passes the five `.apx` with only the diagnostics documented where they occur (the app-level breadcrumb entry, an Interactive Grid column `lov {}` block), while the compiler — SQLcl 26.2.0 `apex validate` on Oracle's 26.1 scaffold — currently **rejects** them. Lint-clean is not "compiles": details and the open conflict in [`examples/README.md`](skills/apexlang-architecture/examples/README.md#grammar-status--gotchas).
+Grammar status, measured rather than claimed: Oracle's 26.1 local lint passes the five `.apx`
+with only the diagnostics documented where they occur, while the compiler — SQLcl 26.2.0
+`apex validate` on Oracle's 26.1 scaffold — currently **rejects** them (KC-7). Lint-clean is not
+"compiles": [`examples/README.md`](skills/apexlang-architecture/examples/README.md#grammar-status--gotchas).
+
+## Roadmap
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 — Capabilities | architecture, sync safety, runtime verification | done |
+| 2 — Engineering framework | principles, contracts, gates, evidence, capability matrix, testing model; contracts ready for an `apexlang-delivery` that orchestrates the gates and adds no rules | 0.6.0 — the orchestrator itself is not built yet |
+| 3 — Application quality | **Security** and **UI/UX** as new gates; resolving the known conflicts; environments per app | next |
+| 4 — Benchmark & continuous verification | showing that the framework makes an agent better, measured | later |
 
 ## Development
 
