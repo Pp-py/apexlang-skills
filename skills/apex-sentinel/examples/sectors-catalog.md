@@ -44,9 +44,10 @@ Then re-run the §1 `eval` and assert on the notification text:
      `A sector with code PROD already exists.` This proves the write went through
      `pkg_sectors.create_row` (the duplicate check), not raw Automatic DML.
    - **Friendliness (must pass here — the EHF is installed):** the message has **no**
-     `ORA-20800:` prefix. If you see `ORA-20800: A sector with code...`, the Error Handling
-     Function isn't registered — flag it (see `../checks/editable-ig.md` §3 and
-     `apexlang-architecture/examples/00-error_handling_function.sql`).
+     `ORA-20800:` prefix. If you see `ORA-20800: A sector with code...`, this criterion
+     **FAILs**: the Error Handling Function exists in the database but is not registered as
+     the app's error handling function — that is the fix to report (see
+     `../checks/editable-ig.md` §3 and `apexlang-architecture/examples/00-error_handling_function.sql`).
 
 ## 3. Confirm the DB is unchanged
 

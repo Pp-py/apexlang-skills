@@ -33,8 +33,8 @@ Make the new row's code **duplicate an existing one**, throwaway values elsewher
 
 **Two levels of assertion:**
 
-- **Routing (must pass):** the error text cites the package's business rule — e.g. `A level with code MANAGEMENT already exists.` with the package's `-20940`-band code. This proves the write went **through the package**, not raw automatic DML, and the duplicate was **rejected** (no insert).
-- **Friendliness (often fails — this is the gold):** the text must **not** start with a raw `ORA-NNNNN:` prefix. Observed in a real app: `ORA-20940: A level with code...` — the package raised correctly, but the app has **no application-level Error Handling Function** registered (see `apexlang-architecture/back-end-conventions.md` §3), so the `ORA-` prefix leaks to the user. **validate and import never catch this; only the browser does.** Flag it as a defect: register the error-handling function.
+- **Routing (must pass):** the error text cites the package's business rule — e.g. `A level with code MANAGEMENT already exists.` This proves the write went **through the package**, not raw automatic DML, and the duplicate was **rejected** (no insert).
+- **Friendliness (often fails — this is the gold):** the text must **not** start with a raw `ORA-NNNNN:` prefix. Observed in a real app: `ORA-20940: A level with code...` — the package raised correctly, but the app has **no application-level Error Handling Function** registered (see `apexlang-architecture/back-end-conventions.md` §3), so the `ORA-` prefix leaks to the user. **validate and import never catch this; only the browser does.** That is a **FAIL** of the friendliness criterion — never a pass with a note — and the fix to report is: register an application-level Error Handling Function.
 
 Then confirm **no row persisted**: `sql -name <conn>` → `select count(*) ... where <dup-key>` returns the original count. The UI rejecting is necessary; the DB being unchanged is the proof.
 
@@ -46,4 +46,4 @@ The unsaved row sits in the IG edit buffer. Navigating away triggers a beforeunl
 
 - Grid renders with data (`getTotalRecords() > 0`).
 - Duplicate Save → package error in the notification region, row rejected, DB count unchanged.
-- Message is friendly (no `ORA-` prefix) — or you've flagged the missing error-handling function.
+- Message is friendly (no `ORA-` prefix). A leaked `ORA-` prefix fails this criterion; report the missing Error Handling Function as the fix.
