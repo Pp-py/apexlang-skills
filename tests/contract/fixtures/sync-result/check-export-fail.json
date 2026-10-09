@@ -1,0 +1,20 @@
+{
+  "kind": "sync-result",
+  "schemaVersion": 1,
+  "operation": "check-export",
+  "status": "FAIL",
+  "reasons": [{"code": "LOCAL_DIRTY", "message": "the APEXlang source dir has uncommitted/untracked changes — the export would clobber them. Commit or stash first, then re-run."}],
+  "app": {"appId": 100, "appAlias": "hr"},
+  "context": {
+    "task": "T-42",
+    "repo": {"commit": "0123456789abcdef0123456789abcdef01234567", "dirty": true},
+    "frameworkVersion": "0.6.0",
+    "timestamp": "2026-10-09T12:00:00Z",
+    "producer": {"skill": "apex-sync-guard", "method": "tool"},
+    "target": {"connectionName": "dev_hr"}
+  },
+  "marker": {"written": false, "path": ".git/apex-sync/hr/check-ok.export", "ttlSeconds": 600, "expiresAt": null},
+  "syncpoint": {"ref": "refs/apex-sync/hr", "commit": null, "recorded": false},
+  "changes": [{"status": "M", "path": "apex/apexlang/hr/pages/p00030-sectors-catalog.apx"}, {"status": "A", "path": "apex/apexlang/hr/pages/p00099-draft.apx"}],
+  "evidence": [{"kind": "command", "command": "git status --porcelain -- apex/apexlang", "exitCode": 0, "output": "2 changed"}]
+}

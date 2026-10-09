@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pp-py.github.io/apexlang-skills/schemas/1/common.schema.json",
+  "title": "apexlang-skills: shared definitions (schemaVersion 1)",
+  "description": "Definitions every result schema references. The $id is an identifier, not (yet) a published URL. Patterns stay within the regex subset shared by ECMA-262 and Python re (no lookbehind, no inline flags).",
+  "$defs": {
+    "producerStatus": {
+      "description": "What a producer may emit. NOT_RUN is never emitted: only a consumer assigns it (not invoked, not required, or stale).",
+      "enum": ["PASS", "FAIL", "CONFLICT", "BLOCKED", "UNKNOWN"]
+    },
+    "gateStatus": {
+      "description": "A gate as a consumer records it. Aggregation: FAIL > CONFLICT > UNKNOWN > BLOCKED > NOT_RUN > PASS; an empty set is NOT_RUN.",
+      "enum": ["PASS", "FAIL", "CONFLICT", "BLOCKED", "UNKNOWN", "NOT_RUN"]
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitSha": { "type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$" },
+    "relPath": {
+      "description": "Relative to the repository root, forward slashes: never absolute, never a drive letter, never a '..' segment, never '~'.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!~)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$)).+$"
+    },
+    "taskId": {
+      "description": "Names a directory under the evidence dir, so it can never be '.', '..' or contain a separator.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "appAlias": {
+      "description": "Same pattern as apex-sync-check.sh, apex-sync-hook.sh and pw.sh: it names a git ref and a directory.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+    },
+    "appId": { "type": "integer", "minimum": 1, "maximum": 9999999999 },
+    "connectionName": {
+      "description": "A SQLcl saved-connection NAME (sql -name <name>), never a connect string: no '/', '@', whitespace, backslash or quotes.",
+      "type": "string",
+      "pattern": "^[^/@\\s\\\\\"']{1,128}$"
+    },
+    "toolVersion": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)*$" },
+    "runtimeUrl": {
+      "type": "string",
+      "pattern": "^https?://\\S+$",
+      "not": { "pattern": "[?&]session=" }
+    },
+    "safeText": {
+      "description": "Free text that may land in a shared evidence file. Rejects what must never be there: an APEX session id, a password assignment, a user/password@host connect string.",
+      "type": "string",
+      "maxLength": 8000,
+      "not": {
+        "anyOf": [
+          { "pattern": "session=[0-9]{6,}" },
+          { "pattern": "f\\?p=[^:\\s]*:[^:\\s]*:[0-9]{6,}" },
+          { "pattern": "[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]\\s*[=:]\\s*\\S" },
+          { "pattern": "[A-Za-z0-9_$#]+/[^\\s/@]+@(//)?[A-Za-z0-9][A-Za-z0-9_.-]*" }
+        ]
+      }
+    },
+    "reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,63}$" },
+        "message": { "$ref": "#/$defs/safeText" }
+      }
+    },
+    "app": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["appId", "appAlias"],
+      "properties": {
+        "appId": { "$ref": "#/$defs/appId" },
+        "appAlias": { "$ref": "#/$defs/appAlias" },
+        "mmdVersion": {
+          "description": "From the app's .apex/apexlang.json — what Oracle's skills route on (26.1.x, 26.2.x).",
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)*(\\+[0-9A-Za-z.-]+)?$"
+        }
+      }
+    },
+    "target": {
+      "description": "What the run talked to. Absent fields were not observed, never guessed.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "connectionName": { "$ref": "#/$defs/connectionName" },
+        "apexVersion": { "$ref": "#/$defs/toolVersion" },
+        "sqlclVersion": { "$ref": "#/$defs/toolVersion" },
+        "runtimeUrl": { "$ref": "#/$defs/runtimeUrl" }
+      }
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skill", "method"],
+      "properties": {
+        "skill": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$" },
+        "method": {
+          "description": "tool = a script computed the verdict; agent = an agent judged it; human = a person decided it.",
+          "enum": ["tool", "agent", "human"]
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task", "repo", "frameworkVersion", "timestamp", "producer"],
+      "properties": {
+        "task": { "oneOf": [{ "$ref": "#/$defs/taskId" }, { "type": "null" }] },
+        "repo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["commit", "dirty"],
+          "properties": {
+            "commit": { "oneOf": [{ "$ref": "#/$defs/gitSha" }, { "type": "null" }] },
+            "dirty": { "type": "boolean" }
+          }
+        },
+        "frameworkVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$" },
+        "timestamp": { "$ref": "#/$defs/utcTimestamp" },
+        "producer": { "$ref": "#/$defs/producer" },
+        "target": { "$ref": "#/$defs/target" }
+      }
+    },
+    "evidenceRef": {
+      "description": "What a verdict rests on: a command or query that ran (with its exit code), or a file (with its hash). Output that may carry hostnames or data is summarized, never copied.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "command", "exitCode"],
+          "properties": {
+            "kind": { "const": "command" },
+            "command": { "allOf": [{ "$ref": "#/$defs/safeText" }, { "minLength": 1 }] },
+            "exitCode": { "type": "integer" },
+            "output": { "$ref": "#/$defs/safeText" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "statement", "exitCode"],
+          "properties": {
+            "kind": { "const": "sql" },
+            "statement": { "allOf": [{ "$ref": "#/$defs/safeText" }, { "minLength": 1 }] },
+            "exitCode": { "type": "integer" },
+            "result": { "$ref": "#/$defs/safeText" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "path", "sha256"],
+          "properties": {
+            "kind": { "const": "file" },
+            "path": { "$ref": "#/$defs/relPath" },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "description": { "$ref": "#/$defs/safeText" }
+          }
+        }
+      ]
+    }
+  }
+}

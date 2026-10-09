@@ -65,11 +65,12 @@ Grammar status, measured rather than claimed: Oracle's 26.1 local lint (release 
 git ls-files -z -- '*.sh' | xargs -0 shellcheck -x   # lint
 tests/integration/sync-guard-e2e.sh                  # offline e2e (stubbed SQLcl)
 tests/integration/pw-wrapper-smoke.sh                # pw.sh (stubbed Playwright CLI)
+tests/contract/run.sh                                # JSON contracts: schemas, negatives, every emitted result
 tests/upstream/verify-citations.sh                   # quotes from Oracle's skills still say what we claim
 tests/upstream/validate-examples.sh [--compiler]     # the examples under Oracle's 26.1 lint, or SQLcl apex validate
 ```
 
-The first three run in CI. The `upstream/` scripts need Oracle's APEXlang skills installed — resolved from
+The first four run in CI (the contract tier needs `python3-jsonschema`). The `upstream/` scripts need Oracle's APEXlang skills installed — resolved from
 the revision pinned in [`framework/oracle-skills.lock.json`](framework/oracle-skills.lock.json), or
 `APEXLANG_ROOT=<path>/apex/apexlang` — and are run whenever that package is updated. `verify-citations.sh`
 checks each quotation listed in [`tests/upstream/citations.md`](tests/upstream/citations.md) and rejects citing

@@ -8,11 +8,17 @@
 #   apex-sync-check.sh status         # inspect syncpoint + both replicas
 #   apex-sync-check.sh doctor         # validate this machine's wiring end to end
 # Options (before or after the subcommand):
-#   --force   record-sync only: record the syncpoint although nothing proves the
-#             Builder holds no unsynchronized work. The user's call, never an agent's.
+#   --task <id>  check-*/record-sync: also write the result to
+#                <evidenceDir>/<id>/sync-<appAlias>-<subcommand>.json
+#   --force      record-sync only: record the syncpoint although nothing proves the
+#                Builder holds no unsynchronized work. The user's call, never an agent's.
 #
 # Exit codes: 0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED (precondition missing) ·
 #             3 UNKNOWN (started, outcome undeterminable — nothing authorized).
+# Every gate run (check-import, check-export, record-sync) also leaves its verdict
+# as JSON in .git/apex-sync/<appAlias>/last-<subcommand>.json — the sync-result
+# contract, framework/schemas/sync-result.schema.json. The JSON is the verdict;
+# the exit code mirrors it.
 #
 # Runs under bash: Linux, macOS, and Windows via Git Bash or WSL (not PowerShell/cmd).
 #
@@ -26,6 +32,7 @@
 set -euo pipefail
 
 TTL_SECONDS=600   # how long a check PASS authorizes; must equal TTL in apex-sync-hook.sh
+FRAMEWORK_VERSION="0.6.0"   # the apexlang-skills release this script belongs to (.claude-plugin/plugin.json)
 
 # --- verdicts. A gate command (check-import, check-export, record-sync) ends in
 # exactly one status, and the EXIT trap (on_exit, below) turns it into the exit
@@ -35,17 +42,18 @@ TTL_SECONDS=600   # how long a check PASS authorizes; must equal TTL in apex-syn
 # run started but nobody can say what it established, so nothing is authorized.
 R_OP=""        # the gate command being run; empty for status/doctor
 R_STATUS=""    # PASS | FAIL | CONFLICT | BLOCKED | UNKNOWN
-R_REASON=""    # reason code (framework/CONTRACTS.md)
-classify() { R_STATUS=$1; R_REASON=$2; }
+R_REASON=""    # reason code (the catalog is in framework/schemas/sync-result.schema.json)
+R_MESSAGE=""   # the verdict in words, as the result file carries it
+classify() { R_STATUS=$1; R_REASON=$2; R_MESSAGE=${3:-}; }
 # A precondition is missing; the check stopped before any effect.
-die()     { [[ -n "$R_OP" ]] && classify BLOCKED "${DIE_REASON:-USAGE}"; echo "apex-sync-guard: ERROR: $*" >&2; exit 2; }
+die()     { [[ -n "$R_OP" ]] && classify BLOCKED "${DIE_REASON:-USAGE}" "$*"; echo "apex-sync-guard: ERROR: $*" >&2; exit 2; }
 blocked() { local r=$1; shift; DIE_REASON=$r die "$@"; }
 # The check started but cannot say what the Builder holds (an export or a git
 # step failed part-way): not a verdict on the replicas, and never a PASS.
-unknown() { classify UNKNOWN "$1"; shift; echo "apex-sync-guard: ERROR: $*" >&2; exit 3; }
+unknown() { local r=$1; shift; classify UNKNOWN "$r" "$*"; echo "apex-sync-guard: ERROR: $*" >&2; exit 3; }
 # The check ran to the end and the operation must not proceed. $1 = FAIL|CONFLICT.
-fail()    { classify "$1" "$2"; shift 2; echo ""; echo "FAIL: $*" >&2; exit 1; }
-pass()    { classify PASS "$1"; }
+fail()    { local s=$1 r=$2; shift 2; classify "$s" "$r" "$*"; echo ""; echo "FAIL: $*" >&2; exit 1; }
+pass()    { classify PASS "$1" "$2"; echo "PASS: $2"; }
 note() { echo "  $*"; }
 mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }   # GNU stat / BSD (macOS) stat
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }                    # BSD date has no -Iseconds
@@ -60,11 +68,13 @@ native_path() {
 
 # ------------------------------------------------------------ arguments
 # Parsed before any setup, so a usage error never depends on SQLcl or a parser.
-USAGE="usage: $(basename "$0") check-import|check-export|record-sync|status|doctor [--force]"
-SUB=""; OPT_FORCE=0
+USAGE="usage: $(basename "$0") check-import|check-export|record-sync|status|doctor [--task <id>] [--force]"
+SUB=""; OPT_FORCE=0; OPT_TASK=""
 while (( $# )); do
   case "$1" in
     --force)   OPT_FORCE=1 ;;
+    --task)    [[ -n "${2:-}" ]] || die "--task needs a value — $USAGE"; OPT_TASK=$2; shift ;;
+    --task=*)  OPT_TASK=${1#--task=}; [[ -n "$OPT_TASK" ]] || die "--task needs a value — $USAGE" ;;
     -h|--help) echo "$USAGE"; exit 0 ;;
     -*)        die "unknown option: $1 — $USAGE" ;;
     *)         [[ -z "$SUB" ]] || die "unexpected argument: $1 — $USAGE"; SUB=$1 ;;
@@ -77,6 +87,12 @@ case "$SUB" in
   *) die "$USAGE" ;;
 esac
 (( OPT_FORCE == 0 )) || [[ "$SUB" == record-sync ]] || die "--force is only valid with record-sync"
+# A task id names a directory under the evidence dir: nothing that could leave it.
+RE_TASK='^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+if [[ -n "$OPT_TASK" ]]; then
+  [[ -n "$R_OP" ]] || die "--task is only valid with check-import, check-export or record-sync"
+  [[ "$OPT_TASK" =~ $RE_TASK ]] || die "--task must match $RE_TASK (got '$OPT_TASK')"
+fi
 
 # ---------------------------------------------------------------- setup
 [[ -n "${BASH_VERSION:-}" ]] || die "run this under bash (on Windows: Git Bash or WSL — PowerShell and cmd cannot execute it)"
@@ -299,28 +315,43 @@ export GIT_ATTR_NOSYSTEM=1
 
 TMP_KEEP=""                       # scratch dirs preserved on FAIL for resolution
 TMPS=()
+RESULT_FILES=()                   # where this run's sync-result goes (results_init)
 
-# The single exit path. The freshness marker the hook trusts is written HERE and
-# nowhere else: after the verdict line, the deploy payload and everything else the
-# run printed, and only when the run actually ended in a check PASS. A crash after
-# the PASS line (an unreadable state.json, a full disk) therefore never leaves the
-# gate open — it ends UNKNOWN, exit 3, no marker.
+# The single exit path. The verdict is persisted HERE, and the freshness marker the
+# hook trusts is written here and nowhere else: after the verdict line, the deploy
+# payload and everything else the run printed, after the result file says PASS, and
+# only when the run actually ended in a check PASS. A crash after the PASS line (an
+# unreadable state.json, a full disk) therefore never leaves the gate open — it ends
+# UNKNOWN, exit 3, no marker.
 on_exit() {
-  local rc=$? t
+  local rc=$? t f
   set +e
   if [[ -n "$R_OP" ]]; then
     if [[ -z "$R_STATUS" ]]; then
-      if (( rc >= 128 )); then classify UNKNOWN INTERRUPTED; else classify UNKNOWN UNEXPECTED_ERROR; fi
+      if (( rc >= 128 )); then t=INTERRUPTED; else t=UNEXPECTED_ERROR; fi
+      classify UNKNOWN "$t" "$R_OP ended (exit $rc) before reaching a verdict; nothing is authorized."
       echo "apex-sync-guard: ERROR: $R_OP ended (exit $rc) before reaching a verdict — UNKNOWN ($R_REASON); nothing is authorized." >&2
     elif [[ "$R_STATUS" == PASS && $rc -ne 0 ]]; then
-      classify UNKNOWN UNEXPECTED_ERROR
+      classify UNKNOWN UNEXPECTED_ERROR "$R_OP reached PASS ($R_REASON), then failed (exit $rc); nothing is authorized, re-run it."
       echo "apex-sync-guard: ERROR: $R_OP reached PASS, then failed (exit $rc) — UNKNOWN ($R_REASON); nothing is authorized, re-run it." >&2
     fi
     case "$R_STATUS" in PASS) rc=0 ;; FAIL|CONFLICT) rc=1 ;; BLOCKED) rc=2 ;; *) rc=3 ;; esac
+    if (( ${#RESULT_FILES[@]} )); then
+      if write_results; then
+        for f in "${RESULT_FILES[@]}"; do note "result: $f"; done
+      elif [[ "$R_STATUS" == PASS ]]; then
+        # The placeholder (UNKNOWN) stays behind, which is the truth now.
+        classify UNKNOWN UNEXPECTED_ERROR "the PASS could not be written to its result file"; rc=3
+        echo "apex-sync-guard: ERROR: could not write the result file — UNKNOWN; no marker, the hook keeps blocking." >&2
+      else
+        echo "apex-sync-guard: WARNING: could not write the result file(s): ${RESULT_FILES[*]}" >&2
+      fi
+    fi
     if [[ "$R_STATUS" == PASS && "$R_OP" == check-* ]]; then
       if ! write_marker "${R_OP#check-}"; then
         rm -f "$STATE_DIR/check-ok.${R_OP#check-}"
-        classify UNKNOWN UNEXPECTED_ERROR; rc=3
+        classify UNKNOWN UNEXPECTED_ERROR "the PASS could not be turned into the hook's freshness marker"; rc=3
+        (( ${#RESULT_FILES[@]} )) && write_results
         echo "apex-sync-guard: ERROR: could not write the freshness marker — UNKNOWN; the hook will keep blocking." >&2
       fi
     fi
@@ -365,10 +396,12 @@ EOF
 # here", i.e. it opened the gate on failure — the exact mistake this script
 # warns about where it refuses to wave a call through without a JSON parser.
 remote_app_exists() {
-  local n rc=0
+  local n rc=0 q="select count(*) from apex_applications where application_id=$APP_ID"
   n=$(run_sql "select /* apex-sync-appcount */ count(*) from apex_applications where application_id=$APP_ID;") || rc=1
-  (( rc == 0 )) || return 2
   n=$(tr -d '[:space:]' <<<"$n")
+  # Only a clean count is kept as evidence: an error text can carry a hostname.
+  if (( rc == 0 )) && [[ "$n" =~ ^[0-9]+$ ]]; then evidence sql 0 "$q" "$n"; else evidence sql "$rc" "$q" "unreadable"; fi
+  (( rc == 0 )) || return 2
   case "$n" in
     0)            return 1 ;;
     ''|*[!0-9]*)  return 2 ;;
@@ -416,8 +449,19 @@ export_builder() {  # exports REMOTE (the Builder) to a scratch dir; sets REMOTE
   # with spaces is unverified here, so the quoting is a best effort and the error
   # below points at TMPDIR if it still fails.
   [[ "$native" == *" "* ]] && native="\"$native\""
-  run_sql "apex export -applicationid $APP_ID -expType APEXLANG -dir $native" >/dev/null \
-    || unknown EXPORT_FAILED "the Builder export failed (SQLcl exited non-zero) — check the connection with: $(basename "$0") doctor"
+  # The same session reports which SQLcl and which APEX produced the export — for
+  # the result's evidence, never for the verdict: after the export, so neither line
+  # can stop it, and under `sqlerror continue`, so neither can fail it.
+  local out rc=0
+  out=$(run_sql "apex export -applicationid $APP_ID -expType APEXLANG -dir $native
+whenever sqlerror continue
+version
+select 'apex-sync-apex-version '||version_no from apex_release;") || rc=$?
+  evidence command "$rc" "apex export -applicationid $APP_ID -expType APEXLANG -dir <scratch>"
+  (( rc == 0 )) || unknown EXPORT_FAILED "the Builder export failed (SQLcl exited non-zero) — check the connection with: $(basename "$0") doctor"
+  out=$(tr -d '\r' <<<"$out")
+  R_SQLCL_VERSION=$(sed -n 's/.*(SQLcl) version: .* build: *\([0-9][0-9.]*[0-9]\).*/\1/p' <<<"$out" | head -1)
+  R_APEX_VERSION=$(sed -n 's/^[[:space:]]*apex-sync-apex-version \([0-9][0-9.]*[0-9]\).*/\1/p' <<<"$out" | head -1)
   [[ -f "$scratch/$ALIAS/application.apx" ]] || unknown EXPORT_FAILED "the Builder export produced no $ALIAS/application.apx in $scratch (SQLcl was given -dir $native) — check the connection and app id; if app $APP_ID does not exist in the workspace yet, remote_app_exists should have caught it before here; if that path holds spaces, point TMPDIR at one that does not"
   REMOTE_DIR=$scratch
 }
@@ -451,10 +495,12 @@ snapshot_export() {  # $1 = scratch dir containing <alias>/…; commits it to $R
          && commit=$(git -C "$ROOT" commit-tree "$tree" -m "apex-sync syncpoint $ALIAS $(now_iso)") \
          && git -C "$ROOT" update-ref "$REF" "$commit" \
          && [[ -n "$commit" && "$(git -C "$ROOT" rev-parse -q --verify "$REF^{commit}")" == "$commit" ]]; }; then
+    evidence command 1 "git commit-tree + git update-ref $REF"
     unknown SNAPSHOT_FAILED "could not record the syncpoint in $REF (a git step failed — is user.name/user.email configured in this repo?)"
   fi
   rm -f "$tmpidx"
-  SNAP_COMMIT=$commit
+  evidence command 0 "git commit-tree + git update-ref $REF" "$commit"
+  SNAP_COMMIT=$commit; R_RECORDED=1
 }
 
 # ------------------------------------------------------- content comparison
@@ -540,6 +586,7 @@ payload_report() {  # $1 = materialized BASE app dir
   dif=$(tree_diff "$1" "$APP_SRC")
   dif=$(blocking "$dif")
   n=$(grep -c . <<<"$dif" || true)
+  R_PAYLOAD=$(repo_rel <<<"$dif"); R_PAYLOAD_SET=1
   echo ""
   if (( n == 0 )); then
     note "Nothing to deploy: LOCAL matches the syncpoint (if you expected changes, they were not generated/saved)."
@@ -560,6 +607,7 @@ payload_report() {  # $1 = materialized BASE app dir
   else
     commits="?"
   fi
+  R_PAYLOAD_COMMITS=$commits
   note "This import DEPLOYS the accumulated LOCAL backlog — \`apex import\` replaces the WHOLE app:"
   note "(A = new in LOCAL, M = differs, D = removed from LOCAL)"
   indent <<<"$dif"
@@ -585,6 +633,148 @@ write_state() {  # $1 = syncpoint commit, $2 = builder stamp, $3 = basis (record
   local head; head=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo "")
   printf '{"appId":%s,"appAlias":"%s","sqlclConnection":"%s","syncpoint":"%s","builderStamp":"%s","recordedAt":"%s","headCommit":"%s","basis":"%s"}\n' \
     "$APP_ID" "$ALIAS" "$CONN" "$1" "$2" "$(now_iso)" "$head" "${3:-bootstrap}" > "$STATE"
+}
+
+# ------------------------------------------------------------ sync-result
+# The machine-readable verdict: framework/schemas/sync-result.schema.json, written
+# in plain bash (no parser is needed to WRITE JSON). What the verdict rests on is
+# collected while the run goes:
+R_CHANGES=""            # "<A|D|M|E><TAB><repo-relative path>" lines
+R_PAYLOAD=""; R_PAYLOAD_SET=0; R_PAYLOAD_COMMITS=""
+R_BASIS=""; R_RECORDED=0
+R_SQLCL_VERSION=""; R_APEX_VERSION=""
+R_EVIDENCE=""           # "<command|sql><US><exit code><US><text><US><result>" lines
+US=$'\x1f'             # unit separator: never in a path or a statement, and IFS does not collapse it
+
+evidence() { R_EVIDENCE+="$1$US$2$US$3$US${4:-}"$'\n'; }   # $1 kind, $2 exit code, $3 text, $4 result
+
+repo_rel() {  # tree_diff lines (app-relative) → the same lines, repo-relative
+  local st f
+  while IFS=$'\t' read -r st f; do [[ -n "$f" ]] && printf '%s\t%s/%s/%s\n' "$st" "$SRCDIR" "$ALIAS" "$f"; done
+  return 0
+}
+
+# Sets J to $1 as a JSON string literal — a global, not $(...): it runs once per
+# changed file, and a fork per file is slow under Git Bash. The repo root and
+# $HOME are redacted: a result is evidence that may be shared, a home path names
+# the user. Control characters other than \n \r \t become \u00XX.
+jstr() {
+  local s=$1 out="" c i LC_ALL=C
+  [[ -n "${ROOT:-}" ]] && s=${s//"$ROOT"/<repo>}
+  [[ -n "${HOME:-}" && "$HOME" != / ]] && s=${s//"$HOME/"/\~/}
+  s=${s//\\/\\\\}; s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}; s=${s//$'\r'/\\r}; s=${s//$'\t'/\\t}
+  if [[ "$s" == *[$'\001'-$'\037']* ]]; then
+    for (( i = 0; i < ${#s}; i++ )); do
+      c=${s:i:1}
+      case "$c" in [$'\001'-$'\037']) printf -v c '\\u%04x' "'$c" ;; esac
+      out+=$c
+    done
+    s=$out
+  fi
+  J="\"$s\""
+}
+jstr_or_null() { if [[ -n "$1" ]]; then jstr "$1"; else J=null; fi; }
+
+json_changes() {  # $1 = "<status><TAB><path>" lines → a JSON array
+  local st f out="" sep=""
+  while IFS=$'\t' read -r st f; do
+    [[ -z "$f" ]] && continue
+    jstr "$f"; out+="$sep{\"status\": \"$st\", \"path\": $J}"; sep=", "
+  done <<<"$1"
+  printf '[%s]' "$out"
+}
+
+json_evidence() {
+  local kind rc text res out="" sep="" key rkey
+  while IFS=$US read -r kind rc text res; do
+    [[ -z "$kind" ]] && continue
+    case "$kind" in sql) key="statement"; rkey="result" ;; *) key="command"; rkey="output" ;; esac
+    jstr "$text"; out+="$sep{\"kind\": \"$kind\", \"$key\": $J, \"exitCode\": $rc"
+    if [[ -n "$res" ]]; then jstr "$res"; out+=", \"$rkey\": $J"; fi
+    out+="}"; sep=", "
+  done <<<"$R_EVIDENCE"
+  printf '[%s]' "$out"
+}
+
+iso_in() {  # $1 = seconds from now → UTC ISO-8601 (GNU date, else BSD date)
+  local e=$(( $(date +%s) + $1 ))
+  date -u -d "@$e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$e" +%Y-%m-%dT%H:%M:%SZ
+}
+
+result_json() {  # prints the sync-result for the current R_* state; never fails
+  local d head dirty=false spc mmd="" tgt dir written=false exp=null rec=false pc=null
+  head=$(git -C "$ROOT" rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null) || head=""
+  [[ -z "$(git -C "$ROOT" status --porcelain 2>/dev/null | head -1)" ]] || dirty=true
+  spc=$(git -C "$ROOT" rev-parse -q --verify "$REF^{commit}" 2>/dev/null) || spc=""
+  if [[ -f "$APP_SRC/.apex/apexlang.json" ]]; then     # what Oracle's skills route on
+    mmd=$(json_get "$APP_SRC/.apex/apexlang.json" mmdVersion 2>/dev/null) || mmd=""
+    [[ "$mmd" =~ ^[0-9]+(\.[0-9]+)*(\+[0-9A-Za-z.-]+)?$ ]] || mmd=""
+  fi
+  d=$'{\n  "kind": "sync-result",\n  "schemaVersion": 1,\n'
+  d+="  \"operation\": \"$R_OP\","$'\n'"  \"status\": \"$R_STATUS\","$'\n'
+  jstr "$R_MESSAGE"; d+="  \"reasons\": [{\"code\": \"$R_REASON\", \"message\": $J}],"$'\n'
+  jstr "$ALIAS"; d+="  \"app\": {\"appId\": $APP_ID, \"appAlias\": $J"
+  [[ -n "$mmd" ]] && { jstr "$mmd"; d+=", \"mmdVersion\": $J"; }
+  d+=$'},\n  "context": {\n'
+  jstr_or_null "$OPT_TASK"; d+="    \"task\": $J,"$'\n'
+  jstr_or_null "$head"; d+="    \"repo\": {\"commit\": $J, \"dirty\": $dirty},"$'\n'
+  d+="    \"frameworkVersion\": \"$FRAMEWORK_VERSION\","$'\n'
+  d+="    \"timestamp\": \"$(now_iso)\","$'\n'
+  d+=$'    "producer": {"skill": "apex-sync-guard", "method": "tool"},\n'
+  jstr "$CONN"; tgt="\"connectionName\": $J"
+  [[ -n "$R_SQLCL_VERSION" ]] && tgt+=", \"sqlclVersion\": \"$R_SQLCL_VERSION\""
+  [[ -n "$R_APEX_VERSION" ]] && tgt+=", \"apexVersion\": \"$R_APEX_VERSION\""
+  d+="    \"target\": {$tgt}"$'\n  },\n'
+  if [[ "$R_OP" == check-* ]]; then
+    dir=${R_OP#check-}
+    [[ "$R_STATUS" == PASS ]] && { written=true; exp="\"$(iso_in "$TTL_SECONDS")\""; }
+    d+="  \"marker\": {\"written\": $written, \"path\": \".git/apex-sync/$ALIAS/check-ok.$dir\", \"ttlSeconds\": $TTL_SECONDS, \"expiresAt\": $exp},"$'\n'
+  fi
+  (( R_RECORDED )) && rec=true
+  jstr_or_null "$spc"; d+="  \"syncpoint\": {\"ref\": \"$REF\", \"commit\": $J, \"recorded\": $rec},"$'\n'
+  d+="  \"changes\": $(json_changes "$R_CHANGES"),"$'\n'
+  if [[ "$R_OP" == check-import ]] && (( R_PAYLOAD_SET )); then
+    [[ "$R_PAYLOAD_COMMITS" =~ ^[0-9]+$ ]] && pc=$R_PAYLOAD_COMMITS
+    d+="  \"payload\": {\"changes\": $(json_changes "$R_PAYLOAD"), \"commits\": $pc},"$'\n'
+  fi
+  [[ "$R_OP" == record-sync && -n "$R_BASIS" ]] && d+="  \"basis\": \"$R_BASIS\","$'\n'
+  d+="  \"evidence\": $(json_evidence)"$'\n}'
+  printf '%s\n' "$d"
+}
+
+write_results() {  # the current verdict → every result file, each replaced atomically
+  local doc f
+  doc=$(result_json)
+  for f in "${RESULT_FILES[@]}"; do
+    { printf '%s\n' "$doc" > "$f.tmp.$$" && mv -f "$f.tmp.$$" "$f"; } || { rm -f "$f.tmp.$$"; return 1; }
+  done
+  # The contract tier validates every result the integration suite makes the script emit.
+  if [[ -n "${SYNC_RESULT_CAPTURE_DIR:-}" ]]; then
+    printf '%s\n' "$doc" > "$SYNC_RESULT_CAPTURE_DIR/$$-$RANDOM-$R_OP.json" || true
+  fi
+}
+
+# Once the app is known: where the result goes, and a placeholder there. Should the
+# run die without reaching the EXIT trap (SIGKILL, power loss), the file says
+# UNKNOWN — never the verdict of an earlier run.
+results_init() {
+  local ev="$ROOT/$EVIDENCE_DIR"
+  RESULT_FILES=("$STATE_DIR/last-$R_OP.json")
+  if [[ -n "$OPT_TASK" ]]; then
+    # Created ignored: raw evidence is never committed by accident. Committing
+    # some of it is an opt-in — the user edits this .gitignore.
+    if [[ ! -d "$ev" ]]; then
+      if ! { mkdir -p "$ev" && printf '*\n' > "$ev/.gitignore"; }; then
+        blocked STATE_UNWRITABLE "cannot create the evidence dir $EVIDENCE_DIR"
+      fi
+    fi
+    mkdir -p "$ev/$OPT_TASK" || blocked STATE_UNWRITABLE "cannot create $EVIDENCE_DIR/$OPT_TASK"
+    RESULT_FILES+=("$ev/$OPT_TASK/sync-$ALIAS-$R_OP.json")
+  fi
+  classify UNKNOWN INTERRUPTED "the run did not finish: this is the placeholder written when it started."
+  write_results || blocked STATE_UNWRITABLE "cannot write the result file(s): ${RESULT_FILES[*]}"
+  classify "" ""
 }
 
 # ------------------------------------------------------------- commands
@@ -624,8 +814,7 @@ cmd_check_import() {
       If this really is a first publication into a NEW workspace, the user (not an agent) sets the old syncpoint aside:
         git update-ref refs/apex-sync-saved/$ALIAS $REF && git update-ref -d $REF"
     fi
-    pass FIRST_PUBLICATION
-    echo "PASS: app $APP_ID does not exist in the target workspace — first publication."
+    pass FIRST_PUBLICATION "app $APP_ID does not exist in the target workspace — first publication."
     echo "  Nothing to overwrite: there is no second replica that could hold unexported"
     echo "  Builder work. Run record-sync right afterwards to create the first"
     echo "  syncpoint, so the next one is gated against a real BASE."
@@ -640,9 +829,10 @@ cmd_check_import() {
     echo "  (note: formatting-only differences are expected if .apx were hand-edited;"
     echo "   the Builder export is the canonical serialization)"
     local boot; boot=$(tree_diff "$APP_SRC" "$scratch/$ALIAS")
+    R_CHANGES=$(repo_rel <<<"$boot")
     if [[ -z "$(blocking "$boot")" ]]; then
-      local c s; s=$(builder_stamp); snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s"; pass BOOTSTRAP_IN_SYNC
-      echo "PASS: replicas already agree — first syncpoint recorded ($c). Safe to import."
+      local c s; s=$(builder_stamp); snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s"
+      pass BOOTSTRAP_IN_SYNC "replicas already agree — first syncpoint recorded ($c). Safe to import."
       eol_note "$boot"
       return 0
     fi
@@ -654,9 +844,9 @@ cmd_check_import() {
   fi
 
   materialize_base; local base=$BASE_APP_DIR dif; dif=$(tree_diff "$base" "$scratch/$ALIAS")
+  R_CHANGES=$(repo_rel <<<"$dif")
   if [[ -z "$(blocking "$dif")" ]]; then
-    pass BUILDER_UNCHANGED
-    echo "PASS: Builder untouched since last syncpoint. Safe to import."
+    pass BUILDER_UNCHANGED "Builder untouched since last syncpoint. Safe to import."
     eol_note "$dif"
     payload_report "$base"
     return 0
@@ -678,8 +868,7 @@ cmd_check_import() {
     fi
   done <<<"$dif"
   if (( all_captured )); then
-    pass BUILDER_CHANGES_CAPTURED
-    echo "PASS: Builder changed since last syncpoint, but LOCAL already contains every Builder-side change. Safe to import (those files are rewritten identically). Remember record-sync afterwards."
+    pass BUILDER_CHANGES_CAPTURED "Builder changed since last syncpoint, but LOCAL already contains every Builder-side change. Safe to import (those files are rewritten identically). Remember record-sync afterwards."
     eol_note "$dif"
     payload_report "$base"
     return 0
@@ -712,14 +901,23 @@ cmd_check_export() {
   # A missing dir has no "uncommitted changes", so git status found nothing and the
   # check PASSed, whatever directory the export was really about to write.
   require_source_dir
-  local dirty; dirty=$(git -C "$ROOT" status --porcelain -- "$SRCDIR")
+  # -z: names are never quoted, and a rename puts its source on the next record.
+  local dirty line xy p st skip=0
+  dirty=$(git -C "$ROOT" status --porcelain -z -- "$SRCDIR" | tr '\0' '\n')
+  evidence command 0 "git status --porcelain -- $SRCDIR" "$(grep -c . <<<"$dirty" || true) changed"
   if [[ -n "$dirty" ]]; then
-    while IFS= read -r line; do printf '    %s\n' "$line"; done <<<"$dirty"
+    while IFS= read -r line; do
+      if (( skip )); then skip=0; continue; fi
+      xy=${line:0:2}; p=${line:3}
+      printf '    %s %s\n' "$xy" "$p"
+      case "$xy" in R*|C*) skip=1 ;; esac
+      case "$xy" in "??"|A?|?A|C?) st=A ;; D?|?D) st=D ;; *) st=M ;; esac
+      R_CHANGES+="$st"$'\t'"$p"$'\n'
+    done <<<"$dirty"
     fail FAIL LOCAL_DIRTY "the APEXlang source dir has uncommitted/untracked changes — the export would clobber them. Commit or stash first, then re-run."
   fi
-  pass LOCAL_CLEAN
   have_base || note "(no syncpoint yet — record-sync after this export will create it)"
-  echo "PASS: working tree clean under $SRCDIR. Safe to export."
+  pass LOCAL_CLEAN "working tree clean under $SRCDIR. Safe to export."
 }
 
 marker_fresh() {  # $1 = import|export — written by a PASS less than TTL_SECONDS ago
@@ -764,9 +962,9 @@ cmd_record_sync() {
       To resolve a CONFLICT, capture or merge the Builder changes and re-run check-import — never record-sync.
       Only if the user decides the current Builder IS the new truth: they run record-sync --force themselves."
   fi
+  R_BASIS=$basis
   s=$(builder_stamp); snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s" "$basis"
-  pass SYNCPOINT_RECORDED
-  echo "apex-sync-guard: syncpoint recorded for '$ALIAS'"
+  pass SYNCPOINT_RECORDED "syncpoint recorded for '$ALIAS'"
   note "commit:       $c"
   note "builderStamp: $s"
   note "basis:        $basis"
@@ -863,6 +1061,7 @@ cmd_status() {
   if have_base; then materialize_base; payload_report "$BASE_APP_DIR"; fi
 }
 
+[[ -n "$R_OP" ]] && results_init
 case "$SUB" in
   check-import) cmd_check_import ;;
   check-export) cmd_check_export ;;

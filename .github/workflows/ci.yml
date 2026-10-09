@@ -16,6 +16,15 @@ jobs:
       - name: shellcheck every tracked shell script
         run: git ls-files -z -- '*.sh' | xargs -0 shellcheck -x   # -x follows the sourced helper
 
+  contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: jsonschema (the version Ubuntu ships, as a user installing from apt gets it)
+        run: sudo apt-get update -q && sudo apt-get install -y -q python3-jsonschema
+      - name: schemas, fixtures, negatives and every result the e2e emits
+        run: bash tests/contract/run.sh
+
   integration:
     strategy:
       fail-fast: false

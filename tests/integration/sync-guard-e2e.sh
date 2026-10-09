@@ -20,12 +20,18 @@ cat > "$WORK/bin/sql" <<'EOF'
 stmts=$(cat)
 if grep -q 'apex export' <<<"$stmts"; then
   [[ -n "${FAKE_EXPORT_FAIL:-}" ]] && { echo "SQL Error: simulated export failure" >&2; exit 1; }
+  # what a reader of the result file sees while the run is still going
+  [[ -n "${FAKE_PEEK_FROM:-}" ]] && cp "$FAKE_PEEK_FROM" "$FAKE_PEEK_TO"
   if grep -q -- '-dir "' <<<"$stmts"; then          # the guard quotes paths holding spaces
     dir=$(sed -n 's/.*-dir "\([^"]*\)".*/\1/p' <<<"$stmts")
   else
     dir=$(sed -n 's/.*-dir \([^ ]*\).*/\1/p' <<<"$stmts")
   fi
-  mkdir -p "$dir/demo" && cp -r "$FAKE_REMOTE/demo/." "$dir/demo/"
+  # FAKE_EXPORT_EMPTY: SQLcl exits 0 and exports nothing (wrong workspace, wrong app id)
+  [[ -n "${FAKE_EXPORT_EMPTY:-}" ]] || { mkdir -p "$dir/demo" && cp -r "$FAKE_REMOTE/demo/." "$dir/demo/"; }
+  # what a real SQLcl prints for the `version` and apex_release lines after the export
+  echo "Oracle SQLDeveloper Command-Line (SQLcl) version: 26.2.0.0 build: 26.2.0.181.2110"
+  echo "apex-sync-apex-version 24.2.0"
 elif grep -q 'greatest' <<<"$stmts"; then
   echo "2026-07-17T10:00:00"
 elif grep -q 'apex-sync-appcount' <<<"$stmts"; then
@@ -451,6 +457,91 @@ rm -f "$MK"/check-ok.*
 # shellcheck disable=SC2030,SC2031
 deploy_no_json() { ( export PATH="$WORK/stub:$PATH"; hook_cmd 'cat deploy-apex-app.sh' ); }
 expect "hook: without a JSON parser even a read of the deploy script blocks" 2 deploy_no_json
+
+# --- sync-result v1 (framework/schemas/sync-result.schema.json). Every gate run leaves
+# its verdict as JSON; the contract tier validates each one this suite makes the script
+# emit (SYNC_RESULT_CAPTURE_DIR). Here: that each says what its exit code says, with
+# the reason, the marker and what it rests on — and that it cannot be stale or leak.
+if command -v jq >/dev/null 2>&1 && printf '{}' | jq -e . >/dev/null 2>&1; then
+  rget1() { jq -r --arg p "$2" 'getpath($p | split(".") | map(tonumber? // .)) | if . == null then "null" else tostring end' "$1" | tr -d '\r'; }
+else
+  rget1() { "$(command -v python3 || command -v python)" -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+for k in sys.argv[2].split("."):
+    d = d[int(k)] if isinstance(d, list) else d.get(k) if isinstance(d, dict) else None
+print("null" if d is None else json.dumps(d) if isinstance(d, bool) else d)' "$1" "$2" | tr -d '\r'; }
+fi
+rget() {  # $1 = result file, rest = dotted paths (reasons.0.code) → their values, space-separated
+  local f=$1 p out=""; shift
+  for p in "$@"; do out+="${out:+ }$(rget1 "$f" "$p")"; done
+  printf '%s\n' "$out"
+}
+RES_I="$MK/last-check-import.json"; RES_E="$MK/last-check-export.json"; RES_R="$MK/last-record-sync.json"
+
+expect     "result: check-import PASS -> exit 0"                 0 "$CHK" check-import
+expect_out "the result says PASS, with the marker written"       '^check-import PASS BUILDER_UNCHANGED true fake$' \
+           rget "$RES_I" operation status reasons.0.code marker.written context.target.connectionName
+expect_out "it names the SQLcl and the APEX that exported"       '^26\.2\.0\.181\.2110 24\.2\.0$' \
+           rget "$RES_I" context.target.sqlclVersion context.target.apexVersion
+expect_out "it rests on the export, which exited 0"              '^command 0 apex export -applicationid 100 -expType APEXLANG -dir <scratch>$' \
+           rget "$RES_I" evidence.1.kind evidence.1.exitCode evidence.1.command
+expect_out "it pins the repo revision and the syncpoint"         "^$(git rev-parse HEAD) $(git rev-parse refs/apex-sync/demo) null$" \
+           rget "$RES_I" context.repo.commit syncpoint.commit context.task
+expect_out "the run prints where the result is"                  'result: [^[:space:]]+last-check-import\.json' "$CHK" check-import
+expect     "hook: reading a result in place passes"              0 hook_cmd 'jq -r .status .git/apex-sync/demo/last-check-import.json'
+mkdir -p src/demo/.apex && printf '{ "mmdVersion" : "26.1.0+3102" }\n' > src/demo/.apex/apexlang.json
+"$CHK" check-import >/dev/null
+expect_out "it carries the app's APEXlang version (.apex/apexlang.json)" '^26\.1\.0\+3102$' rget "$RES_I" app.mmdVersion
+rm -rf src/demo/.apex
+
+cp "$WORK/remote/demo/p30.apx" "$WORK/p30.saved"
+printf 'page 30 (\n  name: ResultConflict\n)\n' > "$WORK/remote/demo/p30.apx"
+expect     "result: Builder moved -> CONFLICT, exit 1"           1 "$CHK" check-import
+expect_out "the result says CONFLICT, no marker, and what moved" '^CONFLICT BUILDER_DIVERGED false M src/demo/p30\.apx$' \
+           rget "$RES_I" status reasons.0.code marker.written changes.0.status changes.0.path
+expect     "record-sync over the CONFLICT -> BLOCKED"            2 "$CHK" record-sync
+expect_out "its result says why, and records nothing"           '^BLOCKED NO_FRESH_CHECK false$' \
+           rget "$RES_R" status reasons.0.code syncpoint.recorded
+mv "$WORK/p30.saved" "$WORK/remote/demo/p30.apx"
+
+echo "-- dirty" >> src/demo/p30.apx; printf 'page 33 (\n)\n' > src/demo/p33.apx
+expect     "result: dirty tree -> check-export FAIL, exit 1"     1 "$CHK" check-export
+expect_out "the result says FAIL, no marker"                     '^FAIL LOCAL_DIRTY false$' rget "$RES_E" status reasons.0.code marker.written
+expect_out "and names the modified file"                         '"status": "M", "path": "src/demo/p30\.apx"' cat "$RES_E"
+expect_out "and the untracked one"                               '"status": "A", "path": "src/demo/p33\.apx"' cat "$RES_E"
+git checkout -q -- src/demo/p30.apx; rm -f src/demo/p33.apx
+
+"$CHK" check-import >/dev/null
+expect     "result: record-sync after a fresh check -> exit 0"   0 "$CHK" record-sync
+expect_out "its result records the basis and the new syncpoint"  "^PASS fresh-check true $(git rev-parse refs/apex-sync/demo)$" \
+           rget "$RES_R" status basis syncpoint.recorded syncpoint.commit
+
+EV="$WORK/proj/.apex-evidence"
+expect     "--task: the result also goes to the evidence dir"    0 "$CHK" check-import --task T-1
+expect_out "under the task, with the task in its context"        '^PASS T-1$' rget "$EV/T-1/sync-demo-check-import.json" status context.task
+expect_out "the evidence dir is created ignored"                 '^\*$' cat "$EV/.gitignore"
+expect_out_not "so the project repo stays clean"                 'apex-evidence' git status --porcelain
+expect     "a task id that would leave the evidence dir -> 2"    2 "$CHK" check-import --task ../x
+expect     "--task outside the gate commands -> 2"               2 "$CHK" status --task T-1
+expect     "--task without a value -> 2"                         2 "$CHK" check-import --task
+
+# A result is read by someone else, possibly much later: while the run is going it
+# must already say UNKNOWN — never the verdict of the run before.
+peek_result() {
+  FAKE_PEEK_FROM="$RES_I" FAKE_PEEK_TO="$WORK/peek.json" "$CHK" check-import >/dev/null 2>&1
+  rget "$WORK/peek.json" status reasons.0.code
+}
+expect_out "mid-run, the result already says UNKNOWN"            '^UNKNOWN INTERRUPTED$' peek_result
+
+# An export that "succeeds" with nothing in it is not a verdict. Run with HOME set to
+# the scratch parent, the message that names the scratch dir must not name the home.
+expect     "result: an empty export -> exit 3"                   3 env HOME="$WORK" FAKE_EXPORT_EMPTY=1 "$CHK" check-import
+expect_out "the result says UNKNOWN, no marker"                  '^UNKNOWN EXPORT_FAILED false$' rget "$RES_I" status reasons.0.code marker.written
+# shellcheck disable=SC2088   # a literal '~/': the redacted form is what is asserted
+expect_out "its message keeps the path, home-relative"           '~/apex-sync-remote-' rget "$RES_I" reasons.0.message
+expect     "and the home path itself never lands in it"          1 grep -qF "$WORK/" "$RES_I"
+"$CHK" check-import >/dev/null
 
 # --- setup.md §4 is how a user proves the wiring on a real install. Its commands
 # must be the ones written there AND must trip the hook as its table says: a smoke
