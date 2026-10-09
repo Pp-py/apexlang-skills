@@ -76,7 +76,7 @@ region current-surcharges (
 )
 ```
 
-The link is column-level: a report-level `link {}` is rejected by the live compiler — see `modal-crud-to-package.md`.
+The link is column-level: a report-level `link {}` is rejected by Oracle's 26.1 lint — see `modal-crud-to-package.md`.
 
 ## `.apx` — modal new-vigency process
 

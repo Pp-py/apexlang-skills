@@ -84,3 +84,16 @@ The official `apex` skill covers grammar/validate/import; it has no notion of sy
    working branch → merging an ephemeral branch produces unrelated histories and add/add
    conflicts. Validated protocol: fast-path copy when LOCAL==BASE, and
    `git merge-file <local> <base-from-ref> <export>` when both sides touched the file.
+
+## Revisions
+
+This file records the design approved on 2026-07-04 and is not rewritten; later changes are noted here.
+
+- **2026-09-07 (`e356d94`) — finding 4 superseded.** The hook no longer gates a bare *mention*:
+  `apex import`/`apex export` count only together with a flag a real invocation carries, or with a
+  SQLcl launcher in the command. An `echo` or commit message with the bare phrase passes; one that
+  quotes the flags is still gated. Without a JSON parser (DEGRADED) the loose match remains.
+- **0.6.0** — Oracle's skills became a version router (`apex@oracle-skills`, `apex/apexlang/` → 26.1 /
+  26.2); "the official `apex` skill" above means that package. The hook also gates Oracle's
+  `deploy-apex-app.sh` and refuses `record-sync --force` and writes to the guard's own markers and
+  refs; `record-sync` needs a fresh basis. Current lanes and refusals: `skills/apex-sync-guard/setup.md` §3.

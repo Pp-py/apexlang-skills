@@ -1,13 +1,13 @@
 ---
 name: apexlang-architecture
-description: Use when deciding WHERE business logic, validation, or DML belongs in an Oracle APEX app written as APEXlang (.apx) — routing every write through a PL/SQL package instead of region-bound Automatic DML and deciding which package owns it (one entity, a multi-entity flow, an external system) or whether the rule belongs in a database constraint, the UI, or no package at all, and architecting screens that write (editable Interactive Grids, modal CRUD, full-page and drawer forms, master-detail, workflows, versioned/vigency records) or read (dashboards, faceted search, split-view browsers, analytical reports), including what the SQL/view must project to feed cards, content rows, badges and drill-down links. NOT for .apx grammar/validate/import/round-trip (use the official `apex` skill) or one-off read-only pages with no reuse.
+description: Use when deciding WHERE business logic, validation, or DML belongs in an Oracle APEX app written as APEXlang (.apx) — routing every write through a PL/SQL package instead of region-bound Automatic DML and deciding which package owns it (one entity, a multi-entity flow, an external system) or whether the rule belongs in a database constraint, the UI, or no package at all, and architecting screens that write (editable Interactive Grids, modal CRUD, full-page and drawer forms, master-detail, workflows, versioned/vigency records) or read (dashboards, faceted search, split-view browsers, analytical reports), including what the SQL/view must project to feed cards, content rows, badges and drill-down links. NOT for .apx grammar/validate/import/round-trip (use Oracle's APEXlang skills) or one-off read-only pages with no reuse.
 ---
 
 # APEXlang Architecture
 
 ## Overview
 
-APEXlang turns an APEX app into declarative `.apx` source. Generating components correctly is solved (the official `apex` skill). What stays unsolved is **architecture**: a thin declarative front over a centralized PL/SQL core, instead of DML and rules scattered across pages.
+APEXlang turns an APEX app into declarative `.apx` source. Generating and validating components is Oracle's job (its APEXlang skills, `apex@oracle-skills`, routed by APEX version). What stays unsolved is **architecture**: a thin declarative front over a centralized PL/SQL core, instead of DML and rules scattered across pages.
 
 **Core principle: the `.apx` only orchestrates. A PL/SQL package validates and writes. No region performs direct DML.**
 
@@ -17,7 +17,7 @@ coordinate an operation whose invariant spans entities — that belongs to a flo
 
 Same front/back separation every serious web app uses, applied to APEX-as-code — and the part an agent does worst alone: it will bolt automatic table-bound DML onto each grid and call it "simple."
 
-**REQUIRED SUB-SKILL:** Use the official `apex` skill for generating/validating/importing `.apx` (syntax, round-trip). This skill governs *where logic goes*, not `.apx` grammar.
+**REQUIRED SUB-SKILL:** Oracle's APEXlang skills for `.apx` grammar, generation (26.1), validation and import — `apexlang-inventory`, `apexlang-compile`, `apexlang-deploy`. This skill governs *where logic goes*, not `.apx` grammar.
 
 ## When to use
 
@@ -47,7 +47,7 @@ Validation in IG column                Validation + rules inside the package
 DML in page processes                  All DML behind the package API
 ```
 
-**This is not a deviation from the official standard — it is the exception the standard itself names.** `apex.interactive-grid-page.md` lists Automatic Row Processing as non-negotiable rule 6 (§*Rules (Non-Negotiable)*: *"Enable automatic row processing"*), then carves it out under §*Process Guidance*: *"do not substitute custom PL/SQL **unless invoking a dedicated API**."* The package the `.apx` calls — entity or flow — **is** that dedicated API. The per-row process is equally official: `executeCondition: forEachRow`, a property of the process's `serverSideCondition` group (paired with `executionScope`) in the APEXlang grammar — not a workaround.
+**This is a deliberate deviation from Oracle's default, resting on an exception Oracle's standard itself names.** Oracle's 26.1 policies say *"Prefer ARP for simple CRUD"* (`apex.global.md`) — this skill does not. `apex.interactive-grid-page.md` lists Automatic Row Processing as non-negotiable rule 6 (§*Rules (Non-Negotiable)*: *"Enable automatic row processing"*), then carves it out under §*Process Guidance*: *"do not substitute custom PL/SQL **unless invoking a dedicated API**."* The package the `.apx` calls — entity or flow — **is** that dedicated API. The per-row process is equally official: `executeCondition: forEachRow`, a property of the process's `serverSideCondition` group (paired with `executionScope`) in the APEXlang grammar — not a workaround.
 
 And everywhere else the standard talks about server-side code, it already leans this way: "page
 processes default to `invokeApi`" (`apex.logic.md` §*2. Universal Guardrails*), "server-side work
@@ -55,8 +55,10 @@ should be packaged and referenced via `invokeApi` by default" (§*5. Dynamic Act
 PL/SQL over 4000 characters is a hard failure whose fix is to "extract it into a package API"
 (`PLSQL_INLINE_BLOCK_001`, §*2. Universal Guardrails* — it *blocks final output*). Form pages are told
 to "offload logic to views or packages when possible" (`apex.form.md` §*Notes*). Automatic Row
-Processing is the single place the standard points the other way. This skill takes the direction the
-rest of it already sets, and removes that exception.
+Processing — preferred for simple CRUD, required by the IG page rule — is where the standard points the
+other way. This skill takes the direction the rest of it already sets, and removes that exception. (The
+policies also say pages call packages through `invokeApi`; the recipes use a thin `executeCode` wrapper
+— both satisfy the single write path, a known conflict tracked in `framework/CAPABILITIES.md`.)
 
 ## Which file to open
 
@@ -102,7 +104,7 @@ grep -rln "drawer\|closeDialog" skills/apexlang-architecture/recipes/
 grep -rn  "badgeCssClasses\|BADGE_STATE" skills/apexlang-architecture/
 ```
 
-Three runnable end-to-end slices (DDL + package + `.apx`, deploy-and-verify) live in `examples/` — start at `examples/README.md`. Recipe snippets are architectural shorthand, not import-ready grammar; the examples' `.apx` are `apex validate`-green — copy grammar from them (or the official `apex` skill), architecture from the recipes.
+Three runnable end-to-end slices (DDL + package + `.apx`, deploy-and-verify) live in `examples/` — start at `examples/README.md`. Recipe snippets are architectural shorthand, not import-ready grammar; the examples' `.apx` pass Oracle's 26.1 lint with the documented diagnostics, while the SQLcl compiler currently rejects them (`examples/README.md` §Grammar status) — copy grammar from Oracle's `apexlang-inventory` first, from the examples second; architecture from the recipes.
 
 ## Where each layer's authority comes from
 
@@ -110,7 +112,7 @@ Three sources, three jobs — do not blur them:
 
 | Question | Authority |
 |---|---|
-| Is this valid `.apx`? Which properties, templates, slots exist? | official `apex` skill (APEXlang 2026.08.01) |
+| Is this valid `.apx`? Which properties, templates, slots exist? | Oracle: the SQLcl compiler (`apexlang-compile`) > the 26.1 lint > `apexlang-inventory` and the 26.1 policies |
 | What should this pattern look like, and when is it the right pattern? | Oracle's UX Pattern Catalog app (26.1.4) |
 | Where does the logic live, what must the data layer project, and when may we deviate? | **this skill** |
 
@@ -128,9 +130,9 @@ The read-side recipes were built against that catalog. It is an Oracle sample ap
 | "The order is the centre of the business, so it all goes in `pkg_orders`" | That package now writes inventory, payments and customers — it is a flow package wearing an entity's name. One entity package per entity, one `_flow` to coordinate them (`package-boundaries.md` §God package). |
 | "Every operation should have a service layer" | A `_flow` wrapping a single entity, or an `_api` with no external system, is a layer with nothing to abstract. Two tables is not by itself a reason for a third package (`package-boundaries.md` §When NOT a package). |
 
-## Report contracts the live compiler enforces
+## Report rules Oracle's 26.1 lint enforces
 
-Two rules break generated reports at `apex validate`, and both are easy to get wrong because Oracle's own templates still show the old form:
+Two rules Oracle's 26.1 lint rejects (whether the SQLcl compiler does is unverified — see `framework/CAPABILITIES.md`), both easy to get wrong because Oracle's own templates still show the old form:
 
 - **The link belongs to the column, never to the region.** A report-level `link { linkColumn / target / linkIcon }` is rejected (`REPORT_REGION_LINK_BLOCK_UNSUPPORTED_001`) for Classic and Interactive Reports alike. On an IR the linked column stays `type: plainText` and carries `link { target {…} linkText: … }`; `type: link` is Classic-Report-only.
 - **`source.sqlQuery` is data-only.** Projecting markup is rejected (`REPORT_SQL_HTML_LITERAL_FORBIDDEN_001`). Select the value plus a plain CSS token and build the badge in `columnFormatting.htmlExpression` — see `workflow-state-transitions.md`.

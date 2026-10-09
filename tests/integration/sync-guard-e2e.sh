@@ -452,6 +452,24 @@ rm -f "$MK"/check-ok.*
 deploy_no_json() { ( export PATH="$WORK/stub:$PATH"; hook_cmd 'cat deploy-apex-app.sh' ); }
 expect "hook: without a JSON parser even a read of the deploy script blocks" 2 deploy_no_json
 
+# --- setup.md §4 is how a user proves the wiring on a real install. Its commands
+# must be the ones written there AND must trip the hook as its table says: a smoke
+# command the hook lets through "passes" on a broken install. (`echo "apex export"`
+# was that command once the bare mention stopped counting as an export.)
+SMOKE_EXPORT='echo "apex export -applicationid 1"'
+SMOKE_IMPORT='echo "apex import -input x"'
+expect "setup.md §4 documents the export smoke command"         0 grep -qF "$SMOKE_EXPORT" "$SKILL_DIR/setup.md"
+expect "setup.md §4 documents the import smoke command"         0 grep -qF "$SMOKE_IMPORT" "$SKILL_DIR/setup.md"
+rm -f "$MK"/check-ok.*
+expect "setup.md §4 row 1: no marker -> blocked"                2 hook_cmd "$SMOKE_EXPORT"
+"$CHK" check-export >/dev/null
+expect "setup.md §4 row 2: fresh export marker -> allowed"      0 hook_cmd "$SMOKE_EXPORT"
+touch -d '11 minutes ago' "$MK/check-ok.export"
+expect "setup.md §4 row 3: marker past the TTL -> blocked"      2 hook_cmd "$SMOKE_EXPORT"
+"$CHK" check-export >/dev/null
+expect "setup.md §4 row 4: export marker only, import -> blocked" 2 hook_cmd "$SMOKE_IMPORT"
+expect "and the bare mention it warns against is not an export" 0 hook_cmd 'echo "apex export"'
+
 echo
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]

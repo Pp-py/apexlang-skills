@@ -13,7 +13,7 @@ description: Use when about to run `apex import` or `apex export` on an APEXlang
 
 The check answers **two** questions, and both are reported. *Is anything destroyed?* — does the opposite replica hold work this operation would overwrite. *What is deployed?* — since import replaces the whole app, a PASS still pushes every LOCAL change accumulated since the syncpoint, not just today's edit. The second half never blocks (every legitimate import has a payload), but it is printed on every PASS: an app that quietly starts behaving like the last four days of commits is a surprise worth one paragraph of output.
 
-Division of labor: this skill decides whether it is **SAFE** to import/export *now*. The official `apex` skill stays the **HOW** (grammar/validate/import); `apexlang-architecture` decides **WHERE** logic goes; `apex-sentinel` proves the result **WORKS**.
+Division of labor: this skill decides whether it is **SAFE** to import/export *now*. Oracle's APEXlang skills stay the **HOW** (grammar, `apexlang-compile`, `apexlang-deploy`); `apexlang-architecture` decides **WHERE** logic goes; `apex-sentinel` proves the result **WORKS**.
 
 ## The model
 
@@ -40,7 +40,7 @@ All operations go through `scripts/apex-sync-check.sh` in this skill's directory
 3. Otherwise **FAIL** with the per-file diff plus the who/when report → resolve (next section), then re-run.
 4. On every PASS it then prints the **deploy payload** — BASE vs LOCAL, plus how many commits touched the source dir since the syncpoint. Read it before importing: that is the change set the Builder is about to receive. `status` prints it too, without needing an export.
 
-**What counts as an import.** Not just `apex import`. The APEXlang package's canonical lane (2026.08.01 `references/ops/runtime-gates.md` §9) is `apexctl … runtime roundtrip --import-intent validate-and-import`, which builds a SQLcl script containing `apex import -input …` and runs it in a subprocess — same total overwrite of the Builder, different command text. `check-import` gates it too. (That contract also normalizes CRLF/CR to LF before validate and import, §5 — one more reason the comparator's `E` status must not gate.)
+**What counts as an import.** Not just `apex import`. Oracle's `apexlang-deploy` (26.1 and 26.2 — the only import lane on 26.2) runs `scripts/deploy-apex-app.sh <dir>`, which issues `apex import -input` inside its own heredoc; the 26.1 generation lane runs `apexctl … runtime roundtrip --import-intent validate-and-import` (`apexlang-generation/references/ops/runtime-gates.md` §Canonical Validation 9), which builds a SQLcl script containing `apex import -input …`. Same total overwrite of the Builder, different command text: `check-import` gates them all, and the hook recognizes them. (The roundtrip contract also normalizes CRLF/CR to LF before validate and import, §5 — one more reason the comparator's `E` status must not gate.)
 
 **Pre-export** — `apex-sync-check.sh check-export`:
 Fails if the APEXlang source dir has uncommitted or untracked changes — the export would clobber them. Commit or stash first, then re-run.
@@ -67,7 +67,7 @@ Then re-run `check-import`: it PASSes once LOCAL contains every Builder-side cha
 ## When NOT to use
 
 - No APEXlang source in git (Builder-only development) — nothing to diverge.
-- Grammar / validate / import mechanics or round-trip questions → official `apex` skill.
+- Grammar / validate / import mechanics or round-trip questions → Oracle's APEXlang skills.
 - Verifying that the imported page behaves → `apex-sentinel`.
 
 ## Rationalizations — every one of these means STOP and run the check

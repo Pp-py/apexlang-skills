@@ -5,7 +5,7 @@ file governs the **read** side: given a declarative UI pattern, *what must the S
 and where does that derivation live?*
 
 It is deliberately not a component reference. Region types, valid properties, templates and slots
-belong to the official `apex` skill (`40-components/apex.region-contracts.md`,
+belong to Oracle's APEXlang skills (`apexlang-inventory`, and the 26.1 policies `40-components/apex.region-contracts.md`,
 `apex.region-media.md`, `apex.region-interactions.md`, `30-pages/apex.*.md`). Read it there once;
 what follows is only the part no one else owns.
 
@@ -66,7 +66,7 @@ The class is composed **in the attribute**; the SQL stays free of presentation. 
 Cards* pattern does it right — puts theme class names in the data layer, where a theme upgrade cannot find
 them.
 
-Same rule, stronger: **never project HTML.** The live compiler rejects it
+Same rule, stronger: **never project HTML.** Oracle's 26.1 lint rejects it
 (`REPORT_SQL_HTML_LITERAL_FORBIDDEN_001`) and it is non-negotiable rule 1 of
 `apex.report-column-rendering.md`.
 

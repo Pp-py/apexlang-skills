@@ -19,7 +19,8 @@ designing, changing, or verifying anything.
    `skills/apexlang-architecture/ui-contracts.md`.
 
 2. **`skills/apex-sync-guard/SKILL.md`** — read it BEFORE running any `apex import` or
-   `apex export`. Both are total silent overwrites (import replaces the whole app in the
+   `apex export` (Oracle's `deploy-apex-app.sh` included: it runs `apex import` inside). Both are
+   total silent overwrites (import replaces the whole app in the
    Builder; export replaces the working tree); the skill gates them behind a sync-check
    against the opposite replica, keyed to a recorded syncpoint. Never assume the Builder is
    clean because "the flow is source-first" — verify. Per-project wiring (config + optional
@@ -59,11 +60,12 @@ the browser** (plus sync-check before any export, and `record-sync` after either
 
 ## Out of scope
 
-`.apx` grammar, `validate`, `import`, and round-trip belong to the official `apex` tooling/skill,
-not to this repo.
+`.apx` grammar, generation, `validate`, `import`, and round-trip belong to Oracle's official APEXlang
+skills (`apex@oracle-skills`) and SQLcl, not to this repo.
 
 ## Runnable examples
 
-`skills/*/examples/` contains three complete vertical slices (DDL + package + `.apx` + verification
-walkthrough): `sectors-catalog` (editable Interactive Grid), `absences-workflow` (state machine) and
-`employees-form` (single-entity form, full page + drawer). Start at `skills/apexlang-architecture/examples/README.md`.
+`skills/apexlang-architecture/examples/` contains three complete vertical slices (DDL + package +
+`.apx`): `sectors-catalog` (editable Interactive Grid), `absences-workflow` (state machine) and
+`employees-form` (single-entity form, full page + drawer); the first two have browser walkthroughs in
+`skills/apex-sentinel/examples/`. Start at `skills/apexlang-architecture/examples/README.md`.

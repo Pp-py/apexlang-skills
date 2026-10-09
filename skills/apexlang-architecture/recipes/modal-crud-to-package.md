@@ -29,7 +29,7 @@ region sectors-ir (
 )
 ```
 
-**The link goes on the column, never on the region.** A report-level `link { linkColumn / target / linkIcon }` is rejected by the live compiler (`REPORT_REGION_LINK_BLOCK_UNSUPPORTED_001`), for Classic Reports as well as Interactive Reports — even though Oracle's own IR page-example and `interactive-report._common.md` template still show it at region scope. On an Interactive Report the linked column stays `type: plainText` and carries the `link {}` block, with the icon markup in `linkText`; `type: link` is Classic-Report-only.
+**The link goes on the column, never on the region.** A report-level `link { linkColumn / target / linkIcon }` is rejected by Oracle's 26.1 lint (`REPORT_REGION_LINK_BLOCK_UNSUPPORTED_001`), for Classic Reports as well as Interactive Reports — even though Oracle's own IR page-example and `interactive-report._common.md` template still show it at region scope. On an Interactive Report the linked column stays `type: plainText` and carries the `link {}` block, with the icon markup in `linkText`; `type: link` is Classic-Report-only. (The lint accepts this form; SQLcl 26.2.0's compiler rejected `target`/`linkText` on such a column — a known conflict in `framework/CAPABILITIES.md`, unresolved.)
 
 ## Modal page
 

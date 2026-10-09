@@ -11,11 +11,11 @@ description: Use when an APEXlang page or component was just imported or changed
 
 **Principle: a change isn't done at "import succeeded." It's done when you've driven the running page in a browser and watched the expected behavior happen.**
 
-This skill is the runtime verification gate for the APEXlang loop. It does **not** export/validate/import — that's the official `apex` skill. It pairs with `apexlang-architecture`: each check here confirms the behavior a construction recipe there promises (an editable IG routes writes through its package; a duplicate raises a *friendly* error; a modal closes; a KPI renders a number).
+This skill is the runtime verification gate for the APEXlang loop. It does **not** export/validate/import — that's Oracle's APEXlang skills (`apexlang-compile`, `apexlang-deploy`). It pairs with `apexlang-architecture`: each check here confirms the behavior a construction recipe there promises (an editable IG routes writes through its package; a duplicate raises a *friendly* error; a modal closes; a KPI renders a number).
 
-The official APEXlang package ships its own post-import check (`apexctl runtime verify-ui`), but it is **off by default, never blocks a successful import, and through the CLI only fetches the page's HTML** — it does not replace this gate; see *Relationship to `apexctl runtime verify-ui`* below.
+Oracle's 26.1 `apexlang-generation` ships its own post-import check (`apexctl runtime verify-ui`; 26.2 ships none), but it is **off by default, never blocks a successful import, and through the CLI only fetches the page's HTML** — it does not replace this gate; see *Relationship to `apexctl runtime verify-ui`* below.
 
-**REQUIRED SUB-SKILL:** `apex` (official) for the (re-)import. **PAIRS WITH:** `apexlang-architecture`. **REINFORCES (optional, if installed):** `superpowers:verification-before-completion`.
+**REQUIRED SUB-SKILL:** Oracle's APEXlang skills for the (re-)import, behind `apex-sync-guard`. **PAIRS WITH:** `apexlang-architecture`. **REINFORCES (optional, if installed):** `superpowers:verification-before-completion`.
 
 ## Prerequisites — hard, this skill does NOT degrade gracefully
 
@@ -82,7 +82,7 @@ The checks in `checks/` are written against these rules; `setup.md` §0 configur
 2. **Navigate** to the changed page, preserving the session (append `?session=<token>`; a bare `goto` drops it → login).
 3. **Read the page state cheaply** — `eval` the specific facts you need (see *Snapshot diet*); take a full snapshot only to discover refs you must click. Screenshot only when the text tree is insufficient (canvas charts).
 4. **Exercise** the archetype's behavior (interact + assert, fixed sequences batched into one round-trip) — see `checks/`.
-5. **On fail**, report the user-visible symptom + likely owning layer, fix via the `apex` skill, re-import, re-verify. **On pass**, confirm the data side with SQLcl when a write was involved.
+5. **On fail**, report the user-visible symptom + likely owning layer, fix it (`.apx` through Oracle's APEXlang skills, logic in the package), re-import through the sync gate, re-verify. **On pass**, confirm the data side with SQLcl when a write was involved.
 
 ## Checks (by archetype)
 
@@ -106,12 +106,12 @@ Verify the **rejection/negative path** first (duplicate code → error, illegal 
 
 - Backend-only changes with no page to drive (pure PL/SQL or view work) — there's nothing to render.
 - No running instance reachable — see Prerequisites; stop and report, don't fake it.
-- Grammar / validate / import / round-trip questions — that's the official `apex` skill.
+- Grammar / validate / import / round-trip questions — that's Oracle's APEXlang skills.
 - Generic "did I finish?" checks with no APEX runtime — that's `superpowers:verification-before-completion`.
 
 ## Relationship to `apexctl runtime verify-ui`
 
-The APEXlang package ships its own post-import browser check (`apexctl … runtime verify-ui`), **opt-in** via `--require-runtime-verification` — without that flag the runtime roundtrip records *"Post-import runtime verification is disabled by default."* Its own contract (`references/ops/runtime-gates.md` §Canonical Validation 10–11) places it **after** `import_status = pass` and treats its findings as **diagnostics**: *"do not rewrite a successful import to fail."* The implementation agrees — a non-zero verification result only appends a note and a recommended next action; the roundtrip still exits 0.
+Oracle's 26.1 `apexlang-generation` ships its own post-import browser check (`apexctl … runtime verify-ui`; 26.2 has no `apexctl`), **opt-in** via `--require-runtime-verification` — without that flag the runtime roundtrip records *"Post-import runtime verification is disabled by default."* Its own contract (`apexlang-generation/references/ops/runtime-gates.md` §Canonical Validation 10–11) places it **after** `import_status = pass` and treats its findings as **diagnostics**: *"do not rewrite a successful import to fail."* The implementation agrees — a non-zero verification result only appends a note and a recommended next action; the roundtrip still exits 0.
 
 That is the shallow lane, and it agrees with this skill's sequencing — verification is post-import, never a pre-import gate (the pre-import gate is `apex-sync-guard`). Where they differ is **scope**: `verify-ui` advertises a `chrome-devtools-mcp` provider, but the CLI path never wires one up, so every run falls back to HTTP — it fetches the page's HTML, checks status/redirects/expected text, and reports *"Console inspection is unavailable in the HTTP fallback provider."* It records that a page responded; it never drives the UI. This skill holds one logged-in APEX session across the whole loop, drives the archetype's actual interaction (save the grid, close the modal, land the transition), and confirms the row in the database afterwards. If your team already runs `verify-ui`, keep it — and still run this loop before saying the change works, because "reported no findings" is not "I saw it save".
 

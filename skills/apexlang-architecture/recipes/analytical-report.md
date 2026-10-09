@@ -33,7 +33,7 @@ The page never re-derives this; it selects from the view. Reuse across the repor
 ## `.apx` — conditional IR + badge
 
 The query projects a **label and a token**; the markup is built in the column. HTML in the SQL is
-rejected by the live compiler (`REPORT_SQL_HTML_LITERAL_FORBIDDEN_001`) and by non-negotiable rule 1
+rejected by Oracle's 26.1 lint (`REPORT_SQL_HTML_LITERAL_FORBIDDEN_001`) and by non-negotiable rule 1
 of the official `apex.report-column-rendering.md`.
 
 ```
@@ -115,7 +115,7 @@ Two ways to render a state, and they are not interchangeable:
 - The query projects values and tokens; the column projects markup (`ui-contracts.md` §2, §5).
 - Report columns substitute with `#COLUMN#`; cards and content rows use `&COLUMN.` — mixing them
   fails silently.
-- The link belongs to the column, never to the region (see `SKILL.md` §Report contracts).
+- The link belongs to the column, never to the region (see `SKILL.md` §Report rules).
 - `displayOnly` preview/echo items that shouldn't post back: `settings { sendOnPageSubmit: false }`.
 - Charts read the same view as the IRs — one source of truth per metric.
 

@@ -10,7 +10,7 @@ validation across steps · going back · abandoned drafts · common mistakes · 
 
 The shell is official and small: `dialogTemplate: @/wizard-modal-dialog`, one page whose step regions
 are gated by `serverSideCondition { type: request=Value  value: STEP2 }`, buttons setting `:REQUEST`.
-Copy that from the official `apex` skill. Everything below is the part it does not decide — and the
+Copy that from Oracle's 26.1 templates (`apexlang-generation`). Everything below is the part it does not decide — and the
 part that decides whether the wizard survives a closed laptop.
 
 ## The one decision: where partial state lives
