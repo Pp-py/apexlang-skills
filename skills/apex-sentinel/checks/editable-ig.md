@@ -44,6 +44,8 @@ The unsaved row sits in the IG edit buffer. Navigating away triggers a beforeunl
 
 ## Pass criteria
 
-- Grid renders with data (`getTotalRecords() > 0`).
-- Duplicate Save → package error in the notification region, row rejected, DB count unchanged.
-- Message is friendly (no `ORA-` prefix). A leaked `ORA-` prefix fails this criterion; report the missing Error Handling Function as the fix.
+Each criterion has an ID: a runtime-result (`framework/schemas/runtime-result.schema.json`) reports it by that ID, with what was observed and the evidence it rests on.
+
+- `IG-RENDER` — Grid renders with data (`getTotalRecords() > 0`).
+- `IG-REJECT-DUPLICATE` — Duplicate Save → package error in the notification region, row rejected, DB count unchanged.
+- `IG-FRIENDLY-ERROR` — Message is friendly (no `ORA-` prefix). A leaked `ORA-` prefix fails this criterion; report the missing Error Handling Function as the fix.

@@ -34,8 +34,10 @@ the wrong item renders plausible data from the wrong row, which no UI assertion 
 
 ## Pass criteria
 
-- Page opens with a selection and a populated detail (or an explicit empty state).
-- Selecting another row moves **all** detail regions.
-- Filtering never leaves the detail on a row that is no longer in the list.
-- Zero results shows the empty state, not a stale detail.
-- No `console` errors and no leftover debug logging from the reconcile handler.
+Each criterion has an ID: a runtime-result (`framework/schemas/runtime-result.schema.json`) reports it by that ID, with what was observed and the evidence it rests on.
+
+- `SPLIT-INITIAL-SELECTION` — Page opens with a selection and a populated detail (or an explicit empty state).
+- `SPLIT-DETAIL-FOLLOWS` — Selecting another row moves **all** detail regions.
+- `SPLIT-FILTER-RECONCILES` — Filtering never leaves the detail on a row that is no longer in the list.
+- `SPLIT-EMPTY-STATE` — Zero results shows the empty state, not a stale detail.
+- `SPLIT-NO-CONSOLE-ERRORS` — No `console` errors and no leftover debug logging from the reconcile handler.

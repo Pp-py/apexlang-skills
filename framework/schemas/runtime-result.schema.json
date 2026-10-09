@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pp-py.github.io/apexlang-skills/schemas/1/runtime-result.schema.json",
+  "title": "runtime-result (EXPERIMENTAL, schemaVersion 1)",
+  "description": "The verdict of one apex-sentinel verification of one app: the criteria of a check (checks/<archetype>.md), each with what was observed and the evidence it rests on. Written by the agent (method: agent) to <evidenceDir>/<task>/runtime-<alias>.json; raw evidence (snapshots, eval output, SQL) under <evidenceDir>/<task>/raw/runtime-<alias>/, each file referenced with its sha256. NOT_RUN is never the overall status — only a criterion's, when it was not exercised.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schemaVersion", "status", "reasons", "app", "context", "check", "backend", "login", "criteria"],
+  "properties": {
+    "kind": { "const": "runtime-result" },
+    "schemaVersion": { "const": 1 },
+    "status": { "enum": ["PASS", "FAIL", "BLOCKED", "UNKNOWN"] },
+    "reasons": { "type": "array", "minItems": 1, "items": { "$ref": "common.schema.json#/$defs/reason" } },
+    "app": { "$ref": "common.schema.json#/$defs/appRef" },
+    "context": { "$ref": "common.schema.json#/$defs/context" },
+    "check": {
+      "description": "The check applied: the file name of skills/apex-sentinel/checks/<check>.md.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}$"
+    },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "description": "none = no browser could be driven: the run is BLOCKED, never faked.", "enum": ["playwright-cli", "browser-mcp", "none"] },
+        "version": { "type": "string", "maxLength": 64 }
+      }
+    },
+    "login": {
+      "description": "PASS only when the page reported the test user as APEX's APP_USER (pw.sh login exit 0).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user", "status"],
+      "properties": {
+        "user": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "status": { "$ref": "common.schema.json#/$defs/gateStatus" },
+        "evidence": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/evidenceRef" } }
+      }
+    },
+    "criteria": { "type": "array", "items": { "$ref": "#/$defs/criterion" } },
+    "evidence": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/evidenceRef" } }
+  },
+  "allOf": [
+    {
+      "description": "PASS: at least one required criterion, and every required one PASSed",
+      "if": { "properties": { "status": { "const": "PASS" } } },
+      "then": { "properties": { "criteria": {
+        "contains": { "properties": { "required": { "const": true } } },
+        "not": { "contains": { "properties": { "required": { "const": true }, "status": { "not": { "const": "PASS" } } } } }
+      } } }
+    },
+    {
+      "description": "a required criterion that FAILed makes the run FAIL",
+      "if": { "properties": { "criteria": { "contains": { "properties": { "required": { "const": true }, "status": { "const": "FAIL" } } } } } },
+      "then": { "properties": { "status": { "const": "FAIL" } } }
+    },
+    {
+      "description": "no browser, no verification",
+      "if": { "properties": { "backend": { "properties": { "kind": { "const": "none" } } } } },
+      "then": { "properties": { "status": { "const": "BLOCKED" } } }
+    },
+    {
+      "description": "a login that was not verified cannot carry a PASS",
+      "if": { "properties": { "login": { "properties": { "status": { "not": { "const": "PASS" } } } } } },
+      "then": { "properties": { "status": { "not": { "const": "PASS" } } } }
+    },
+    {
+      "description": "a verdict on a page names the runtime it ran against",
+      "if": { "properties": { "status": { "enum": ["PASS", "FAIL"] } } },
+      "then": { "properties": { "context": { "required": ["target"], "properties": { "target": { "required": ["runtimeUrl"] } } } } }
+    }
+  ],
+  "$defs": {
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "required", "status"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/criterionId" },
+        "required": { "type": "boolean" },
+        "status": { "$ref": "common.schema.json#/$defs/gateStatus" },
+        "observed": { "$ref": "common.schema.json#/$defs/safeText" },
+        "evidence": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/evidenceRef" } },
+        "notApplicableReason": { "$ref": "common.schema.json#/$defs/safeText" }
+      },
+      "allOf": [
+        {
+          "description": "a criterion PASSes on evidence, never on the agent's word",
+          "if": { "properties": { "status": { "const": "PASS" } } },
+          "then": { "required": ["evidence", "observed"], "properties": { "evidence": { "minItems": 1 } } }
+        },
+        {
+          "description": "a criterion not exercised says why",
+          "if": { "properties": { "status": { "const": "NOT_RUN" } } },
+          "then": { "required": ["notApplicableReason"] }
+        },
+        {
+          "description": "CONFLICT belongs to the sync gate",
+          "properties": { "status": { "not": { "const": "CONFLICT" } } }
+        }
+      ]
+    }
+  }
+}

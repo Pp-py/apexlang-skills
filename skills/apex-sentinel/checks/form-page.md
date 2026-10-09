@@ -27,7 +27,9 @@ For delete, confirm the soft delete: the row is still there with `active_flag = 
 
 ## Pass criteria
 
-- Create mode shows only the create action; a valid create returns the page in edit mode with the new PK.
-- Edit mode prefills; a valid update persists.
-- A refused submit shows a friendly package error, leaves the drawer open, and writes nothing.
-- Delete deactivates rather than deleting.
+Each criterion has an ID: a runtime-result (`framework/schemas/runtime-result.schema.json`) reports it by that ID, with what was observed and the evidence it rests on.
+
+- `FORM-CREATE` — Create mode shows only the create action; a valid create returns the page in edit mode with the new PK.
+- `FORM-UPDATE` — Edit mode prefills; a valid update persists.
+- `FORM-REFUSED-SUBMIT` — A refused submit shows a friendly package error, leaves the drawer open, and writes nothing.
+- `FORM-SOFT-DELETE` — Delete deactivates rather than deleting.

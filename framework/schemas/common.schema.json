@@ -69,6 +69,22 @@
         "message": { "$ref": "#/$defs/safeText" }
       }
     },
+    "appRef": {
+      "description": "An app as a result names it: its alias, its id, or both (a sentinel-only project may know no id).",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "appId": { "$ref": "#/$defs/appId" },
+        "appAlias": { "$ref": "#/$defs/appAlias" },
+        "mmdVersion": { "$ref": "#/$defs/app/properties/mmdVersion" }
+      }
+    },
+    "criterionId": {
+      "description": "<PREFIX>-<SLUG>, one per pass-criteria bullet of an apex-sentinel check (IG-RENDER, WF-ILLEGAL-BLOCKED, …).",
+      "type": "string",
+      "pattern": "^[A-Z]{2,8}(-[A-Z0-9]{1,24}){1,4}$"
+    },
     "app": {
       "type": "object",
       "additionalProperties": false,

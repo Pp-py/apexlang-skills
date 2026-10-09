@@ -89,6 +89,5 @@ end;
 
 ## Pass criteria
 
-- Badges render (a non-empty list from the page's own markup).
-- The legal transition, on the fixture, flips badge + `approved_by`/`approved_at`; the fixture is cancelled afterwards.
-- The illegal transition is blocked (guard error or hidden button); `status` unchanged.
+- `WF-LEGAL-TRANSITION` — Badges render (a non-empty list from the page's own markup), and the legal transition, on the fixture, flips badge + `approved_by`/`approved_at`; the fixture is cancelled afterwards.
+- `WF-ILLEGAL-BLOCKED` — The illegal transition is blocked (guard error or hidden button); `status` unchanged.

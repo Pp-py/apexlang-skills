@@ -17,6 +17,8 @@ Try to transition a row **not** in the legal from-state (e.g. approve an already
 
 ## Pass criteria
 
-- Badges render; legal transition flips the badge + audit stamp + side effect.
-- Illegal transition is blocked (button hidden or package guard error); state unchanged.
+Each criterion has an ID: a runtime-result (`framework/schemas/runtime-result.schema.json`) reports it by that ID, with what was observed and the evidence it rests on.
+
+- `WF-LEGAL-TRANSITION` — Badges render; legal transition flips the badge + audit stamp + side effect.
+- `WF-ILLEGAL-BLOCKED` — Illegal transition is blocked (button hidden or package guard error); state unchanged.
 - (Not a runtime criterion: that no process writes `status` directly is proven by the Architecture Gate's DML scan of the page source, not by a browser.)

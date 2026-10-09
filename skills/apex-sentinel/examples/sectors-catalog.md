@@ -65,6 +65,6 @@ handle dialog (accept). Nothing committed, so no DB cleanup — the count above 
 
 ## Pass criteria
 
-- Grid renders the seed rows.
-- Duplicate Save → package error region, row rejected, `count(PROD) = 1` unchanged.
-- Message is friendly (no `ORA-` prefix).
+- `IG-RENDER` — Grid renders the seed rows.
+- `IG-REJECT-DUPLICATE` — Duplicate Save → package error region, row rejected, `count(PROD) = 1` unchanged.
+- `IG-FRIENDLY-ERROR` — Message is friendly (no `ORA-` prefix).

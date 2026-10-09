@@ -21,6 +21,8 @@ For a real write, `sql -name <conn>` to confirm the row landed (or didn't, on re
 
 ## Pass criteria
 
-- Edit icon opens a prefilled modal.
-- Valid submit closes the modal and updates the master.
-- Invalid submit keeps the modal open with a friendly package error; DB unchanged.
+Each criterion has an ID: a runtime-result (`framework/schemas/runtime-result.schema.json`) reports it by that ID, with what was observed and the evidence it rests on.
+
+- `MODAL-OPEN-PREFILLED` — Edit icon opens a prefilled modal.
+- `MODAL-SUBMIT-CLOSES` — Valid submit closes the modal and updates the master.
+- `MODAL-REFUSED-SUBMIT` — Invalid submit keeps the modal open with a friendly package error; DB unchanged.

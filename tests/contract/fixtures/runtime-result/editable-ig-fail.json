@@ -1,0 +1,21 @@
+{
+  "kind": "runtime-result",
+  "schemaVersion": 1,
+  "status": "FAIL",
+  "reasons": [{"code": "REQUIRED_CRITERION_FAILED", "message": "IG-FRIENDLY-ERROR: the ORA- prefix leaks; register the app's Error Handling Function."}],
+  "app": {"appAlias": "hr"},
+  "context": { "task": "T-42", "repo": {"commit": "0123456789abcdef0123456789abcdef01234567", "dirty": false}, "frameworkVersion": "0.6.0", "timestamp": "2026-10-09T12:30:00Z",
+    "producer": {"skill": "apex-sentinel", "method": "agent"},
+    "target": {"runtimeUrl": "https://apex.example/ords/r/ws/hr/"} },
+  "check": "editable-ig",
+  "backend": {"kind": "browser-mcp"},
+  "login": {"user": "QA_HR", "status": "PASS"},
+  "criteria": [
+    {"id": "IG-RENDER", "required": true, "status": "PASS", "observed": "rows=2",
+     "evidence": [{"kind": "file", "path": ".apex-evidence/T-42/raw/runtime-hr/ig-render.json", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]},
+    {"id": "IG-REJECT-DUPLICATE", "required": true, "status": "PASS", "observed": "rejected, count unchanged",
+     "evidence": [{"kind": "sql", "statement": "select count(*) from hr_sectors where upper(code) = 'PROD'", "exitCode": 0, "result": "1"}]},
+    {"id": "IG-FRIENDLY-ERROR", "required": true, "status": "FAIL", "observed": "ORA-20800: A sector with code PROD already exists.",
+     "evidence": [{"kind": "file", "path": ".apex-evidence/T-42/raw/runtime-hr/ig-duplicate.json", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}
+  ]
+}
