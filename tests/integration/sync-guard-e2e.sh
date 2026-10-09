@@ -379,15 +379,78 @@ expect "hook: reading the guard source passes"               0 hook_in_proj "sed
 expect "hook: flag on the next line of a heredoc still blocks" 2 hook_in_proj "sql <<EOF\napex import -input src/app\nEOF"
 expect "hook: outside an onboarded repo passes"              0 hook_out_repo
 
-# --- APEXlang 2026.08.01 routes the canonical import through apexctl, which runs
+# --- Oracle's 26.1 apexlang-generation routes its import through apexctl, which runs
 # `apex import` inside a SQLcl subprocess — the literal string never appears in the
 # command the hook sees, so matching only that string stopped catching real imports.
 RT='node tools/apexctl.mjs runtime roundtrip --app-path /a --db-connection-name c --import-intent validate-and-import'
 expect "hook: apexctl roundtrip blocked without a marker"    2 hook_in_proj "$RT"
-expect "hook: bare roundtrip (default intent) blocked"       2 hook_in_proj "node tools/apexctl.mjs runtime roundtrip --app-path /a --db-connection-name c"
+# The default intent is validate-only; blocking the bare roundtrip anyway is deliberate.
+expect "hook: bare roundtrip (default validate-only) still blocked" 2 hook_in_proj "node tools/apexctl.mjs runtime roundtrip --app-path /a --db-connection-name c"
 "$CHK" check-import >/dev/null
 expect "hook: apexctl roundtrip allowed with a fresh marker" 0 hook_in_proj "$RT"
 expect "hook: offline apexctl validate passes"               0 hook_in_proj "node tools/apexctl.mjs apexlang validate --app-path /a"
+
+# --- every other import lane. A payload is built with real JSON escaping here, so
+# commands can carry quotes and real newlines.
+json_esc() { local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}; s=${s//$'\r'/\\r}; printf '%s' "$s"; }
+hook_at()  { printf '{"tool_name":"%s","tool_input":{"command":"%s"},"cwd":"%s"}' "${3:-Bash}" "$(json_esc "$2")" "$(json_esc "$1")" | "$HOOK"; }
+hook_cmd() { hook_at "$WORK/proj" "$@"; }
+rm -f "$MK"/check-ok.*
+# Oracle's apexlang-deploy (26.1/26.2) runs `apex import` inside its own heredoc: the
+# phrase never reaches the hook. Naming the script is an import unless every segment
+# of the command is a plain reader.
+DEPLOY='SQLCL_BIN=/opt/sqlcl/bin/sql SQLCL_CONNECTION_STRING=x bash /o/apexlang-deploy/scripts/deploy-apex-app.sh src/demo'
+expect "hook: Oracle deploy script blocked without a marker"   2 hook_cmd "$DEPLOY"
+expect "hook: deploy via a quoted path with spaces blocked"    2 hook_cmd 'bash "/my dir/deploy-apex-app.sh" "src/demo"'
+expect "hook: deploy via bash -c blocked"                      2 hook_cmd 'bash -c "deploy-apex-app.sh src/demo"'
+expect "hook: deploy from PowerShell blocked"                  2 hook_cmd "& 'C:\\o\\deploy-apex-app.sh' src/demo" PowerShell
+expect "hook: deploy piped into a shell blocked"               2 hook_cmd 'cat deploy-apex-app.sh | bash -s src/demo'
+expect "hook: deploy inside an if blocked"                     2 hook_cmd 'if ./deploy-apex-app.sh src/demo; then echo ok; fi'
+expect "hook: reading the deploy script passes (cat)"          0 hook_cmd 'cat skills/x/deploy-apex-app.sh'
+expect "hook: reading the deploy script passes (grep | head)"  0 hook_cmd "grep -n 'apex import' deploy-apex-app.sh | head -5"
+expect "hook: reading the deploy script passes (sed)"          0 hook_cmd "sed -n '1,40p' deploy-apex-app.sh"
+expect "hook: linting the deploy script passes"                0 hook_cmd 'shellcheck deploy-apex-app.sh'
+expect "hook: Oracle's compile script is never gated"          0 hook_cmd 'bash /o/apexlang-compile/scripts/validate-apex-app.sh src/demo'
+# A bare `apex import` imports the current directory: with a SQLcl launcher in the
+# command it is a real import even without a flag.
+expect "hook: bare apex import fed to sql blocked"             2 hook_cmd 'sql -name fake <<< "apex import"'
+expect "hook: bare apex import piped to sql blocked"           2 hook_cmd 'echo "apex import" | sql /nolog'
+expect "hook: \$SQLCL_BIN heredoc import blocked"              2 hook_cmd $'"$SQLCL_BIN" "$C" <<EOF\napex import\nEOF'
+expect "hook: apex export-application blocked"                 2 hook_cmd 'sql -name fake <<< "apex export-application -api 100"'
+expect "hook: --runtime-action validate-and-import blocked"    2 hook_cmd 'node tools/apexctl.mjs runtime --runtime-action validate-and-import'
+"$CHK" check-import >/dev/null
+expect "hook: the deploy script allowed with a fresh marker"   0 hook_cmd "$DEPLOY"
+
+# --- an agent must not overrule the guard: forcing a syncpoint and writing the
+# guard's own markers/refs/state are refused even with a fresh marker.
+expect "hook: record-sync --force refused"                     2 hook_cmd 'skills/apex-sync-guard/scripts/apex-sync-check.sh record-sync --force'
+expect "hook: touching a marker refused"                       2 hook_cmd 'touch .git/apex-sync/demo/check-ok.import'
+expect "hook: writing a marker by redirection refused"         2 hook_cmd 'echo {} > .git/apex-sync/demo/check-ok.import'
+expect "hook: deleting the syncpoint ref refused"              2 hook_cmd 'git update-ref -d refs/apex-sync/demo'
+expect "hook: reading a marker passes"                         0 hook_cmd 'cat .git/apex-sync/demo/check-ok.import'
+expect "hook: removing a marker passes (it only withdraws)"    0 hook_cmd 'rm -f .git/apex-sync/demo/check-ok.export'
+expect "hook: running the check itself passes"                 0 hook_cmd 'skills/apex-sync-guard/scripts/apex-sync-check.sh check-import'
+
+# --- the hook fails closed once a command is relevant: an onboarded repo it cannot
+# read, a config it cannot parse, a marker age it cannot compute — all block.
+expect "hook: config {} blocks an import"                      2 with_config '{}' hook_cmd 'apex import -input src/demo'
+expect "hook: apps that is not an array blocks"                2 with_config '{ "apps": "x" }' hook_cmd 'apex import -input src/demo'
+mkdir -p "$WORK/notgit" && printf '{ "appId": 1, "appAlias": "x" }\n' > "$WORK/notgit/apex-sync.json"
+expect "hook: apex-sync.json where git cannot resolve a repo blocks" 2 hook_at "$WORK/notgit" 'apex import -input src/demo'
+mkdir -p "$WORK/badgit"
+printf '#!/usr/bin/env bash\necho "fatal: detected dubious ownership" >&2\nexit 128\n' > "$WORK/badgit/git" && chmod +x "$WORK/badgit/git"
+# shellcheck disable=SC2030,SC2031
+with_bad_git() { ( export PATH="$WORK/badgit:$PATH"; "$@" ); }
+expect "hook: an onboarded repo git refuses blocks"            2 with_bad_git hook_cmd 'apex import -input src/demo'
+mkdir -p "$WORK/badstat"
+printf '#!/usr/bin/env bash\necho garbage\n' > "$WORK/badstat/stat" && chmod +x "$WORK/badstat/stat"
+# shellcheck disable=SC2030,SC2031
+with_bad_stat() { ( export PATH="$WORK/badstat:$PATH"; "$@" ); }
+expect "hook: a marker age that cannot be computed blocks"     2 with_bad_stat hook_cmd 'apex import -input src/demo'
+rm -f "$MK"/check-ok.*
+# shellcheck disable=SC2030,SC2031
+deploy_no_json() { ( export PATH="$WORK/stub:$PATH"; hook_cmd 'cat deploy-apex-app.sh' ); }
+expect "hook: without a JSON parser even a read of the deploy script blocks" 2 deploy_no_json
 
 echo
 echo "$pass passed, $fail failed"
