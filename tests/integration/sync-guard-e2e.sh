@@ -19,6 +19,7 @@ cat > "$WORK/bin/sql" <<'EOF'
 #!/usr/bin/env bash
 stmts=$(cat)
 if grep -q 'apex export' <<<"$stmts"; then
+  [[ -n "${FAKE_EXPORT_FAIL:-}" ]] && { echo "SQL Error: simulated export failure" >&2; exit 1; }
   if grep -q -- '-dir "' <<<"$stmts"; then          # the guard quotes paths holding spaces
     dir=$(sed -n 's/.*-dir "\([^"]*\)".*/\1/p' <<<"$stmts")
   else
@@ -133,6 +134,38 @@ ref_before=$(git rev-parse refs/apex-sync/demo)
 expect         "a failed snapshot exits 3, not 0"            3 with_git_fail "$CHK" record-sync
 expect_out_not "and is never reported as recorded"           'syncpoint recorded' with_git_fail "$CHK" record-sync
 expect         "and the syncpoint ref is untouched"          0 test "$(git rev-parse refs/apex-sync/demo)" = "$ref_before"
+
+# --- the marker is the hook's whole authorization, so it must only ever mean "the
+# last check of this direction PASSed". It used to be written before the verdict was
+# final and never withdrawn: a FAIL three minutes after a PASS left the PASS's marker
+# fresh, and the hook let the import through.
+MK="$WORK/proj/.git/apex-sync/demo"
+"$CHK" check-import >/dev/null
+expect "a PASS writes the import marker"                     0 test -f "$MK/check-ok.import"
+last_line() { "$@" | tail -1; }
+expect_out "the marker note is the last line of a PASS"      'marker: [^[:space:]]+check-ok\.import$' last_line "$CHK" check-import
+cp "$WORK/remote/demo/p30.apx" "$WORK/p30.saved"
+printf 'page 30 (\n  name: EditedAfterThePass\n)\n' > "$WORK/remote/demo/p30.apx"
+expect "Builder moved after a PASS -> check-import FAIL"     1 "$CHK" check-import
+expect "the FAIL withdrew the earlier PASS's marker"         1 test -f "$MK/check-ok.import"
+expect "so the hook now blocks the import"                   2 hook_in_proj "apex import -input src/demo"
+mv "$WORK/p30.saved" "$WORK/remote/demo/p30.apx"
+"$CHK" check-export >/dev/null
+echo "-- local edit" >> src/demo/p30.apx
+expect "dirty tree after an export PASS -> check-export FAIL" 1 "$CHK" check-export
+expect "the FAIL withdrew the export marker"                 1 test -f "$MK/check-ok.export"
+git checkout -q -- src/demo/p30.apx
+"$CHK" check-import >/dev/null
+expect "an export that fails part-way -> exit 3 (UNKNOWN)"   3 env FAKE_EXPORT_FAIL=1 "$CHK" check-import
+expect "and leaves no marker behind"                         1 test -f "$MK/check-ok.import"
+cp "$MK/state.json" "$WORK/state.saved"
+printf 'not json\n' > "$MK/state.json"
+printf 'page 99 (\n  name: Payload\n)\n' > src/demo/p99.apx        # makes payload_report read state.json
+expect     "a crash after the PASS line -> exit 3"           3 "$CHK" check-import
+expect     "and no marker: the gate stays closed"            1 test -f "$MK/check-ok.import"
+expect_out "the crash is named UNKNOWN, not PASS"            'reached PASS, then failed .* UNKNOWN' "$CHK" check-import
+mv "$WORK/state.saved" "$MK/state.json"; rm -f src/demo/p99.apx
+"$CHK" check-import >/dev/null
 
 # --- content comparison must not depend on git's content filters.
 # `git diff --no-index` applies .gitattributes/core.autocrlf to whichever side git

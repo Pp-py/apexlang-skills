@@ -19,12 +19,25 @@
 # shared-component edits, so they are used for the who/when report only.
 set -euo pipefail
 
-die()  { echo "apex-sync-guard: ERROR: $*" >&2; exit 2; }
+# --- verdicts. A gate command (check-import, check-export, record-sync) ends in
+# exactly one status, and the EXIT trap (on_exit, below) turns it into the exit
+# code and — only for a check that PASSed — the hook's freshness marker:
+#   PASS 0 · FAIL/CONFLICT 1 · BLOCKED 2 · UNKNOWN 3
+# An exit the code did not classify (set -e tripping, a signal) is UNKNOWN: the
+# run started but nobody can say what it established, so nothing is authorized.
+R_OP=""        # the gate command being run; empty for status/doctor
+R_STATUS=""    # PASS | FAIL | CONFLICT | BLOCKED | UNKNOWN
+R_REASON=""    # reason code (framework/CONTRACTS.md)
+classify() { R_STATUS=$1; R_REASON=$2; }
+# A precondition is missing; the check stopped before any effect.
+die()     { [[ -n "$R_OP" ]] && classify BLOCKED "${DIE_REASON:-USAGE}"; echo "apex-sync-guard: ERROR: $*" >&2; exit 2; }
+blocked() { local r=$1; shift; DIE_REASON=$r die "$@"; }
 # The check started but cannot say what the Builder holds (an export or a git
 # step failed part-way): not a verdict on the replicas, and never a PASS.
-# $1 = reason code, kept so the call sites already name why.
-unknown() { shift; echo "apex-sync-guard: ERROR: $*" >&2; exit 3; }
-fail() { echo ""; echo "FAIL: $*" >&2; exit 1; }
+unknown() { classify UNKNOWN "$1"; shift; echo "apex-sync-guard: ERROR: $*" >&2; exit 3; }
+# The check ran to the end and the operation must not proceed. $1 = FAIL|CONFLICT.
+fail()    { classify "$1" "$2"; shift 2; echo ""; echo "FAIL: $*" >&2; exit 1; }
+pass()    { classify PASS "$1"; }
 note() { echo "  $*"; }
 mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }   # GNU stat / BSD (macOS) stat
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }                    # BSD date has no -Iseconds
@@ -133,7 +146,43 @@ export GIT_ATTR_NOSYSTEM=1
 
 TMP_KEEP=""                       # scratch dirs preserved on FAIL for resolution
 TMPS=()
-trap 'for t in "${TMPS[@]:-}"; do [[ -n "$t" && "$t" != "$TMP_KEEP" ]] && rm -rf "$t"; done' EXIT
+
+# The single exit path. The freshness marker the hook trusts is written HERE and
+# nowhere else: after the verdict line, the deploy payload and everything else the
+# run printed, and only when the run actually ended in a check PASS. A crash after
+# the PASS line (an unreadable state.json, a full disk) therefore never leaves the
+# gate open — it ends UNKNOWN, exit 3, no marker.
+on_exit() {
+  local rc=$? t
+  set +e
+  if [[ -n "$R_OP" ]]; then
+    if [[ -z "$R_STATUS" ]]; then
+      if (( rc >= 128 )); then classify UNKNOWN INTERRUPTED; else classify UNKNOWN UNEXPECTED_ERROR; fi
+      echo "apex-sync-guard: ERROR: $R_OP ended (exit $rc) before reaching a verdict — UNKNOWN ($R_REASON); nothing is authorized." >&2
+    elif [[ "$R_STATUS" == PASS && $rc -ne 0 ]]; then
+      classify UNKNOWN UNEXPECTED_ERROR
+      echo "apex-sync-guard: ERROR: $R_OP reached PASS, then failed (exit $rc) — UNKNOWN ($R_REASON); nothing is authorized, re-run it." >&2
+    fi
+    case "$R_STATUS" in PASS) rc=0 ;; FAIL|CONFLICT) rc=1 ;; BLOCKED) rc=2 ;; *) rc=3 ;; esac
+    if [[ "$R_STATUS" == PASS && "$R_OP" == check-* ]]; then
+      if ! write_marker "${R_OP#check-}"; then
+        rm -f "$STATE_DIR/check-ok.${R_OP#check-}"
+        classify UNKNOWN UNEXPECTED_ERROR; rc=3
+        echo "apex-sync-guard: ERROR: could not write the freshness marker — UNKNOWN; the hook will keep blocking." >&2
+      fi
+    fi
+  fi
+  for t in "${TMPS[@]:-}"; do [[ -n "$t" && "$t" != "$TMP_KEEP" ]] && rm -rf "$t"; done
+  exit "$rc"
+}
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+# A check always starts by withdrawing its own authorization: a FAIL, a BLOCKED or
+# a crash must never leave an earlier PASS's marker fresh for the hook to trust.
+revoke_marker() { rm -f "$STATE_DIR/check-ok.$1"; }
 
 # ------------------------------------------------------------ sql layer
 run_sql() {  # stdin-less silent SQLcl; $1 = statements; prints raw output
@@ -383,11 +432,12 @@ write_state() {  # $1 = syncpoint commit, $2 = builder stamp
 
 # ------------------------------------------------------------- commands
 cmd_check_import() {
+  revoke_marker import
   echo "apex-sync-guard: check-import (app $APP_ID '$ALIAS' via $CONN)"
 
   local app_rc=0; remote_app_exists || app_rc=$?
   if (( app_rc == 1 )); then
-    write_marker import
+    pass FIRST_PUBLICATION
     echo "PASS: app $APP_ID does not exist in the target workspace — first publication."
     echo "  Nothing to overwrite: there is no second replica that could hold unexported"
     echo "  Builder work. Run record-sync right afterwards to create the first"
@@ -404,7 +454,7 @@ cmd_check_import() {
     echo "   the Builder export is the canonical serialization)"
     local boot; boot=$(tree_diff "$APP_SRC" "$scratch/$ALIAS")
     if [[ -z "$(blocking "$boot")" ]]; then
-      local c s; s=$(builder_stamp); snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s"; write_marker import
+      local c s; s=$(builder_stamp); snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s"; pass BOOTSTRAP_IN_SYNC
       echo "PASS: replicas already agree — first syncpoint recorded ($c). Safe to import."
       eol_note "$boot"
       return 0
@@ -413,12 +463,12 @@ cmd_check_import() {
     echo "  (D = only in LOCAL, A = only in BUILDER, M = differs, E = line endings only)"
     indent <<<"$boot"
     eol_note "$boot"
-    fail "bootstrap: BUILDER ≠ LOCAL and there is no BASE to arbitrate. Reconcile once by hand (Builder export kept at $scratch), commit, then record-sync. See setup.md §2."
+    fail CONFLICT BOOTSTRAP_DIVERGED "bootstrap: BUILDER ≠ LOCAL and there is no BASE to arbitrate. Reconcile once by hand (Builder export kept at $scratch), commit, then record-sync. See setup.md §2."
   fi
 
   materialize_base; local base=$BASE_APP_DIR dif; dif=$(tree_diff "$base" "$scratch/$ALIAS")
   if [[ -z "$(blocking "$dif")" ]]; then
-    write_marker import
+    pass BUILDER_UNCHANGED
     echo "PASS: Builder untouched since last syncpoint. Safe to import."
     eol_note "$dif"
     payload_report "$base"
@@ -441,7 +491,7 @@ cmd_check_import() {
     fi
   done <<<"$dif"
   if (( all_captured )); then
-    write_marker import
+    pass BUILDER_CHANGES_CAPTURED
     echo "PASS: Builder changed since last syncpoint, but LOCAL already contains every Builder-side change. Safe to import (those files are rewritten identically). Remember record-sync afterwards."
     eol_note "$dif"
     payload_report "$base"
@@ -466,17 +516,18 @@ cmd_check_import() {
   echo "   - Changed only in the Builder: copy it from the export into $SRCDIR/$ALIAS/, commit as 'capture Builder changes'."
   echo "   - Changed on both sides: git show $REF:$ALIAS/<file> > /tmp/base && git merge-file <local-file> /tmp/base <export-file>"
   echo "   Then re-run check-import (PASSes once LOCAL contains every Builder change), apex validate, import, record-sync."
-  fail "importing now would overwrite the Builder changes above."
+  fail CONFLICT BUILDER_DIVERGED "importing now would overwrite the Builder changes above."
 }
 
 cmd_check_export() {
+  revoke_marker export
   echo "apex-sync-guard: check-export (app $APP_ID '$ALIAS')"
   local dirty; dirty=$(git -C "$ROOT" status --porcelain -- "$SRCDIR")
   if [[ -n "$dirty" ]]; then
     while IFS= read -r line; do printf '    %s\n' "$line"; done <<<"$dirty"
-    fail "the APEXlang source dir has uncommitted/untracked changes — the export would clobber them. Commit or stash first, then re-run."
+    fail FAIL LOCAL_DIRTY "the APEXlang source dir has uncommitted/untracked changes — the export would clobber them. Commit or stash first, then re-run."
   fi
-  write_marker export
+  pass LOCAL_CLEAN
   have_base || note "(no syncpoint yet — record-sync after this export will create it)"
   echo "PASS: working tree clean under $SRCDIR. Safe to export."
 }
@@ -486,6 +537,7 @@ cmd_record_sync() {
   local scratch c s
   export_builder; scratch=$REMOTE_DIR
   s=$(builder_stamp); snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s"
+  pass SYNCPOINT_RECORDED
   echo "apex-sync-guard: syncpoint recorded for '$ALIAS'"
   note "commit:       $c"
   note "builderStamp: $s"
@@ -568,9 +620,9 @@ cmd_status() {
 }
 
 case "${1:-}" in
-  check-import) cmd_check_import ;;
-  check-export) cmd_check_export ;;
-  record-sync)  cmd_record_sync ;;
+  check-import) R_OP=check-import; cmd_check_import ;;
+  check-export) R_OP=check-export; cmd_check_export ;;
+  record-sync)  R_OP=record-sync;  cmd_record_sync ;;
   status)       cmd_status ;;
   doctor)       cmd_doctor ;;
   *) die "usage: $(basename "$0") check-import|check-export|record-sync|status|doctor" ;;
