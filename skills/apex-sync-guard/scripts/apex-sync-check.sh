@@ -7,6 +7,12 @@
 #   apex-sync-check.sh record-sync    # after a successful import/export
 #   apex-sync-check.sh status         # inspect syncpoint + both replicas
 #   apex-sync-check.sh doctor         # validate this machine's wiring end to end
+# Options (before or after the subcommand):
+#   --force   record-sync only: record the syncpoint although nothing proves the
+#             Builder holds no unsynchronized work. The user's call, never an agent's.
+#
+# Exit codes: 0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED (precondition missing) ·
+#             3 UNKNOWN (started, outcome undeterminable — nothing authorized).
 #
 # Runs under bash: Linux, macOS, and Windows via Git Bash or WSL (not PowerShell/cmd).
 #
@@ -18,6 +24,8 @@
 # timestamp views (APEX_APPLICATION_PAGES / APEX_APPLICATIONS) miss some
 # shared-component edits, so they are used for the who/when report only.
 set -euo pipefail
+
+TTL_SECONDS=600   # how long a check PASS authorizes; must equal TTL in apex-sync-hook.sh
 
 # --- verdicts. A gate command (check-import, check-export, record-sync) ends in
 # exactly one status, and the EXIT trap (on_exit, below) turns it into the exit
@@ -49,6 +57,26 @@ now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }                    # BSD date has no 
 native_path() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
 }
+
+# ------------------------------------------------------------ arguments
+# Parsed before any setup, so a usage error never depends on SQLcl or a parser.
+USAGE="usage: $(basename "$0") check-import|check-export|record-sync|status|doctor [--force]"
+SUB=""; OPT_FORCE=0
+while (( $# )); do
+  case "$1" in
+    --force)   OPT_FORCE=1 ;;
+    -h|--help) echo "$USAGE"; exit 0 ;;
+    -*)        die "unknown option: $1 — $USAGE" ;;
+    *)         [[ -z "$SUB" ]] || die "unexpected argument: $1 — $USAGE"; SUB=$1 ;;
+  esac
+  shift
+done
+case "$SUB" in
+  check-import|check-export|record-sync) R_OP=$SUB ;;
+  status|doctor) ;;
+  *) die "$USAGE" ;;
+esac
+(( OPT_FORCE == 0 )) || [[ "$SUB" == record-sync ]] || die "--force is only valid with record-sync"
 
 # ---------------------------------------------------------------- setup
 [[ -n "${BASH_VERSION:-}" ]] || die "run this under bash (on Windows: Git Bash or WSL — PowerShell and cmd cannot execute it)"
@@ -276,7 +304,9 @@ materialize_base() {  # extracts the BASE tree to a scratch dir; sets BASE_APP_D
   local t; t=$(mktemp -d "${TMPDIR:-/tmp}/apex-sync-base-XXXXXX"); TMPS+=("$t")
   # An empty BASE would hide a page deleted in the Builder (missing on both sides),
   # so a failed extraction stops the check instead of comparing against nothing.
-  git -C "$ROOT" "${GIT_HERMETIC[@]}" archive "$REF" | tar -x -C "$t" \
+  # -m: mtimes are irrelevant to a byte comparison, and restoring them only made tar
+  # warn "time stamp in the future" when the syncpoint commit was seconds old.
+  git -C "$ROOT" "${GIT_HERMETIC[@]}" archive "$REF" | tar -x -m -C "$t" \
     || unknown UNEXPECTED_ERROR "could not extract the syncpoint $REF"
   [[ -d "$t/$ALIAS" ]] || unknown UNEXPECTED_ERROR "the syncpoint $REF holds no $ALIAS/ tree"
   BASE_APP_DIR="$t/$ALIAS"
@@ -421,13 +451,13 @@ write_marker() {  # $1 = import|export
 
 stored_stamp() { if [[ -f "$STATE" ]]; then json_get "$STATE" builderStamp; fi; }
 
-write_state() {  # $1 = syncpoint commit, $2 = builder stamp
+write_state() {  # $1 = syncpoint commit, $2 = builder stamp, $3 = basis (record-sync) or bootstrap
   # headCommit pins the payload's commit count to a revision instead of a clock:
   # `git log --since=<recordedAt>` has one-second granularity, so a commit made in
   # the same second as the syncpoint was counted or not depending on timing.
   local head; head=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo "")
-  printf '{"appId":%s,"appAlias":"%s","sqlclConnection":"%s","syncpoint":"%s","builderStamp":"%s","recordedAt":"%s","headCommit":"%s"}\n' \
-    "$APP_ID" "$ALIAS" "$CONN" "$1" "$2" "$(now_iso)" "$head" > "$STATE"
+  printf '{"appId":%s,"appAlias":"%s","sqlclConnection":"%s","syncpoint":"%s","builderStamp":"%s","recordedAt":"%s","headCommit":"%s","basis":"%s"}\n' \
+    "$APP_ID" "$ALIAS" "$CONN" "$1" "$2" "$(now_iso)" "$head" "${3:-bootstrap}" > "$STATE"
 }
 
 # ------------------------------------------------------------- commands
@@ -544,15 +574,54 @@ cmd_check_export() {
   echo "PASS: working tree clean under $SRCDIR. Safe to export."
 }
 
+marker_fresh() {  # $1 = import|export — written by a PASS less than TTL_SECONDS ago
+  local m="$STATE_DIR/check-ok.$1" t now
+  [[ -f "$m" ]] || return 1
+  t=$(mtime "$m" 2>/dev/null) || return 1
+  now=$(date +%s)
+  [[ "$t" =~ ^[0-9]+$ && "$now" =~ ^[0-9]+$ ]] || return 1
+  (( now - t >= 0 && now - t < TTL_SECONDS ))
+}
+
+# record-sync rewrites BASE to whatever the Builder holds right now. Run after a
+# real import or export that is exactly right; run after a CONFLICT it "launders"
+# the Builder-only work into BASE, the next check-import PASSes, and the import
+# destroys that work. So it needs one of these, in this order — the first that
+# holds is recorded as the basis of the new syncpoint:
+#   fresh-check           a check-import PASSed in the last TTL_SECONDS (the import
+#                         it authorized is what is being recorded). An export marker
+#                         does NOT count: after a skipped or failed export the
+#                         Builder can hold anything.
+#   builder-unchanged     the Builder still equals BASE: recording is a no-op.
+#   local-equals-builder  LOCAL equals the Builder: no Builder-only work exists
+#                         (this is the state right after an export).
+#   forced                --force: the user's explicit decision, kept in state.json.
 cmd_record_sync() {
   echo "apex-sync-guard: record-sync — exporting the Builder to snapshot its canonical state…"
-  local scratch c s
+  local scratch c s basis=""
   export_builder; scratch=$REMOTE_DIR
-  s=$(builder_stamp); snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s"
+  if marker_fresh import; then
+    basis=fresh-check
+  elif have_base && materialize_base && [[ -z "$(blocking "$(tree_diff "$BASE_APP_DIR" "$scratch/$ALIAS")")" ]]; then
+    basis=builder-unchanged
+  elif [[ -d "$APP_SRC" && -z "$(blocking "$(tree_diff "$APP_SRC" "$scratch/$ALIAS")")" ]]; then
+    basis=local-equals-builder
+  elif (( OPT_FORCE )); then
+    basis=forced
+    echo "  WARNING: --force — recording the Builder as BASE although nothing proves it holds no"
+    echo "  unsynchronized work. Any Builder-only change becomes invisible to the next check-import."
+  else
+    blocked NO_FRESH_CHECK "nothing proves the Builder holds no unsynchronized work: no check-import PASS in the last $((TTL_SECONDS / 60)) min, and the Builder differs from both BASE and LOCAL.
+      record-sync belongs right after a successful import (check-import PASS -> import -> record-sync) or export.
+      To resolve a CONFLICT, capture or merge the Builder changes and re-run check-import — never record-sync.
+      Only if the user decides the current Builder IS the new truth: they run record-sync --force themselves."
+  fi
+  s=$(builder_stamp); snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s" "$basis"
   pass SYNCPOINT_RECORDED
   echo "apex-sync-guard: syncpoint recorded for '$ALIAS'"
   note "commit:       $c"
   note "builderStamp: $s"
+  note "basis:        $basis"
 }
 
 DOC_BAD=0
@@ -611,6 +680,9 @@ cmd_status() {
   note "source dir: $SRCDIR/$ALIAS"
   if have_base; then
     note "syncpoint:  $(git -C "$ROOT" rev-parse --short "$REF")  recorded $( [[ -f "$STATE" ]] && json_get "$STATE" recordedAt || echo '?')"
+    if [[ -f "$STATE" && "$(json_get "$STATE" basis || true)" == forced ]]; then
+      note "            FORCED by record-sync --force — Builder-only work at that moment was not checked"
+    fi
     note "stored builderStamp:  $(stored_stamp)"
   else
     note "syncpoint:  NONE — bootstrap pending (run check-import once)"
@@ -631,11 +703,10 @@ cmd_status() {
   if have_base; then materialize_base; payload_report "$BASE_APP_DIR"; fi
 }
 
-case "${1:-}" in
-  check-import) R_OP=check-import; cmd_check_import ;;
-  check-export) R_OP=check-export; cmd_check_export ;;
-  record-sync)  R_OP=record-sync;  cmd_record_sync ;;
+case "$SUB" in
+  check-import) cmd_check_import ;;
+  check-export) cmd_check_export ;;
+  record-sync)  cmd_record_sync ;;
   status)       cmd_status ;;
   doctor)       cmd_doctor ;;
-  *) die "usage: $(basename "$0") check-import|check-export|record-sync|status|doctor" ;;
 esac

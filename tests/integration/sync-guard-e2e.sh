@@ -167,6 +167,29 @@ expect_out "the crash is named UNKNOWN, not PASS"            'reached PASS, then
 mv "$WORK/state.saved" "$MK/state.json"; rm -f src/demo/p99.apx
 "$CHK" check-import >/dev/null
 
+# --- record-sync rewrites BASE to whatever the Builder holds now. Run at the wrong
+# moment — to "clear" a CONFLICT, or after an export that never happened — it
+# launders Builder-only work into BASE: the next check-import PASSes and the import
+# destroys that work. It now needs a basis that rules this out, or the user's --force.
+ref_before=$(git rev-parse refs/apex-sync/demo)
+cp "$WORK/remote/demo/p30.apx" "$WORK/p30.saved"
+printf 'page 30 (\n  name: BuilderOnlyWork\n)\n' > "$WORK/remote/demo/p30.apx"
+expect "Builder moved -> check-import CONFLICT"                 1 "$CHK" check-import
+expect "record-sync to clear the CONFLICT -> BLOCKED"            2 "$CHK" record-sync
+expect "and the syncpoint did not move"                          0 test "$(git rev-parse refs/apex-sync/demo)" = "$ref_before"
+"$CHK" check-export >/dev/null
+expect "a fresh EXPORT marker is no basis -> BLOCKED"            2 "$CHK" record-sync
+printf '{"check":"import"}\n' > "$MK/check-ok.import" && touch -d '11 minutes ago' "$MK/check-ok.import"
+expect "an import marker past the TTL is no basis -> BLOCKED"    2 "$CHK" record-sync
+expect "--force is refused outside record-sync"                  2 "$CHK" check-import --force
+expect     "record-sync --force records it anyway"               0 "$CHK" record-sync --force
+expect_out "and state.json keeps the basis"                      '"basis":"forced"' cat "$MK/state.json"
+expect_out "and status shows the forced syncpoint"               'FORCED by record-sync --force' "$CHK" status
+mv "$WORK/p30.saved" "$WORK/remote/demo/p30.apx"
+"$CHK" check-import >/dev/null && "$CHK" record-sync >/dev/null      # back to a clean syncpoint
+rm -f "$MK/check-ok.import"
+expect_out "no marker but Builder == BASE -> recorded"           'basis: +builder-unchanged' "$CHK" record-sync
+
 # --- content comparison must not depend on git's content filters.
 # `git diff --no-index` applies .gitattributes/core.autocrlf to whichever side git
 # resolves inside the repo and not to the scratch export, so its verdict tracked the
