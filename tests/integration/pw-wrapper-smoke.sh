@@ -223,13 +223,14 @@ else bad "live session: expected exit 0, got $RC" "$WORK/err"; fi
 # /tmp/apex-sentinel-pw: two projects drove the same browser, login and last-url.
 export PW_CWD_LOG="$WORK/cwdlog"
 mkdir -p "$WORK/tmp" "$WORK/proj2" && git -C "$WORK/proj2" init -q
+# shellcheck disable=SC2030,SC2031   # the subshell-local environment is the point
 ws_of() {  # $1 = dir to run from, PW_WORKSPACE unset -> the workspace the CLI ran in
   : > "$PW_CWD_LOG"; printf '%s\n' "$OPEN" > "$PW_STATE"
   ( cd "$1" && unset PW_WORKSPACE && export TMPDIR="$WORK/tmp" PW_LOG="$WORK/log" && "$PW" eval '() => 1' ) >/dev/null 2>&1 || true
   tail -1 "$PW_CWD_LOG"            # the eval itself (the launcher probe runs where pw.sh was called)
 }
 w1=$(ws_of "$WORK/proj"); w2=$(ws_of "$WORK/proj2")
-if [[ "$w1" == "$WORK/tmp/apex-sentinel-$(id -u)/proj-default-"* ]]; then ok "workspace: per user, named after the project"
+if [[ "$w1" == "$WORK/tmp/apex-sentinel-$(id -u)/proj-APP-"* ]]; then ok "workspace: per user, named after the project and its app"
 else bad "workspace: unexpected default '$w1'"; fi
 if [[ -n "$w1" && -n "$w2" && "$w1" != "$w2" ]]; then ok "workspace: two projects get two workspaces"
 else bad "workspace: '$w1' vs '$w2'"; fi
@@ -274,6 +275,60 @@ mkdir -p "$WORK/ws/.playwright-cli" && : > "$WORK/ws/.playwright-cli/page-1.yml"
 run "$OPEN" close-all
 if [[ $RC -eq 0 && ! -e "$WORK/ws/.playwright-cli" ]]; then ok "close-all purges the snapshots"
 else bad "close-all left the snapshots behind (exit $RC)" "$WORK/err"; fi
+# --- several apps (apps[]): each its own test user, URL, password and browser. With
+# more than one, a browser-holding call must name its app — guessing logs into one
+# app with another's credentials.
+mkdir -p "$WORK/multi" && git -C "$WORK/multi" init -q
+printf '%s\n' '{ "apexlangDir": "src", "sqlclConnection": "dev", "testUser": "QA",
+  "apps": [ { "appId": 100, "appAlias": "hr", "testUser": "QA_HR", "runtimeUrl": "https://apex.example/r/ws/hr/" },
+            { "appId": 200, "appAlias": "sales-eu", "runtimeUrl": "https://apex.example/r/ws/sales/" } ] }' \
+  > "$WORK/multi/apex-sync.json"
+cd "$WORK/multi"
+run "$OPEN" eval '() => 1'
+if [[ $RC -eq 2 ]] && grep -q 'declares 2 apps — name one' "$WORK/err"; then ok "multi: a call without --app is refused"
+else bad "multi: expected exit 2 asking for --app, got $RC" "$WORK/err"; fi
+run "$OPEN" --app nope eval '() => 1'
+if [[ $RC -eq 2 ]] && grep -q "declares no app 'nope'" "$WORK/err"; then ok "multi: an unknown --app is refused"
+else bad "multi: expected exit 2 for --app nope, got $RC" "$WORK/err"; fi
+RC=0; "$PW" apps > "$WORK/out" 2>"$WORK/err" || RC=$?
+if [[ $RC -eq 0 ]] && grep -qx $'sales-eu\tQA\thttps://apex.example/r/ws/sales/' "$WORK/out"; then ok "multi: apps lists each app with the top-level defaults applied"
+else bad "multi: apps (exit $RC)" "$WORK/out" "$WORK/err"; fi
+
+export APEX_TEST_PASSWORD_HR='HrS3cret' PW_FAKE_URL='LOGIN-OK|QA_HR|https://apex.example/r/ws/hr/home?session=77'
+run "$OPEN" --app hr login
+check_in "multi: login uses the app's own test user"   "$WORK/snip" 'QA_HR'
+check_in "multi: ... its own runtime URL"               "$WORK/snip" 'https://apex\.example/r/ws/hr/'
+check_in "multi: ... and \$APEX_TEST_PASSWORD_<ALIAS>"  "$WORK/snip" 'HrS3cret'
+check_absent "multi: the per-app password stays out of argv" 'HrS3cret'
+printf 'APEX_TEST_PASSWORD_SALES_EU=EuS3cret\nAPEX_TEST_PASSWORD=Sh4red\n' > "$WORK/multi/.env"
+export PW_FAKE_URL='LOGIN-OK|QA|https://apex.example/r/ws/sales/home?session=78'
+run "$OPEN" --app sales-eu login
+check_in "multi: a dash in the alias becomes _ in the variable (.env)" "$WORK/snip" 'EuS3cret'
+check_in "multi: an app without testUser takes the default"           "$WORK/snip" 'USER = "QA"'
+unset APEX_TEST_PASSWORD_HR
+export PW_FAKE_URL='LOGIN-OK|QA_HR|https://apex.example/r/ws/hr/home?session=79'
+run "$OPEN" --app hr login
+check_in "multi: without a per-app password the shared one serves" "$WORK/snip" 'Sh4red'
+rm -f "$WORK/multi/.env"
+
+export PW_CWD_LOG="$WORK/cwdlog"
+# shellcheck disable=SC2030,SC2031   # the subshell-local environment is the point
+ws_app() {  # $1 = alias → the workspace a call for that app ran in
+  : > "$PW_CWD_LOG"; printf '%s\n' "$OPEN" > "$PW_STATE"
+  ( unset PW_WORKSPACE && export TMPDIR="$WORK/tmp" PW_LOG="$WORK/log" && "$PW" --app "$1" eval '() => 1' ) >/dev/null 2>&1 || true
+  tail -1 "$PW_CWD_LOG"
+}
+wh=$(ws_app hr); we=$(ws_app sales-eu)
+if [[ "$wh" == *"/multi-hr-"* && "$we" == *"/multi-sales-eu-"* ]]; then ok "multi: each app gets its own browser workspace"
+else bad "multi: workspaces '$wh' / '$we'"; fi
+mkdir -p "$wh/.playwright-cli" "$we/.playwright-cli"
+RC=0
+# shellcheck disable=SC2030,SC2031
+( unset PW_WORKSPACE && export TMPDIR="$WORK/tmp" PW_LOG="$WORK/log" && "$PW" close-all ) >/dev/null 2>"$WORK/err" || RC=$?
+if [[ $RC -eq 0 && ! -e "$wh/.playwright-cli" && ! -e "$we/.playwright-cli" ]]; then ok "multi: close-all without --app tears down every app's session"
+else bad "multi: close-all left a workspace behind (exit $RC)" "$WORK/err"; fi
+unset PW_CWD_LOG
+
 cd /                                    # the EXIT trap removes $WORK
 
 echo

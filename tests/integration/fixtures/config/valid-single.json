@@ -1,0 +1,1 @@
+{ "appId": 100, "appAlias": "hr", "apexlangDir": "apex/apexlang", "sqlclConnection": "dev_hr", "testUser": "QA_HR", "runtimeUrl": "https://apex.example/ords/r/ws/hr/" }

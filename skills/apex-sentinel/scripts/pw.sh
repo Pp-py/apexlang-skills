@@ -2,6 +2,12 @@
 # apex-sentinel — idempotent Playwright CLI entry point for runtime verification.
 #
 # Usage (from anywhere; every call is self-contained):
+#   pw.sh [--app <alias>] <subcommand> …
+#                           --app picks the app when apex-sync.json declares several
+#                           (apps[]): its test user, URL, password and its own browser.
+#                           Required then, except for list / close-all / kill-all, which
+#                           cover every app, and install*.
+#   pw.sh apps              the apps apex-sync.json declares: alias, testUser, runtimeUrl
 #   pw.sh open <url>        open the browser session on <url>, or reuse+navigate if already open
 #   pw.sh goto <url>        navigate the held session
 #   pw.sh login [url]       log the test user into the APEX runtime app; prints the
@@ -28,11 +34,11 @@
 # Environment (all optional):
 #   PW_WORKSPACE      dir anchoring the daemon session, config and snapshots.
 #                     Default: ${TMPDIR:-/tmp}/apex-sentinel-<uid>/<repo>-<app>-<crc>,
-#                     one per project, never inside it. Run pw.sh from inside the
-#                     project repo, or every project shares one browser and login.
+#                     one per project and app, never inside it. Run pw.sh from inside
+#                     the project repo, or every project shares one browser and login.
 #   PW_SESSION        browser session name (default: apex)
 #   PW_INSECURE_TLS   1 (default) accept self-signed certs; 0 to enforce validation
-#   APEX_TEST_USER / APEX_TEST_PASSWORD / APEX_TEST_FILE   see `login` below
+#   APEX_TEST_USER / APEX_TEST_PASSWORD (or …_<ALIAS>) / APEX_TEST_FILE   see `login` below
 #
 # The password is never passed as an argument to anything: it reaches the browser
 # through a mode-600 snippet file that is deleted on exit, and the CLI is run with
@@ -59,10 +65,157 @@ native_path() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
 }
 
+OPT_APP=""
+while (( $# )); do      # pw.sh's own options come BEFORE the subcommand; after it, all is the CLI's
+  case "$1" in
+    --app)   [[ -n "${2:-}" ]] || die "--app needs an app alias"; OPT_APP=$2; shift 2 ;;
+    --app=*) OPT_APP=${1#--app=}; [[ -n "$OPT_APP" ]] || die "--app needs an app alias"; shift ;;
+    *) break ;;
+  esac
+done
 [[ $# -gt 0 ]] || die "no subcommand — try: $(basename "$0") open <url>"
 CMD=$1; shift
 
 PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || PROJECT_ROOT=""
+upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }      # bash 3.2 has no ${x^^}
+
+# ----------------------------------------------------------------------- apps
+# apex-sync.json as far as this skill needs it: which apps exist, and each one's
+# testUser and runtimeUrl. Read the way apex-sync-guard reads it — the same flattening,
+# the same defaults (a top-level key is every app's default), the same strictness
+# inside apps[] — but on its own: apex-sentinel must work without that skill
+# installed, on a file that may hold nothing but testUser/runtimeUrl.
+# tests/integration/config-parity.sh holds both readers to the same fixtures.
+RE_APP_ALIAS='^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
+APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl'
+JSON_TOOL=()            # probed by RUNNING it: the Microsoft Store python3 stub only looks present
+if command -v jq >/dev/null 2>&1 && printf '{}' | jq -e . >/dev/null 2>&1; then
+  JSON_TOOL=(jq)
+else
+  for _c in "python3" "python" "py -3"; do
+    read -ra _cand <<<"$_c"
+    command -v "${_cand[0]}" >/dev/null 2>&1 || continue
+    if "${_cand[@]}" -c 'import json' >/dev/null 2>&1; then JSON_TOOL=("${_cand[@]}"); break; fi
+  done
+fi
+strip_cr() { tr -d '\r'; }
+# Same function as apex-sync-guard's lib/sync-config.sh: one row per JSON node,
+# "path<TAB>type<TAB>value" ($.apps.0.testUser …), identical under jq and python.
+json_flatten() {  # $1 = json file; non-zero exit if it is not valid JSON
+  if [[ "${JSON_TOOL[0]}" == "jq" ]]; then
+    jq -r 'def row($p; $v): [ (["$"] + ($p | map(tostring)) | join(".")), ($v | type),
+             ($v | if type == "string" then . elif type == "array" or type == "object" then (length | tostring)
+                   elif type == "null" then "" else tostring end) ] | @tsv;
+           row([]; .), (paths as $p | row($p; getpath($p)))' "$1" | strip_cr
+  else
+    "${JSON_TOOL[@]}" -c '
+import json, sys
+def esc(s): return s.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r")
+def kind(v):
+    if v is None: return "null"
+    if isinstance(v, bool): return "boolean"
+    if isinstance(v, (int, float)): return "number"
+    if isinstance(v, str): return "string"
+    return "array" if isinstance(v, list) else "object"
+out = []
+def walk(path, v):
+    k = kind(v)
+    val = esc(v) if k == "string" else ("true" if v else "false") if k == "boolean" else "" if k == "null" \
+        else str(len(v)) if k in ("array", "object") else json.dumps(v)
+    out.append(esc(".".join(["$"] + [str(p) for p in path])) + "\t" + k + "\t" + val)
+    for key, sub in (v.items() if k == "object" else enumerate(v) if k == "array" else []):
+        walk(path + [key], sub)
+walk([], json.load(open(sys.argv[1], encoding="utf-8")))
+sys.stdout.buffer.write(("\n".join(out) + "\n").encode("utf-8"))' "$1" | strip_cr
+  fi
+}
+
+raw_str() { sed -n 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -1 | strip_cr; }   # no parser at all
+PA_ALIAS=(); PA_USER=(); PA_URL=(); PA_ERR=()
+pa_load() {  # fills PA_* from the project's apex-sync.json (no file: no apps, no error)
+  local cfg="$PROJECT_ROOT/apex-sync.json" flat t n i k a l
+  [[ -n "$PROJECT_ROOT" && -f "$cfg" ]] || return 0
+  ftype() { awk -F'\t' -v p="$1" '$1 == p { print $2; exit }' <<<"$flat"; }
+  fval()  { awk -F'\t' -v p="$1" '$1 == p { print $3; exit }' <<<"$flat"; }
+  fkeys() { awk -F'\t' -v pre="$1." 'index($1, pre) == 1 { k = substr($1, length(pre) + 1); if (k !~ /\./) print k }' <<<"$flat"; }
+  fstr()  {  # $1 = app path, $2 = key → FS: the app's own string, else the top-level default
+    local p                              # (a global: from a $(...) subshell the error was lost)
+    FS=""
+    for p in "$1.$2" "\$.$2"; do
+      [[ -z "$(ftype "$p")" ]] && continue
+      if [[ "$(ftype "$p")" == string ]]; then FS=$(fval "$p"); else PA_ERR+=("$2 must be a string"); fi
+      return 0
+    done
+  }
+  if (( ! ${#JSON_TOOL[@]} )); then
+    # No parser: the one-app shape only, by its top-level keys — how this always read it.
+    if grep -q '"apps"' "$cfg"; then PA_ERR+=("reading apps[] needs jq or a python3 that runs"); return 0; fi
+    PA_ALIAS=("$(raw_str "$cfg" appAlias)"); PA_USER=("$(raw_str "$cfg" testUser)"); PA_URL=("$(raw_str "$cfg" runtimeUrl)")
+  else
+    flat=$(json_flatten "$cfg") || { PA_ERR+=("apex-sync.json is not valid JSON"); return 0; }
+    [[ "$(ftype '$')" == object ]] || { PA_ERR+=("apex-sync.json must hold a JSON object"); return 0; }
+    t=$(ftype '$.apps')
+    if [[ -z "$t" ]]; then
+      fstr '$' appAlias; PA_ALIAS=("$FS"); fstr '$' testUser; PA_USER=("$FS"); fstr '$' runtimeUrl; PA_URL=("$FS")
+    elif [[ "$t" != array ]]; then
+      PA_ERR+=("apps must be an array of app objects")
+    else
+      [[ -z "$(ftype '$.appId')$(ftype '$.appAlias')" ]] || PA_ERR+=("a top-level appId/appAlias cannot be combined with apps[]")
+      n=$(fval '$.apps'); (( n > 0 )) || PA_ERR+=("apps is empty")
+      for (( i = 0; i < n; i++ )); do
+        [[ "$(ftype "\$.apps.$i")" == object ]] || { PA_ERR+=("apps.$i must be an object"); continue; }
+        while IFS= read -r k; do
+          [[ -z "$k" || "$k" =~ ^($APP_KEYS)$ ]] || PA_ERR+=("apps.$i: unknown key '$k'")
+        done <<<"$(fkeys "\$.apps.$i")"
+        [[ "$(ftype "\$.apps.$i.appAlias")" == string ]] || PA_ERR+=("apps.$i: appAlias is missing")
+        PA_ALIAS+=("$(fval "\$.apps.$i.appAlias")")
+        fstr "\$.apps.$i" testUser; PA_USER+=("$FS"); fstr "\$.apps.$i" runtimeUrl; PA_URL+=("$FS")
+      done
+    fi
+  fi
+  for (( i = 0; i < ${#PA_ALIAS[@]}; i++ )); do
+    a=${PA_ALIAS[$i]}
+    [[ -z "$a" && ${#PA_ALIAS[@]} -eq 1 ]] || [[ "$a" =~ $RE_APP_ALIAS ]] || PA_ERR+=("appAlias '$a' must match $RE_APP_ALIAS")
+    [[ "${PA_URL[$i]}" != *session=* ]] || PA_ERR+=("the runtimeUrl of '${a:-the app}' carries a session token (session=…): the file is committed")
+    for (( k = i + 1; k < ${#PA_ALIAS[@]}; k++ )); do
+      l=${PA_ALIAS[$k]}
+      [[ "$(upper "$a")" != "$(upper "$l")" ]] || PA_ERR+=("appAlias '$a' and '$l' collide (case does not count)")
+    done
+  done
+  unset -f ftype fval fkeys fstr
+  return 0
+}
+pa_load
+
+if [[ "$CMD" == apps ]]; then           # the resolved list — what --app and login will use
+  (( ! ${#PA_ERR[@]} )) || die "apex-sync.json is invalid:$(printf '\n  - %s' "${PA_ERR[@]}")"
+  for (( i = 0; i < ${#PA_ALIAS[@]}; i++ )); do
+    [[ -n "${PA_ALIAS[$i]}${PA_USER[$i]}${PA_URL[$i]}" ]] && printf '%s\t%s\t%s\n' "${PA_ALIAS[$i]}" "${PA_USER[$i]}" "${PA_URL[$i]}"
+  done
+  exit 0
+fi
+
+# Which app this call acts on. With several declared, a browser-holding command
+# needs --app: guessing would log into one app with another's credentials.
+APP_ALIAS=""; APP_I=0; ALL_APPS=0
+case "$CMD" in
+  install|install-browser) ;;
+  *)
+    (( ! ${#PA_ERR[@]} )) || die "apex-sync.json is invalid:$(printf '\n  - %s' "${PA_ERR[@]}")"
+    if [[ -n "$OPT_APP" ]]; then
+      APP_I=-1
+      for (( i = 0; i < ${#PA_ALIAS[@]}; i++ )); do [[ "${PA_ALIAS[$i]}" == "$OPT_APP" ]] && APP_I=$i; done
+      (( APP_I >= 0 )) || die "apex-sync.json declares no app '$OPT_APP'${PA_ALIAS[0]:+ — it declares: ${PA_ALIAS[*]}}"
+      APP_ALIAS=$OPT_APP
+    elif (( ${#PA_ALIAS[@]} > 1 )); then
+      case "$CMD" in
+        list|close-all|kill-all) ALL_APPS=1 ;;
+        *) die "apex-sync.json declares ${#PA_ALIAS[@]} apps — name one: $(basename "$0") --app <$(IFS='|'; echo "${PA_ALIAS[*]}")> $CMD …" ;;
+      esac
+    else
+      APP_ALIAS=${PA_ALIAS[0]:-}
+    fi ;;
+esac
 
 # ------------------------------------------------------------------ workspace
 # One stable directory per project for the whole verification loop, outside any
@@ -73,18 +226,23 @@ PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || PROJECT_ROOT=""
 : "${PW_INSECURE_TLS:=1}"
 case "$PW_INSECURE_TLS" in 0|1) ;; *) die "PW_INSECURE_TLS must be 0 or 1 (got '$PW_INSECURE_TLS')" ;; esac
 slug() { printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-40; }
+ws_base="${TMPDIR:-/tmp}/apex-sentinel-$(id -u)"
+ws_for() {  # $1 = app alias ('' = none) → that app's default workspace
+  local crc
+  crc=$(printf '%s|%s' "$PROJECT_ROOT" "$1" | cksum | cut -d' ' -f1)
+  printf '%s/%s-%s-%s' "$ws_base" "$(slug "$(basename "$PROJECT_ROOT")")" "$(slug "${1:-default}")" "$crc"
+}
 if [[ -n "${PW_WORKSPACE:-}" ]]; then
   WS_FROM=override
+  ALL_APPS=0                          # one explicit workspace: there is nothing else to cover
 else
   WS_FROM=default
   # Per user and private: the login snippet briefly holds the password in here.
-  ws_base="${TMPDIR:-/tmp}/apex-sentinel-$(id -u)"
   (umask 077; mkdir -p "$ws_base") || die "cannot create $ws_base"
   [[ -O "$ws_base" ]] || die "$ws_base is not owned by you — refusing to use it (another user could plant files there)"
   chmod 700 "$ws_base" 2>/dev/null || true
   if [[ -n "$PROJECT_ROOT" ]]; then
-    ws_crc=$(printf '%s|%s' "$PROJECT_ROOT" "${APP_ALIAS:-}" | cksum | cut -d' ' -f1)
-    PW_WORKSPACE="$ws_base/$(slug "$(basename "$PROJECT_ROOT")")-$(slug "${APP_ALIAS:-default}")-$ws_crc"
+    PW_WORKSPACE=$(ws_for "$APP_ALIAS")
   else
     PW_WORKSPACE="$ws_base/default"
     warn "not inside a project repo — using the shared workspace $PW_WORKSPACE. Run pw.sh from inside the APEX project."
@@ -178,20 +336,22 @@ esac
 # Only `login` reads these. A username is not a secret, so it sits with the rest of
 # the project's config; the password never does, because apex-sync.json is committed.
 #
-#   user      apex-sync.json "testUser", or $APEX_TEST_USER
-#   password  $APEX_TEST_PASSWORD, else APEX_TEST_PASSWORD= in the repo root's .env,
-#             else "password" in $APEX_TEST_FILE (default ~/.apex-sentinel.json).
+#   user      $APEX_TEST_USER_<ALIAS>, else $APEX_TEST_USER, else the app's "testUser"
+#             in apex-sync.json, else "user" in $APEX_TEST_FILE
+#   password  the first of: $APEX_TEST_PASSWORD_<ALIAS>, APEX_TEST_PASSWORD_<ALIAS>= in
+#             the repo root's .env, $APEX_TEST_PASSWORD, APEX_TEST_PASSWORD= in that .env,
+#             "password" in $APEX_TEST_FILE (default ~/.apex-sentinel.json). The
+#             per-app names (<ALIAS> upper-cased, other characters as _) let several
+#             apps keep several test users; the plain ones serve a single app.
 #             A project that keeps its env file elsewhere points $APEX_TEST_ENV at
 #             it — this never goes looking, and never assumes a layout.
 SENTINEL_PASSWORD=""      # declared early: redact() reads it on every warn/die
 
-# python3 is probed by RUNNING it, not by presence: the Microsoft Store stub satisfies
-# `command -v` and then exits without doing anything.
 json_str() {  # $1 = file, $2 = key -> the string value on stdout, never on any argv
-  if (( HAVE_JQ )); then
+  if [[ "${JSON_TOOL[0]:-}" == jq ]]; then
     jq -r --arg k "$2" '.[$k] // empty' "$1" 2>/dev/null
-  elif python3 -c 'import json' 2>/dev/null; then
-    python3 -c 'import json, sys
+  elif (( ${#JSON_TOOL[@]} )); then
+    "${JSON_TOOL[@]}" -c 'import json, sys
 print(json.load(open(sys.argv[1])).get(sys.argv[2]) or "")' "$1" "$2" 2>/dev/null
   else
     sed -n 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -1
@@ -204,22 +364,20 @@ env_str() {  # $1 = .env file, $2 = key -> the value, with one layer of quotes r
 }
 
 resolve_credentials() {  # sets SENTINEL_USER, SENTINEL_PASSWORD, SENTINEL_APP_URL
-  local root cfg ext
-  root=$(git rev-parse --show-toplevel 2>/dev/null) || root=""
-  cfg="$root/apex-sync.json"
-  ext=${APEX_TEST_FILE:-$HOME/.apex-sentinel.json}
+  local ext=${APEX_TEST_FILE:-$HOME/.apex-sentinel.json} sfx="" v
+  [[ -n "$APP_ALIAS" ]] && sfx="_$(upper "$APP_ALIAS" | tr -c 'A-Z0-9' '_')"
 
-  SENTINEL_USER=${APEX_TEST_USER:-}
-  SENTINEL_APP_URL=${1:-}
-  if [[ -n "$root" && -f "$cfg" ]]; then
-    [[ -z "$SENTINEL_USER"    ]] && SENTINEL_USER=$(json_str "$cfg" testUser)
-    [[ -z "$SENTINEL_APP_URL" ]] && SENTINEL_APP_URL=$(json_str "$cfg" runtimeUrl)
-  fi
+  v="APEX_TEST_USER$sfx"
+  SENTINEL_USER=${!v:-${APEX_TEST_USER:-${PA_USER[$APP_I]:-}}}
+  SENTINEL_APP_URL=${1:-${PA_URL[$APP_I]:-}}
 
-  local envf=${APEX_TEST_ENV:-${root:+$root/.env}}
-  SENTINEL_PASSWORD=${APEX_TEST_PASSWORD:-}
-  [[ -z "$SENTINEL_PASSWORD" && -n "$envf" && -f "$envf" ]] \
-    && SENTINEL_PASSWORD=$(env_str "$envf" APEX_TEST_PASSWORD)
+  local envf=${APEX_TEST_ENV:-${PROJECT_ROOT:+$PROJECT_ROOT/.env}} k
+  SENTINEL_PASSWORD=""
+  for k in ${sfx:+"APEX_TEST_PASSWORD$sfx"} APEX_TEST_PASSWORD; do   # the app's own, then the shared one
+    [[ -n "$SENTINEL_PASSWORD" ]] && break
+    SENTINEL_PASSWORD=${!k:-}
+    [[ -z "$SENTINEL_PASSWORD" && -n "$envf" && -f "$envf" ]] && SENTINEL_PASSWORD=$(env_str "$envf" "$k")
+  done
   if [[ -z "$SENTINEL_PASSWORD" && -f "$ext" ]]; then
     SENTINEL_PASSWORD=$(json_str "$ext" password)
     [[ -z "$SENTINEL_USER" ]] && SENTINEL_USER=$(json_str "$ext" user)
@@ -227,9 +385,10 @@ resolve_credentials() {  # sets SENTINEL_USER, SENTINEL_PASSWORD, SENTINEL_APP_U
 
   [[ -n "$SENTINEL_APP_URL" ]] || die "no runtime URL — pass it (pw.sh login <url>) or add \"runtimeUrl\" to apex-sync.json"
   [[ -n "$SENTINEL_USER" ]] || die "no test user — add \"testUser\" to apex-sync.json, or set \$APEX_TEST_USER"
-  [[ -n "$SENTINEL_PASSWORD" ]] || die "no test password. Any one of:
-        \$APEX_TEST_PASSWORD
-        APEX_TEST_PASSWORD= in the repo root's .env (gitignore it first)
+  local which=""; [[ -n "$APP_ALIAS" ]] && which=" for app '$APP_ALIAS'"
+  [[ -n "$SENTINEL_PASSWORD" ]] || die "no test password$which. Any one of:
+        \$APEX_TEST_PASSWORD$sfx${sfx:+ (or \$APEX_TEST_PASSWORD, shared by every app)}
+        APEX_TEST_PASSWORD$sfx= in the repo root's .env (gitignore it first)
         \"password\" in $ext
       If this project keeps its env file somewhere else, point \$APEX_TEST_ENV at it —
       ask where it is rather than guessing. Use a dedicated low-privilege test user."
@@ -406,12 +565,26 @@ JS
     ;;
 
   list|close-all|kill-all|install|install-browser)
-    # Session-independent; never trigger recovery.
-    rc=0; (cd "$PW_WORKSPACE" && "${LAUNCHER[@]}" "$CMD" "$@") || rc=$?
-    # Snapshots are page dumps that can hold personal data: gone with the session.
-    if [[ "$CMD" == close-all || "$CMD" == kill-all ]] && (( rc == 0 )); then
-      rm -rf "$PW_WORKSPACE/.playwright-cli"
+    # Session-independent; never trigger recovery. list and close-all act on one
+    # workspace (the CLI scopes them to it), so without --app they visit every app's;
+    # kill-all is global already.
+    WSS=("$PW_WORKSPACE")
+    if (( ALL_APPS )); then
+      WSS=()
+      for a in "${PA_ALIAS[@]}"; do w=$(ws_for "$a"); [[ -d "$w/.playwright" ]] && WSS+=("$w"); done
     fi
+    rc=0
+    for w in "${WSS[@]:-}"; do
+      [[ -n "$w" ]] || continue
+      (( ALL_APPS )) && [[ "$CMD" == list ]] && echo "== $w"
+      if [[ "$CMD" != kill-all || "$w" == "${WSS[0]}" ]]; then
+        (cd "$w" && "${LAUNCHER[@]}" "$CMD" "$@") || rc=$?
+      fi
+      # Snapshots are page dumps that can hold personal data: gone with the session.
+      if [[ "$CMD" == close-all || "$CMD" == kill-all ]] && (( rc == 0 )); then
+        rm -rf "$w/.playwright-cli"
+      fi
+    done
     exit "$rc"
     ;;
 

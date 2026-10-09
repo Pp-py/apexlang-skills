@@ -93,13 +93,17 @@ canon_rel() {  # a path rel_path_ok accepted → no './' or empty segments, no t
 }
 
 # A string setting of the app at JSON path $1: its own value, else the top-level
-# default. Prints the value; a wrong type is an error, absence prints nothing.
+# default, in CS ('' when absent). A global, not printed: called as $(...) the
+# type error below was recorded in a subshell and lost — a non-string testUser
+# then read as "not set" instead of as an error.
+CS=""
 cfg_string() {  # $1 = app path, $2 = key, $3 = label for messages
   local p t
+  CS=""
   for p in "$1.$2" "\$.$2"; do
     t=$(cfg_type "$p")
     [[ -z "$t" ]] && continue
-    if [[ "$t" == string ]]; then cfg_value "$p"; else cfg_err "$3: $2 must be a string"; fi
+    if [[ "$t" == string ]]; then CS=$(cfg_value "$p"); else cfg_err "$3: $2 must be a string (got a $t)"; fi
     return 0
   done
 }
@@ -118,12 +122,16 @@ cfg_app() {  # $1 = JSON path of the app object; appends one app or records erro
   elif [[ "$t" != string || ! "$alias" =~ $RE_APP_ALIAS ]]; then
     cfg_err "$label: appAlias must match $RE_APP_ALIAS (letters, digits, '_' and '-'; it names a git ref and a directory)"
   fi
-  dir=$(cfg_string "$at" apexlangDir "$label")
-  if [[ -z "$dir" ]]; then cfg_err "$label: apexlangDir is missing"
+  cfg_string "$at" apexlangDir "$label"; dir=$CS
+  t=$(cfg_type "$at.apexlangDir"); [[ -n "$t" ]] || t=$(cfg_type '$.apexlangDir')
+  if [[ -z "$t" ]]; then cfg_err "$label: apexlangDir is missing"
+  elif [[ "$t" != string ]]; then :      # cfg_string recorded it
   elif ! rel_path_ok "$dir"; then cfg_err "$label: apexlangDir must be a relative path with forward slashes and no '..' (got '$dir')"
   else dir=$(canon_rel "$dir"); fi
-  conn=$(cfg_string "$at" sqlclConnection "$label")
-  if [[ -z "$conn" ]]; then cfg_err "$label: sqlclConnection is missing"
+  cfg_string "$at" sqlclConnection "$label"; conn=$CS
+  t=$(cfg_type "$at.sqlclConnection"); [[ -n "$t" ]] || t=$(cfg_type '$.sqlclConnection')
+  if [[ -z "$t" ]]; then cfg_err "$label: sqlclConnection is missing"
+  elif [[ "$t" != string ]]; then :      # cfg_string recorded it
   elif [[ ! "$conn" =~ $RE_CONNECTION ]]; then
     cfg_err "$label: sqlclConnection must be a saved connection NAME (sql -name <name>), never a connect string — no '/', '@', quotes or spaces"
   fi
@@ -144,9 +152,9 @@ cfg_app() {  # $1 = JSON path of the app object; appends one app or records erro
       fi
     done
   fi
-  url=$(cfg_string "$at" runtimeUrl "$label")
+  cfg_string "$at" runtimeUrl "$label"; url=$CS
   [[ "$url" != *session=* ]] || cfg_err "$label: runtimeUrl must not carry a session token (session=…): the file is committed"
-  user=$(cfg_string "$at" testUser "$label")
+  cfg_string "$at" testUser "$label"; user=$CS
   APPS_ID+=("$id"); APPS_ALIAS+=("$alias"); APPS_DIR+=("$dir"); APPS_CONN+=("$conn"); APPS_IGNORE+=("$ign")
   APPS_USER+=("$user"); APPS_URL+=("$url")
 }
@@ -210,8 +218,10 @@ cfg_load() {
     done
   fi
   if [[ -n "$(cfg_type '$.evidenceDir')" ]]; then
-    EVIDENCE_DIR=$(cfg_string '$' evidenceDir "apex-sync.json")
-    if rel_path_ok "$EVIDENCE_DIR" && [[ -n "$(canon_rel "$EVIDENCE_DIR")" ]]; then
+    cfg_string '$' evidenceDir "apex-sync.json"; EVIDENCE_DIR=$CS
+    if [[ "$(cfg_type '$.evidenceDir')" != string ]]; then
+      :                                  # the type error is already recorded
+    elif rel_path_ok "$EVIDENCE_DIR" && [[ -n "$(canon_rel "$EVIDENCE_DIR")" ]]; then
       EVIDENCE_DIR=$(canon_rel "$EVIDENCE_DIR")
     else
       cfg_err "apex-sync.json: evidenceDir must be a directory below the repo root — relative, forward slashes, no '..'"

@@ -101,6 +101,8 @@ If a project keeps its env file somewhere other than the repo root, point `$APEX
 
 `$APEX_TEST_USER` overrides the username the same way, and a URL argument overrides `runtimeUrl`. With no password anywhere, `pw.sh login` **stops and says what to set** — it never prompts and never guesses.
 
+**Several apps in one repo** (`apps[]` in `apex-sync.json`, see `apex-sync-guard/setup.md` §1): each app takes its own `testUser`/`runtimeUrl` (or the top-level default), and every browser call names its app — `pw.sh --app rrhh login`, `pw.sh --app rrhh eval …` — so it gets that app's credentials **and its own browser** (one workspace per app: two apps never share a login). Without `--app` such a call is refused; `list`, `close-all` and `kill-all` cover every app. Per-app variables come first, the plain ones serve as the shared fallback: `$APEX_TEST_PASSWORD_RRHH`, then `APEX_TEST_PASSWORD_RRHH=` in the `.env`, then `$APEX_TEST_PASSWORD`, … (the alias upper-cased, any other character as `_`: `sales-eu` → `APEX_TEST_PASSWORD_SALES_EU`); `$APEX_TEST_USER_RRHH` likewise. `pw.sh apps` prints what each app resolved to.
+
 ### Four things that make a hand-rolled login silently wrong
 
 `login` handles these; on the MCP path you have to yourself.

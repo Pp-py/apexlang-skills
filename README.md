@@ -65,6 +65,7 @@ Grammar status, measured rather than claimed: Oracle's 26.1 local lint (release 
 git ls-files -z -- '*.sh' | xargs -0 shellcheck -x   # lint
 tests/integration/sync-guard-e2e.sh                  # offline e2e (stubbed SQLcl)
 tests/integration/pw-wrapper-smoke.sh                # pw.sh (stubbed Playwright CLI)
+tests/integration/config-parity.sh                   # apex-sync.json read alike by the guard and pw.sh
 tests/contract/run.sh                                # JSON contracts: schemas, negatives, every emitted result
 tests/upstream/verify-citations.sh                   # quotes from Oracle's skills still say what we claim
 tests/upstream/validate-examples.sh [--compiler]     # the examples under Oracle's 26.1 lint, or SQLcl apex validate
