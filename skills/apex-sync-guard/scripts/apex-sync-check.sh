@@ -20,6 +20,10 @@
 set -euo pipefail
 
 die()  { echo "apex-sync-guard: ERROR: $*" >&2; exit 2; }
+# The check started but cannot say what the Builder holds (an export or a git
+# step failed part-way): not a verdict on the replicas, and never a PASS.
+# $1 = reason code, kept so the call sites already name why.
+unknown() { shift; echo "apex-sync-guard: ERROR: $*" >&2; exit 3; }
 fail() { echo ""; echo "FAIL: $*" >&2; exit 1; }
 note() { echo "  $*"; }
 mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }   # GNU stat / BSD (macOS) stat
@@ -194,40 +198,59 @@ pages_changed_since() {  # $1 = stamp 'YYYY-MM-DD"T"HH24:MI:SS' (skipped if unav
            order by last_updated_on;"
 }
 
-export_builder() {  # exports REMOTE (the Builder) to a scratch dir; prints its path
+# The three helpers below run in THIS shell and hand their result back in a
+# global, never through $(...): bash clears errexit inside a command
+# substitution, so a failed step there went unnoticed (a git failure printed
+# "syncpoint recorded" with an empty commit), and the TMPS+= they did was lost
+# with the subshell, so every scratch export leaked into $TMPDIR.
+REMOTE_DIR=""     # export_builder: scratch dir holding the Builder export (<alias>/…)
+BASE_APP_DIR=""   # materialize_base: the BASE tree's <alias>/ dir
+SNAP_COMMIT=""    # snapshot_export: the syncpoint commit just recorded
+
+export_builder() {  # exports REMOTE (the Builder) to a scratch dir; sets REMOTE_DIR
   local scratch native; scratch=$(mktemp -d "${TMPDIR:-/tmp}/apex-sync-remote-XXXXXX"); TMPS+=("$scratch")
   native=$(native_path "$scratch")
   # Quoted only when it has to be: how SQLcl's `apex export -dir` tokenizes a path
-  # with spaces is unverified here, so the quoting is a best effort and the die
+  # with spaces is unverified here, so the quoting is a best effort and the error
   # below points at TMPDIR if it still fails.
   [[ "$native" == *" "* ]] && native="\"$native\""
-  run_sql "apex export -applicationid $APP_ID -expType APEXLANG -dir $native" >/dev/null
-  [[ -f "$scratch/$ALIAS/application.apx" ]] || die "the Builder export produced no $ALIAS/application.apx in $scratch (SQLcl was given -dir $native) — check the connection and app id; if app $APP_ID does not exist in the workspace yet, remote_app_exists should have caught it before here; if that path holds spaces, point TMPDIR at one that does not"
-  echo "$scratch"
+  run_sql "apex export -applicationid $APP_ID -expType APEXLANG -dir $native" >/dev/null \
+    || unknown EXPORT_FAILED "the Builder export failed (SQLcl exited non-zero) — check the connection with: $(basename "$0") doctor"
+  [[ -f "$scratch/$ALIAS/application.apx" ]] || unknown EXPORT_FAILED "the Builder export produced no $ALIAS/application.apx in $scratch (SQLcl was given -dir $native) — check the connection and app id; if app $APP_ID does not exist in the workspace yet, remote_app_exists should have caught it before here; if that path holds spaces, point TMPDIR at one that does not"
+  REMOTE_DIR=$scratch
 }
 
 # ------------------------------------------------------------ git layer
 have_base() { git -C "$ROOT" rev-parse -q --verify "$REF" >/dev/null; }
 
-materialize_base() {  # extracts the BASE tree to a tmpdir; prints path of the app dir
+materialize_base() {  # extracts the BASE tree to a scratch dir; sets BASE_APP_DIR
   local t; t=$(mktemp -d "${TMPDIR:-/tmp}/apex-sync-base-XXXXXX"); TMPS+=("$t")
-  git -C "$ROOT" "${GIT_HERMETIC[@]}" archive "$REF" | tar -x -C "$t"
-  echo "$t/$ALIAS"
+  # An empty BASE would hide a page deleted in the Builder (missing on both sides),
+  # so a failed extraction stops the check instead of comparing against nothing.
+  git -C "$ROOT" "${GIT_HERMETIC[@]}" archive "$REF" | tar -x -C "$t" \
+    || unknown UNEXPECTED_ERROR "could not extract the syncpoint $REF"
+  [[ -d "$t/$ALIAS" ]] || unknown UNEXPECTED_ERROR "the syncpoint $REF holds no $ALIAS/ tree"
+  BASE_APP_DIR="$t/$ALIAS"
 }
 
 # BASE is always snapshotted from an `apex export` scratch dir, never from the
 # raw working tree: hand-edited .apx differ textually (whitespace, fenced vs
 # inline blocks, JSON spacing) from the exporter's canonical serialization, so
 # only canonical-vs-canonical comparisons are noise-free.
-snapshot_export() {  # $1 = scratch dir containing <alias>/…; commits it to $REF
-  local tmpidx tree commit
-  tmpidx=$(mktemp -u "${TMPDIR:-/tmp}/apex-sync-idx-XXXXXX")
-  GIT_INDEX_FILE=$tmpidx git "${GIT_HERMETIC[@]}" --git-dir="$ROOT/.git" --work-tree="$1" add -f -A -- . 2>/dev/null
-  tree=$(GIT_INDEX_FILE=$tmpidx git --git-dir="$ROOT/.git" write-tree)
-  commit=$(git -C "$ROOT" commit-tree "$tree" -m "apex-sync syncpoint $ALIAS $(now_iso)")
-  git -C "$ROOT" update-ref "$REF" "$commit"
+snapshot_export() {  # $1 = scratch dir containing <alias>/…; commits it to $REF; sets SNAP_COMMIT
+  local tmpidx tree="" commit=""
+  tmpidx=$(mktemp -u "${TMPDIR:-/tmp}/apex-sync-idx-XXXXXX"); TMPS+=("$tmpidx")
+  # Every step is checked, and the ref is read back: "recorded" must mean the ref
+  # really points at the new commit (commit-tree fails without a git identity).
+  if ! { GIT_INDEX_FILE=$tmpidx git "${GIT_HERMETIC[@]}" --git-dir="$ROOT/.git" --work-tree="$1" add -f -A -- . 2>/dev/null \
+         && tree=$(GIT_INDEX_FILE=$tmpidx git --git-dir="$ROOT/.git" write-tree) \
+         && commit=$(git -C "$ROOT" commit-tree "$tree" -m "apex-sync syncpoint $ALIAS $(now_iso)") \
+         && git -C "$ROOT" update-ref "$REF" "$commit" \
+         && [[ -n "$commit" && "$(git -C "$ROOT" rev-parse -q --verify "$REF^{commit}")" == "$commit" ]]; }; then
+    unknown SNAPSHOT_FAILED "could not record the syncpoint in $REF (a git step failed — is user.name/user.email configured in this repo?)"
+  fi
   rm -f "$tmpidx"
-  echo "$commit"
+  SNAP_COMMIT=$commit
 }
 
 # ------------------------------------------------------- content comparison
@@ -372,7 +395,7 @@ cmd_check_import() {
     return 0
   fi
 
-  local scratch; scratch=$(export_builder)
+  export_builder; local scratch=$REMOTE_DIR
   echo "  Builder exported to scratch: $scratch"
 
   if ! have_base; then
@@ -381,7 +404,7 @@ cmd_check_import() {
     echo "   the Builder export is the canonical serialization)"
     local boot; boot=$(tree_diff "$APP_SRC" "$scratch/$ALIAS")
     if [[ -z "$(blocking "$boot")" ]]; then
-      local c s; s=$(builder_stamp); c=$(snapshot_export "$scratch"); write_state "$c" "$s"; write_marker import
+      local c s; s=$(builder_stamp); snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s"; write_marker import
       echo "PASS: replicas already agree — first syncpoint recorded ($c). Safe to import."
       eol_note "$boot"
       return 0
@@ -393,7 +416,7 @@ cmd_check_import() {
     fail "bootstrap: BUILDER ≠ LOCAL and there is no BASE to arbitrate. Reconcile once by hand (Builder export kept at $scratch), commit, then record-sync. See setup.md §2."
   fi
 
-  local base dif; base=$(materialize_base); dif=$(tree_diff "$base" "$scratch/$ALIAS")
+  materialize_base; local base=$BASE_APP_DIR dif; dif=$(tree_diff "$base" "$scratch/$ALIAS")
   if [[ -z "$(blocking "$dif")" ]]; then
     write_marker import
     echo "PASS: Builder untouched since last syncpoint. Safe to import."
@@ -461,8 +484,8 @@ cmd_check_export() {
 cmd_record_sync() {
   echo "apex-sync-guard: record-sync — exporting the Builder to snapshot its canonical state…"
   local scratch c s
-  scratch=$(export_builder)
-  s=$(builder_stamp); c=$(snapshot_export "$scratch"); write_state "$c" "$s"
+  export_builder; scratch=$REMOTE_DIR
+  s=$(builder_stamp); snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s"
   echo "apex-sync-guard: syncpoint recorded for '$ALIAS'"
   note "commit:       $c"
   note "builderStamp: $s"
@@ -541,7 +564,7 @@ cmd_status() {
   # What an import from here would deploy — no Builder export needed for this half.
   # (an `if`, not `have_base && …`: as the last statement of the function, a false
   #  `&&` would become status's exit code and report a bootstrap-pending repo as failed)
-  if have_base; then payload_report "$(materialize_base)"; fi
+  if have_base; then materialize_base; payload_report "$BASE_APP_DIR"; fi
 }
 
 case "${1:-}" in

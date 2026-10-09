@@ -74,6 +74,16 @@ expect_out() {  # $1 = description, $2 = ERE the combined output must match, res
     while IFS= read -r l; do printf '       | %s\n' "$l"; done <<<"$out"
   fi
 }
+expect_out_not() {  # $1 = description, $2 = ERE the combined output must NOT match, rest = command
+  local desc=$1 unwanted=$2; shift 2
+  local out; out=$("$@" 2>&1) || true
+  if grep -qE "$unwanted" <<<"$out"; then
+    echo "FAIL $desc (output matched /$unwanted/)"; fail=$((fail+1))
+    while IFS= read -r l; do printf '       | %s\n' "$l"; done <<<"$out"
+  else
+    echo "ok   $desc"; pass=$((pass+1))
+  fi
+}
 hook_in_proj()  { printf '{"tool_name":"%s","tool_input":{"command":"%s"},"cwd":"%s"}' "${2:-Bash}" "$1" "$WORK/proj" | "$HOOK"; }
 hook_out_repo() { printf '{"tool_input":{"command":"apex import"},"cwd":"/"}' | "$HOOK"; }
 
@@ -97,6 +107,32 @@ expect "dirty source dir -> check-export FAIL"               1 "$CHK" check-expo
 git checkout -q -- src/demo/p30.apx
 expect "clean source dir -> check-export PASS"               0 "$CHK" check-export
 expect "status runs"                                         0 "$CHK" status
+
+# --- scratch hygiene and honest snapshots. The export/snapshot helpers used to run
+# inside $(...): the scratch dirs they registered were lost with the subshell (every
+# check leaked a full Builder export into TMPDIR), and errexit does not reach into a
+# command substitution, so a failed git step still printed "syncpoint recorded".
+count_scratch() { find "$WORK" -maxdepth 1 -name 'apex-sync-*' | wc -l | tr -d '[:space:]'; }
+before=$(count_scratch)
+"$CHK" check-import >/dev/null 2>&1 || true
+expect "a PASS leaves no scratch export behind"              0 test "$(count_scratch)" = "$before"
+cp "$WORK/remote/demo/p30.apx" "$WORK/p30.saved"
+printf 'page 30 (\n  name: HygieneEdit\n)\n' > "$WORK/remote/demo/p30.apx"
+before=$(count_scratch)
+"$CHK" check-import >/dev/null 2>&1 || true
+expect "a FAIL keeps exactly the Builder export it printed"  0 test "$(count_scratch)" = "$((before + 1))"
+mv "$WORK/p30.saved" "$WORK/remote/demo/p30.apx"
+"$CHK" check-import >/dev/null                         # back in sync: a fresh PASS for record-sync
+mkdir -p "$WORK/gitfail"
+# shellcheck disable=SC2016   # the stub's "$@" must reach the file unexpanded
+printf '#!/usr/bin/env bash\nfor a in "$@"; do [[ "$a" == commit-tree ]] && { echo "fatal: simulated commit-tree failure" >&2; exit 128; }; done\nexec "%s" "$@"\n' \
+  "$(command -v git)" > "$WORK/gitfail/git" && chmod +x "$WORK/gitfail/git"
+# shellcheck disable=SC2030,SC2031   # the subshell-local PATH is the point
+with_git_fail() { ( export PATH="$WORK/gitfail:$PATH"; "$@" ); }
+ref_before=$(git rev-parse refs/apex-sync/demo)
+expect         "a failed snapshot exits 3, not 0"            3 with_git_fail "$CHK" record-sync
+expect_out_not "and is never reported as recorded"           'syncpoint recorded' with_git_fail "$CHK" record-sync
+expect         "and the syncpoint ref is untouched"          0 test "$(git rev-parse refs/apex-sync/demo)" = "$ref_before"
 
 # --- content comparison must not depend on git's content filters.
 # `git diff --no-index` applies .gitattributes/core.autocrlf to whichever side git
