@@ -271,6 +271,42 @@ if [[ -n "$real_python" ]]; then
   expect "CRLF-emitting parser still honours ignorePaths"          0 with_crlf_json "$CHK" check-import
 fi
 
+# --- apex-sync.json is validated as a whole before anything trusts it, with one
+# reading shared by jq and python. Read key by key, the two parsers disagreed: python
+# iterated a string-valued ignorePaths character by character, so nearly every file
+# was excluded from the comparison and the check PASSed without comparing anything.
+CFG_FILE="$WORK/proj/apex-sync.json"
+with_config() {  # $1 = the JSON to use for one command; the real config is always restored
+  local saved rc=0; saved=$(cat "$CFG_FILE"); printf '%s\n' "$1" > "$CFG_FILE"; shift
+  "$@" || rc=$?
+  printf '%s\n' "$saved" > "$CFG_FILE"; return "$rc"
+}
+APPCFG='"appId": 100, "appAlias": "demo", "apexlangDir": "src", "sqlclConnection": "fake"'
+expect "ignorePaths as a string -> BLOCKED (jq)"              2 with_config "{ $APPCFG, \"ignorePaths\": \"apex-exports/\" }" "$CHK" check-import
+if [[ -n "$real_python" ]]; then
+  expect "ignorePaths as a string -> BLOCKED (python)"        2 without_jq with_config "{ $APPCFG, \"ignorePaths\": \"apex-exports/\" }" "$CHK" check-import
+fi
+cp "$WORK/remote/demo/p30.apx" "$WORK/p30.saved"
+printf 'page 30 (\n  name: HiddenByAPrefix\n)\n' > "$WORK/remote/demo/p30.apx"
+expect "ignorePaths matches segments: \"p\" does not hide p30.apx" 1 with_config "{ $APPCFG, \"ignorePaths\": [\"p\"] }" "$CHK" check-import
+mv "$WORK/p30.saved" "$WORK/remote/demo/p30.apx"
+NODIR='{ "appId": 100, "appAlias": "demo", "apexlangDir": "nope", "sqlclConnection": "fake" }'
+expect "a source dir that does not exist -> check-export BLOCKED (was PASS)" 2 with_config "$NODIR" "$CHK" check-export
+expect "a source dir that does not exist -> check-import BLOCKED"            2 with_config "$NODIR" "$CHK" check-import
+expect "a connect string as sqlclConnection -> BLOCKED"       2 with_config '{ "appId": 100, "appAlias": "demo", "apexlangDir": "src", "sqlclConnection": "scott/tiger@db" }' "$CHK" check-import
+expect "a non-numeric appId -> BLOCKED"                       2 with_config '{ "appId": "abc", "appAlias": "demo", "apexlangDir": "src", "sqlclConnection": "fake" }' "$CHK" check-import
+expect "an alias that is not a plain name -> BLOCKED"         2 with_config '{ "appId": 100, "appAlias": "../x", "apexlangDir": "src", "sqlclConnection": "fake" }' "$CHK" check-import
+expect "apps[] next to a top-level appId -> BLOCKED"          2 with_config "{ $APPCFG, \"apps\": [] }" "$CHK" check-import
+expect "an empty object -> BLOCKED"                           2 with_config '{}' "$CHK" check-import
+expect_out "and every missing key is named at once"           'sqlclConnection is missing' with_config '{}' "$CHK" check-import
+expect     "doctor on an invalid config -> exit 1, not a crash" 1 with_config '{}' "$CHK" doctor
+expect_out "doctor lists the config errors"                   'FAIL +apex-sync.json: appAlias is missing' with_config '{}' "$CHK" doctor
+mkdir -p src/demo/deployments && printf '{ "app": { "id": 999 } }\n' > src/demo/deployments/default.json
+expect     "deployments/default.json names another app -> BLOCKED" 2 "$CHK" check-import
+expect_out "and both ids are named"                           'says app 999, apex-sync.json says 100' "$CHK" check-import
+rm -rf src/demo/deployments
+"$CHK" check-import >/dev/null
+
 # --- doctor: one command that validates a machine, probing by doing
 expect     "doctor passes on a wired project"                      0 "$CHK" doctor
 expect_out "doctor names the resolved JSON parser"                 'JSON parser \(probed by execution\)' "$CHK" doctor
