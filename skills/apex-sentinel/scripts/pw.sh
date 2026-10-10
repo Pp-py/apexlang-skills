@@ -61,8 +61,11 @@ warn() { echo "apex-sentinel: $(redact "$*")" >&2; }
 # --config is read by node, a native binary on Windows: a POSIX path from this
 # shell would be resolved against the current drive and the config silently missed
 # (and with it ignoreHTTPSErrors, so the loop stalls on a self-signed cert).
-native_path() {
-  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
+# Helpers on the startup path hand their result back in a global rather than print it
+# into a $(...): every process costs tens of milliseconds under Git Bash.
+NP=""
+native_path() {  # $1 = a path → NP
+  if command -v cygpath >/dev/null 2>&1; then NP=$(cygpath -m "$1"); else NP=$1; fi
 }
 
 OPT_APP=""
@@ -79,8 +82,22 @@ CMD=$1; shift
 # In the shell's own physical form, like every path it is compared with: Git for Windows
 # reports C:/Users/… where the shell's `pwd -P` says /c/Users/…, and the two never
 # matched — a workspace inside the repo went unrefused on Windows.
-PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && PROJECT_ROOT=$(cd "$PROJECT_ROOT" 2>/dev/null && pwd -P) || PROJECT_ROOT=""
-upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }      # bash 3.2 has no ${x^^}
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || PROJECT_ROOT=""
+if [[ -n "$PROJECT_ROOT" ]]; then     # `cd … && pwd -P`, in this shell: in, physically, back
+  _here=$PWD
+  if CDPATH='' cd -- "$PROJECT_ROOT" 2>/dev/null && CDPATH='' cd -P . 2>/dev/null; then PROJECT_ROOT=$PWD; else PROJECT_ROOT=""; fi
+  cd -- "$_here"
+fi
+# ASCII letters upper-cased, in UV — what tr did here: bash 3.2 has no ${x^^}.
+UV=""
+upper_v() {
+  local s=$1
+  s=${s//a/A}; s=${s//b/B}; s=${s//c/C}; s=${s//d/D}; s=${s//e/E}; s=${s//f/F}; s=${s//g/G}
+  s=${s//h/H}; s=${s//i/I}; s=${s//j/J}; s=${s//k/K}; s=${s//l/L}; s=${s//m/M}; s=${s//n/N}
+  s=${s//o/O}; s=${s//p/P}; s=${s//q/Q}; s=${s//r/R}; s=${s//s/S}; s=${s//t/T}; s=${s//u/U}
+  s=${s//v/V}; s=${s//w/W}; s=${s//x/X}; s=${s//y/Y}; s=${s//z/Z}
+  UV=$s
+}
 
 # ----------------------------------------------------------------------- apps
 # apex-sync.json as far as this skill needs it: which apps exist, and each one's
@@ -92,7 +109,7 @@ upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }      # bash 3.2 has n
 RE_APP_ALIAS='^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
 APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl'
 JSON_TOOL=()            # probed by RUNNING it: the Microsoft Store python3 stub only looks present
-if command -v jq >/dev/null 2>&1 && printf '{}' | jq -e . >/dev/null 2>&1; then
+if command -v jq >/dev/null 2>&1 && jq -e . <<<'{}' >/dev/null 2>&1; then
   JSON_TOOL=(jq)
 else
   for _c in "python3" "python" "py -3"; do
@@ -104,14 +121,14 @@ fi
 strip_cr() { tr -d '\r'; }
 # Same function as apex-sync-guard's lib/sync-config.sh: one row per JSON node,
 # "path<TAB>type<TAB>value" ($.apps.0.testUser …), identical under jq and python.
-json_flatten() {  # $1 = json file; non-zero exit if it is not valid JSON
+json_flatten() {  # $1 = json file → JF; non-zero exit if it is not valid JSON
   if [[ "${JSON_TOOL[0]}" == "jq" ]]; then
-    jq -r 'def row($p; $v): [ (["$"] + ($p | map(tostring)) | join(".")), ($v | type),
+    JF=$(jq -r 'def row($p; $v): [ (["$"] + ($p | map(tostring)) | join(".")), ($v | type),
              ($v | if type == "string" then . elif type == "array" or type == "object" then (length | tostring)
                    elif type == "null" then "" else tostring end) ] | @tsv;
-           row([]; .), (paths as $p | row($p; getpath($p)))' "$1" | strip_cr
+           row([]; .), (paths as $p | row($p; getpath($p)))' "$1") || return
   else
-    "${JSON_TOOL[@]}" -c '
+    JF=$("${JSON_TOOL[@]}" -c '
 import json, sys
 def esc(s): return s.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r")
 def kind(v):
@@ -129,24 +146,59 @@ def walk(path, v):
     for key, sub in (v.items() if k == "object" else enumerate(v) if k == "array" else []):
         walk(path + [key], sub)
 walk([], json.load(open(sys.argv[1], encoding="utf-8")))
-sys.stdout.buffer.write(("\n".join(out) + "\n").encode("utf-8"))' "$1" | strip_cr
+sys.stdout.buffer.write(("\n".join(out) + "\n").encode("utf-8"))' "$1") || return
   fi
+  JF=${JF//$'\r'/}
+}
+
+# The flattened rows, split once into PF_P/PF_T/PF_V and looked up in this shell: an
+# awk per key, through $(...), had cost two processes each.
+PF_P=(); PF_T=(); PF_V=()
+pa_index() {  # $1 = json_flatten rows
+  local IFS=$'\n' row rest rows=() noglob=0
+  PF_P=(); PF_T=(); PF_V=()
+  [[ $- == *f* ]] && noglob=1
+  set -f
+  # shellcheck disable=SC2206   # split on newlines on purpose, with globbing off
+  rows=($1)
+  (( noglob )) || set +f
+  for row in ${rows[@]+"${rows[@]}"}; do
+    rest=${row#*$'\t'}
+    PF_P+=("${row%%$'\t'*}"); PF_T+=("${rest%%$'\t'*}"); PF_V+=("${rest#*$'\t'}")
+  done
+}
+PT=""; PV=""
+pa_get() {  # $1 = JSON path → PT (its type, '' when absent) and PV (its value); always 0
+  local i
+  PT=""; PV=""
+  for (( i = 0; i < ${#PF_P[@]}; i++ )); do
+    if [[ "${PF_P[$i]}" == "$1" ]]; then PT=${PF_T[$i]}; PV=${PF_V[$i]}; return 0; fi
+  done
+  return 0
+}
+PK=()
+pa_keys() {  # $1 = JSON path → PK: the keys of its direct members, in file order
+  local i k pre="$1."
+  PK=()
+  for (( i = 0; i < ${#PF_P[@]}; i++ )); do
+    [[ "${PF_P[$i]}" == "$pre"* ]] || continue
+    k=${PF_P[$i]#"$pre"}
+    [[ "$k" == *.* ]] || PK+=("$k")
+  done
 }
 
 raw_str() { sed -n 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -1 | strip_cr; }   # no parser at all
 PA_ALIAS=(); PA_USER=(); PA_URL=(); PA_ERR=()
 pa_load() {  # fills PA_* from the project's apex-sync.json (no file: no apps, no error)
-  local cfg="$PROJECT_ROOT/apex-sync.json" flat t n i k a l
+  local cfg="$PROJECT_ROOT/apex-sync.json" t n i k a l la
   [[ -n "$PROJECT_ROOT" && -f "$cfg" ]] || return 0
-  ftype() { awk -F'\t' -v p="$1" '$1 == p { print $2; exit }' <<<"$flat"; }
-  fval()  { awk -F'\t' -v p="$1" '$1 == p { print $3; exit }' <<<"$flat"; }
-  fkeys() { awk -F'\t' -v pre="$1." 'index($1, pre) == 1 { k = substr($1, length(pre) + 1); if (k !~ /\./) print k }' <<<"$flat"; }
   fstr()  {  # $1 = app path, $2 = key → FS: the app's own string, else the top-level default
     local p                              # (a global: from a $(...) subshell the error was lost)
     FS=""
     for p in "$1.$2" "\$.$2"; do
-      [[ -z "$(ftype "$p")" ]] && continue
-      if [[ "$(ftype "$p")" == string ]]; then FS=$(fval "$p"); else PA_ERR+=("$2 must be a string"); fi
+      pa_get "$p"
+      [[ -z "$PT" ]] && continue
+      if [[ "$PT" == string ]]; then FS=$PV; else PA_ERR+=("$2 must be a string"); fi
       return 0
     done
   }
@@ -155,37 +207,40 @@ pa_load() {  # fills PA_* from the project's apex-sync.json (no file: no apps, n
     if grep -q '"apps"' "$cfg"; then PA_ERR+=("reading apps[] needs jq or a python3 that runs"); return 0; fi
     PA_ALIAS=("$(raw_str "$cfg" appAlias)"); PA_USER=("$(raw_str "$cfg" testUser)"); PA_URL=("$(raw_str "$cfg" runtimeUrl)")
   else
-    flat=$(json_flatten "$cfg") || { PA_ERR+=("apex-sync.json is not valid JSON"); return 0; }
-    [[ "$(ftype '$')" == object ]] || { PA_ERR+=("apex-sync.json must hold a JSON object"); return 0; }
-    t=$(ftype '$.apps')
+    json_flatten "$cfg" || { PA_ERR+=("apex-sync.json is not valid JSON"); return 0; }
+    pa_index "$JF"
+    pa_get '$'; [[ "$PT" == object ]] || { PA_ERR+=("apex-sync.json must hold a JSON object"); return 0; }
+    pa_get '$.apps'; t=$PT
     if [[ -z "$t" ]]; then
       fstr '$' appAlias; PA_ALIAS=("$FS"); fstr '$' testUser; PA_USER=("$FS"); fstr '$' runtimeUrl; PA_URL=("$FS")
     elif [[ "$t" != array ]]; then
       PA_ERR+=("apps must be an array of app objects")
     else
-      [[ -z "$(ftype '$.appId')$(ftype '$.appAlias')" ]] || PA_ERR+=("a top-level appId/appAlias cannot be combined with apps[]")
-      n=$(fval '$.apps'); (( n > 0 )) || PA_ERR+=("apps is empty")
+      pa_get '$.appId'; k=$PT; pa_get '$.appAlias'
+      [[ -z "$k$PT" ]] || PA_ERR+=("a top-level appId/appAlias cannot be combined with apps[]")
+      pa_get '$.apps'; n=$PV; (( n > 0 )) || PA_ERR+=("apps is empty")
       for (( i = 0; i < n; i++ )); do
-        [[ "$(ftype "\$.apps.$i")" == object ]] || { PA_ERR+=("apps.$i must be an object"); continue; }
-        while IFS= read -r k; do
+        pa_get "\$.apps.$i"; [[ "$PT" == object ]] || { PA_ERR+=("apps.$i must be an object"); continue; }
+        pa_keys "\$.apps.$i"
+        for k in ${PK[@]+"${PK[@]}"}; do
           [[ -z "$k" || "$k" =~ ^($APP_KEYS)$ ]] || PA_ERR+=("apps.$i: unknown key '$k'")
-        done <<<"$(fkeys "\$.apps.$i")"
-        [[ "$(ftype "\$.apps.$i.appAlias")" == string ]] || PA_ERR+=("apps.$i: appAlias is missing")
-        PA_ALIAS+=("$(fval "\$.apps.$i.appAlias")")
+        done
+        pa_get "\$.apps.$i.appAlias"; [[ "$PT" == string ]] || PA_ERR+=("apps.$i: appAlias is missing")
+        PA_ALIAS+=("$PV")
         fstr "\$.apps.$i" testUser; PA_USER+=("$FS"); fstr "\$.apps.$i" runtimeUrl; PA_URL+=("$FS")
       done
     fi
   fi
   for (( i = 0; i < ${#PA_ALIAS[@]}; i++ )); do
-    a=${PA_ALIAS[$i]}
+    a=${PA_ALIAS[$i]}; upper_v "$a"; la=$UV
     [[ -z "$a" && ${#PA_ALIAS[@]} -eq 1 ]] || [[ "$a" =~ $RE_APP_ALIAS ]] || PA_ERR+=("appAlias '$a' must match $RE_APP_ALIAS")
     [[ "${PA_URL[$i]}" != *session=* ]] || PA_ERR+=("the runtimeUrl of '${a:-the app}' carries a session token (session=…): the file is committed")
     for (( k = i + 1; k < ${#PA_ALIAS[@]}; k++ )); do
-      l=${PA_ALIAS[$k]}
-      [[ "$(upper "$a")" != "$(upper "$l")" ]] || PA_ERR+=("appAlias '$a' and '$l' collide (case does not count)")
+      l=${PA_ALIAS[$k]}; upper_v "$l"
+      [[ "$la" != "$UV" ]] || PA_ERR+=("appAlias '$a' and '$l' collide (case does not count)")
     done
   done
-  unset -f ftype fval fkeys fstr
+  unset -f fstr
   return 0
 }
 pa_load
@@ -228,12 +283,20 @@ esac
 : "${PW_SESSION:=apex}"
 : "${PW_INSECURE_TLS:=1}"
 case "$PW_INSECURE_TLS" in 0|1) ;; *) die "PW_INSECURE_TLS must be 0 or 1 (got '$PW_INSECURE_TLS')" ;; esac
-slug() { printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-40; }
-ws_base="${TMPDIR:-/tmp}/apex-sentinel-$(id -u)"
-ws_for() {  # $1 = app alias ('' = none) → that app's default workspace
-  local crc
-  crc=$(printf '%s|%s' "$PROJECT_ROOT" "$1" | cksum | cut -d' ' -f1)
-  printf '%s/%s-%s-%s' "$ws_base" "$(slug "$(basename "$PROJECT_ROOT")")" "$(slug "${1:-default}")" "$crc"
+SLUG=""
+slug() {  # $1 → SLUG: [A-Za-z0-9._-] kept, any other byte a '-', at most 40 bytes (what tr | cut did)
+  local LC_ALL=C s=$1
+  s=${s//[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]/-}
+  SLUG=${s:0:40}
+}
+ws_base="${TMPDIR:-/tmp}/apex-sentinel-$EUID"       # $EUID is what `id -u` prints
+WSF=""
+ws_for() {  # $1 = app alias ('' = none) → WSF: that app's default workspace
+  local crc p
+  crc=$(printf '%s|%s' "$PROJECT_ROOT" "$1" | cksum); crc=${crc%% *}
+  slug "${PROJECT_ROOT##*/}"; p=$SLUG
+  slug "${1:-default}"
+  WSF="$ws_base/$p-$SLUG-$crc"
 }
 if [[ -n "${PW_WORKSPACE:-}" ]]; then
   WS_FROM=override
@@ -241,18 +304,18 @@ if [[ -n "${PW_WORKSPACE:-}" ]]; then
 else
   WS_FROM=default
   # Per user and private: the login snippet briefly holds the password in here.
-  (umask 077; mkdir -p "$ws_base") || die "cannot create $ws_base"
+  [[ -d "$ws_base" ]] || (umask 077; mkdir -p "$ws_base") || die "cannot create $ws_base"
   [[ -O "$ws_base" ]] || die "$ws_base is not owned by you — refusing to use it (another user could plant files there)"
   chmod 700 "$ws_base" 2>/dev/null || true
   if [[ -n "$PROJECT_ROOT" ]]; then
-    PW_WORKSPACE=$(ws_for "$APP_ALIAS")
+    ws_for "$APP_ALIAS"; PW_WORKSPACE=$WSF
   else
     PW_WORKSPACE="$ws_base/default"
     warn "not inside a project repo — using the shared workspace $PW_WORKSPACE. Run pw.sh from inside the APEX project."
   fi
 fi
-mkdir -p "$PW_WORKSPACE/.playwright" || die "cannot create workspace $PW_WORKSPACE"
-PW_WORKSPACE=$(cd "$PW_WORKSPACE" && pwd -P)      # absolute; --config needs it
+[[ -d "$PW_WORKSPACE/.playwright" ]] || mkdir -p "$PW_WORKSPACE/.playwright" || die "cannot create workspace $PW_WORKSPACE"
+_here=$PWD; CDPATH='' cd -- "$PW_WORKSPACE"; CDPATH='' cd -P .; PW_WORKSPACE=$PWD; cd -- "$_here"   # absolute; --config needs it
 # Never inside the project unless it is ignored there: .playwright/cli.config.json
 # has been committed to a consuming repo exactly this way.
 if [[ -n "$PROJECT_ROOT" && "$PW_WORKSPACE/" == "$PROJECT_ROOT/"* ]]; then
@@ -261,7 +324,7 @@ if [[ -n "$PROJECT_ROOT" && "$PW_WORKSPACE/" == "$PROJECT_ROOT/"* ]]; then
   fi
 fi
 CONFIG="$PW_WORKSPACE/.playwright/cli.config.json"
-CONFIG_ARG=$(native_path "$CONFIG")                # what the CLI is handed
+native_path "$CONFIG"; CONFIG_ARG=$NP               # what the CLI is handed
 LAST_URL="$PW_WORKSPACE/.playwright/last-url"
 
 # The URL to reopen after a crash, minus the APEX session token: the token is a
@@ -284,17 +347,18 @@ else
       Install it (npm i -g @playwright/cli) or fall back to a browser MCP — see setup.md §0."
 fi
 
-pw() { (cd "$PW_WORKSPACE" && "${LAUNCHER[@]}" -s "$PW_SESSION" "$@"); }
+pw() { (cd "$PW_WORKSPACE" && exec "${LAUNCHER[@]}" -s "$PW_SESSION" "$@"); }
 
 # jq probed by running it, not by presence: a jq that errors would make
 # session_open report "closed", and a bare `open` on a live session kills the
 # browser and throws the APEX login away — the one thing this wrapper prevents.
-if command -v jq >/dev/null 2>&1 && printf '{}' | jq -e . >/dev/null 2>&1; then HAVE_JQ=1; else HAVE_JQ=0; fi
+# (The probe that chose JSON_TOOL above is that same test: jq is the parser only if it ran.)
+if [[ "${JSON_TOOL[0]:-}" == jq ]]; then HAVE_JQ=1; else HAVE_JQ=0; fi
 
 # is the named session currently open?
 session_open() {
   local json
-  json=$( (cd "$PW_WORKSPACE" && "${LAUNCHER[@]}" list --json) 2>/dev/null ) || return 1
+  json=$(cd "$PW_WORKSPACE" 2>/dev/null && exec "${LAUNCHER[@]}" list --json 2>/dev/null) || return 1
   if (( HAVE_JQ )); then
     [[ $(jq -r --arg n "$PW_SESSION" \
           '[.browsers[]? | select(.name == $n and .status == "open")] | length' <<<"$json") -gt 0 ]]
@@ -326,7 +390,9 @@ fi
 case "$CMD" in
   list|close-all|kill-all|install|install-browser) ;;   # never launch a browser
   *)
-    if [[ "$(cat "$CONFIG" 2>/dev/null || true)" != "$WANT_CONFIG" ]]; then
+    # Tested first: under set -e, bash 5.2 exits on a failed $(<file) even behind `||`.
+    _cur=""; if [[ -f "$CONFIG" && -r "$CONFIG" ]]; then _cur=$(<"$CONFIG"); fi
+    if [[ "$_cur" != "$WANT_CONFIG" ]]; then
       if [[ -f "$CONFIG" ]] && session_open; then
         die "PW_INSECURE_TLS changed, but session '$PW_SESSION' is open with the old setting — run pw.sh close-all first"
       fi
@@ -368,7 +434,7 @@ env_str() {  # $1 = .env file, $2 = key -> the value, with one layer of quotes r
 
 resolve_credentials() {  # sets SENTINEL_USER, SENTINEL_PASSWORD, SENTINEL_APP_URL
   local ext=${APEX_TEST_FILE:-$HOME/.apex-sentinel.json} sfx="" v
-  [[ -n "$APP_ALIAS" ]] && sfx="_$(upper "$APP_ALIAS" | tr -c 'A-Z0-9' '_')"
+  if [[ -n "$APP_ALIAS" ]]; then upper_v "$APP_ALIAS"; sfx="_${UV//[!ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789]/_}"; fi
 
   v="APEX_TEST_USER$sfx"
   SENTINEL_USER=${!v:-${APEX_TEST_USER:-${PA_USER[$APP_I]:-}}}
@@ -517,7 +583,8 @@ JS
       } > "$SNIP"
     ) || die "cannot write the login snippet to $SNIP"
 
-    OUT=$(pw run-code --raw --filename "$(native_path "$SNIP")" 2>&1) || {
+    native_path "$SNIP"
+    OUT=$(pw run-code --raw --filename "$NP" 2>&1) || {
       rm -f "$SNIP"; die "the login snippet did not run: $OUT"
     }
     rm -f "$SNIP"
@@ -525,13 +592,13 @@ JS
     # banner, a warning) must not decide whether a login happened.
     V=$(printf '%s\n' "$OUT" | tr -d '\r"' | grep -v '^[[:space:]]*$' | tail -1 \
         | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//') || V=""
-    upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }      # bash 3.2 has no ${x^^}
     case "$V" in
       LOGIN-OK\|*)
         r=${V#LOGIN-OK|}; APPUSER=${r%%|*}; URL=${r#*|}
         # Second opinions on the snippet's verdict, because the failure they guard against
         # is the worst one this skill can produce: reporting a login that never happened.
-        [[ "$(upper "$APPUSER")" == "$(upper "$SENTINEL_USER")" ]] \
+        upper_v "$APPUSER"; _au=$UV; upper_v "$SENTINEL_USER"
+        [[ "$_au" == "$UV" ]] \
           || die "the page says it is signed in as '$APPUSER', not '$SENTINEL_USER' — NOT verified."
         # The login page carries a ?session= token of its own, so a token is not evidence.
         case "$URL" in
@@ -574,14 +641,14 @@ JS
     WSS=("$PW_WORKSPACE")
     if (( ALL_APPS )); then
       WSS=()
-      for a in "${PA_ALIAS[@]}"; do w=$(ws_for "$a"); [[ -d "$w/.playwright" ]] && WSS+=("$w"); done
+      for a in "${PA_ALIAS[@]}"; do ws_for "$a"; w=$WSF; [[ -d "$w/.playwright" ]] && WSS+=("$w"); done
     fi
     rc=0
     for w in "${WSS[@]:-}"; do
       [[ -n "$w" ]] || continue
       (( ALL_APPS )) && [[ "$CMD" == list ]] && echo "== $w"
       if [[ "$CMD" != kill-all || "$w" == "${WSS[0]}" ]]; then
-        (cd "$w" && "${LAUNCHER[@]}" "$CMD" "$@") || rc=$?
+        (cd "$w" && exec "${LAUNCHER[@]}" "$CMD" "$@") || rc=$?
       fi
       # Snapshots are page dumps that can hold personal data: gone with the session.
       if [[ "$CMD" == close-all || "$CMD" == kill-all ]] && (( rc == 0 )); then
@@ -599,7 +666,7 @@ JS
     recovered=0
     if ! session_open; then
       local_url=""
-      [[ -f "$LAST_URL" ]] && local_url=$(cat "$LAST_URL")
+      [[ -f "$LAST_URL" ]] && local_url=$(<"$LAST_URL")
       open_session "$local_url" >/dev/null
       warn "session '$PW_SESSION' was not open; reopened${local_url:+ at $local_url} (workspace $PW_WORKSPACE)."
       warn "Page state (APEX session token, unsaved edits) was LOST — re-login and re-navigate"

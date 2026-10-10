@@ -59,14 +59,43 @@ fail()    { local s=$1 r=$2; shift 2; classify "$s" "$r" "$*"; echo ""; echo "$s
 pass()    { classify PASS "$1" "$2"; echo "PASS: $2"; }
 note() { echo "  $*"; }
 mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }   # GNU stat / BSD (macOS) stat
-now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }                    # BSD date has no -Iseconds
+
+# Helpers below hand their result back in a global (named on each) rather than print
+# it into a $(...): every process costs tens of milliseconds under Git Bash. One
+# caution comes with it — bash runs a $(...) without errexit, so a helper that ran
+# there "best effort" says so now with an explicit `|| …`.
+
+# The clock without a process where bash has one: EPOCHSECONDS (bash 5) and
+# printf %(…)T (bash 4.2); bash 3.2 (macOS) has neither and runs date. TZ=UTC0 goes on
+# the printf itself: a `local TZ` is not exported, and bash 5 then formats local time.
+if TZ=UTC0 printf -v _t '%(%Y)T' 0 2>/dev/null && [[ "$_t" == 1970 ]]; then PRINTF_T=1; else PRINTF_T=0; fi
+EPOCH=""; ISO=""
+epoch_now() {  # → EPOCH ('' if the clock cannot be read)
+  EPOCH=""; (( BASH_VERSINFO[0] >= 5 )) && EPOCH=${EPOCHSECONDS:-}
+  [[ "$EPOCH" =~ ^[0-9]+$ ]] || EPOCH=$(date +%s) || EPOCH=""
+}
+now_iso() {  # → ISO: now, UTC (BSD date has no -Iseconds)
+  if (( PRINTF_T )); then TZ=UTC0 printf -v ISO '%(%Y-%m-%dT%H:%M:%SZ)T' -1
+  else ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ) || ISO=""; fi
+}
 
 # A path that crosses into a native Windows binary must be converted first.
 # The export dir reaches SQLcl (a Java program) inside the SQL text on stdin,
 # where MSYS does no argv mangling at all, so /tmp/... arrives as C:\tmp\... .
 # Forward slashes (-m, not -w) so nothing has to survive backslash escaping.
-native_path() {
-  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
+NP=""
+native_path() {  # $1 = a path → NP
+  if command -v cygpath >/dev/null 2>&1; then NP=$(cygpath -m "$1"); else NP=$1; fi
+}
+
+LINES=()
+lines_of() {  # $1 = text → LINES: its non-empty lines (word splitting on newlines, globbing off)
+  local IFS=$'\n' noglob=0
+  [[ $- == *f* ]] && noglob=1
+  set -f
+  # shellcheck disable=SC2206   # split on newlines on purpose, with globbing off
+  LINES=($1)
+  (( noglob )) || set +f
 }
 
 TMP_KEEP=""                       # scratch dirs preserved on FAIL for resolution
@@ -79,9 +108,14 @@ ROOT=""; STATE_DIR=""             # known once the repo and the app are
 # unknown again. Stopped before its app was known (a bad option, no SQLcl, an invalid
 # config, --app missing), it withdraws that direction for every app the file names,
 # read without a parser: one may not exist yet.
+# A check always starts by withdrawing its own authorization: a FAIL, a BLOCKED or
+# a crash must never leave an earlier PASS's marker fresh for the hook to trust.
+# (rm only when there is something to remove: it is a process.)
+revoke_marker() { if [[ -e "$STATE_DIR/check-ok.$1" || -L "$STATE_DIR/check-ok.$1" ]]; then rm -f "$STATE_DIR/check-ok.$1"; fi; }
+
 withdraw_markers() {  # $1 = import|export
   local root a
-  if [[ -n "$STATE_DIR" ]]; then rm -f "$STATE_DIR/check-ok.$1"; return 0; fi
+  if [[ -n "$STATE_DIR" ]]; then revoke_marker "$1"; return 0; fi
   root=${ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}
   [[ -n "$root" && -f "$root/apex-sync.json" ]] || return 0
   while IFS= read -r a; do
@@ -131,7 +165,8 @@ on_exit() {
       fi
     fi
   fi
-  for t in "${TMPS[@]:-}"; do [[ -n "$t" && "$t" != "$TMP_KEEP" ]] && rm -rf "$t"; done
+  f=(); for t in "${TMPS[@]:-}"; do [[ -n "$t" && "$t" != "$TMP_KEEP" ]] && f+=("$t"); done
+  (( ${#f[@]} )) && rm -rf "${f[@]}"
   exit "$rc"
 }
 trap on_exit EXIT
@@ -141,7 +176,8 @@ trap 'exit 129' HUP
 
 # ------------------------------------------------------------ arguments
 # Parsed before any setup, so a usage error never depends on SQLcl or a parser.
-USAGE="usage: $(basename "$0") check-import|check-export|record-sync|status|doctor|apps [--app <alias>] [--task <id>] [--force]"
+SELF=${0##*/}
+USAGE="usage: $SELF check-import|check-export|record-sync|status|doctor|apps [--app <alias>] [--task <id>] [--force]"
 SUB=""; OPT_FORCE=0; OPT_TASK=""; OPT_APP=""
 while (( $# )); do
   case "$1" in
@@ -181,7 +217,8 @@ _self=${BASH_SOURCE[0]}
 while [[ -L "$_self" ]]; do
   _d=$(cd -P "$(dirname "$_self")" && pwd); _self=$(readlink "$_self"); [[ "$_self" == /* ]] || _self="$_d/$_self"
 done
-SCRIPT_DIR=$(cd -P "$(dirname "$_self")" && pwd)
+case "$_self" in */*) _d=${_self%/*}; _d=${_d:-/} ;; *) _d=. ;; esac   # dirname
+_here=$PWD; CDPATH='' cd -P -- "$_d"; SCRIPT_DIR=$PWD; cd -- "$_here"
 # shellcheck source=skills/apex-sync-guard/scripts/lib/sync-config.sh
 . "$SCRIPT_DIR/lib/sync-config.sh" || die "incomplete installation: $SCRIPT_DIR/lib/sync-config.sh is missing"
 [[ -z "$OPT_APP" || "$OPT_APP" =~ $RE_APP_ALIAS ]] || die "--app must be an app alias ($RE_APP_ALIAS) — got '$OPT_APP'"
@@ -194,7 +231,7 @@ esac
 # exits without running anything, which surfaced as a cryptic exit deep in a run.
 resolve_json_tool() {
   local c cand=()
-  if command -v jq >/dev/null 2>&1 && printf '{}' | jq -e . >/dev/null 2>&1; then
+  if command -v jq >/dev/null 2>&1 && jq -e . <<<'{}' >/dev/null 2>&1; then
     JSON_TOOL=(jq); return 0
   fi
   for c in "python3" "python" "py -3"; do
@@ -209,19 +246,21 @@ resolve_json_tool || blocked NO_JSON_PARSER "no working JSON parser — need jq,
       A 'python3' that exists but does nothing when executed is typically the
       Microsoft Store stub: install real Python (or jq) and put it ahead of it on PATH."
 
-json_get() {  # $1 = json file ('-' = stdin), $2 = dotted key path
+JG=""
+json_get() {  # $1 = json file ('-' = stdin), $2 = dotted key path → JG; non-zero if it cannot be read
   if [[ "${JSON_TOOL[0]}" == "jq" ]]; then
-    jq -r ".$2 // empty" "$1" | strip_cr
+    JG=$(jq -r ".$2 // empty" "$1") || return
   else
-    "${JSON_TOOL[@]}" -c '
+    JG=$("${JSON_TOOL[@]}" -c '
 import json, sys
 src = sys.stdin if sys.argv[1] == "-" else open(sys.argv[1])
 data = json.load(src)
 for k in sys.argv[2].split("."):
     data = data.get(k) if isinstance(data, dict) else None
     if data is None: break
-print("" if data is None else data)' "$1" "$2" | strip_cr
+print("" if data is None else data)' "$1" "$2") || return
   fi
+  JG=${JG//$'\r'/}      # native tooling on Windows writes CRLF
 }
 
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || blocked NO_GIT "not inside a git repository"
@@ -252,27 +291,26 @@ fi
 
 APP_ID=""; ALIAS=""; SRCDIR=""; SRC_REL=""; CONN=""; IGNORE_PATHS=(); EXPORT_SCOPE=()
 select_app() {  # $1 = index into the APPS_* arrays; sets the per-app globals
-  local p i o
+  local i o
   APP_ID=${APPS_ID[$1]}; ALIAS=${APPS_ALIAS[$1]}; SRCDIR=${APPS_DIR[$1]}; CONN=${APPS_CONN[$1]}
-  SRC_REL=$(app_src_rel "$1")          # the app's source dir, repo-relative
+  app_src "$1"; SRC_REL=$SR             # the app's source dir, repo-relative
   # Paths (relative to the app dir) that exist only on one side by design,
   # e.g. repo-only artifacts like "apex-exports/". Excluded from comparisons.
   # (while-read, not mapfile: macOS ships bash 3.2)
-  IGNORE_PATHS=()
-  while IFS= read -r p; do [[ -n "$p" ]] && IGNORE_PATHS+=("$p"); done <<<"${APPS_IGNORE[$1]}"
+  lines_of "${APPS_IGNORE[$1]}"; IGNORE_PATHS=(${LINES[@]+"${LINES[@]}"})
   # What an export may write over: the apexlangDir it is given — minus the dirs of
   # the other apps that share it, which an export of this app does not touch.
   EXPORT_SCOPE=("${SRCDIR:-.}")
   for (( i = 0; i < ${#APPS_ALIAS[@]}; i++ )); do
     (( i == $1 )) && continue
-    o=$(app_src_rel "$i")
+    app_src "$i"; o=$SR
     [[ -z "$SRCDIR" || "$o/" == "$SRCDIR/"* ]] && EXPORT_SCOPE+=(":(exclude)$o")
   done
   APP_SRC="$ROOT/$SRC_REL"
   STATE_DIR="$ROOT/.git/apex-sync/$ALIAS"
   STATE="$STATE_DIR/state.json"
   REF="refs/apex-sync/$ALIAS"
-  mkdir -p "$STATE_DIR"
+  [[ -d "$STATE_DIR" ]] || mkdir -p "$STATE_DIR"
   # BASE round-trips through git objects (add → write-tree → archive). Content
   # filters would rewrite the bytes on the way in or out, so every git call that
   # stores or restores a replica runs with them off and with attribute lookup
@@ -285,9 +323,6 @@ APP_SRC=""; STATE_DIR=""; STATE=""; REF=""; GIT_HERMETIC=()
 export GIT_ATTR_NOSYSTEM=1
 [[ -z "$R_OP" ]] || select_app "${SEL[0]}"
 
-# A check always starts by withdrawing its own authorization: a FAIL, a BLOCKED or
-# a crash must never leave an earlier PASS's marker fresh for the hook to trust.
-revoke_marker() { rm -f "$STATE_DIR/check-ok.$1"; }
 
 # ------------------------------------------------------------ sql layer
 run_sql() {  # stdin-less silent SQLcl; $1 = statements; prints raw output
@@ -319,7 +354,7 @@ EOF
 remote_app_exists() {
   local n rc=0 q="select count(*) from apex_applications where application_id=$APP_ID"
   n=$(run_sql "select /* apex-sync-appcount */ count(*) from apex_applications where application_id=$APP_ID;") || rc=1
-  n=$(tr -d '[:space:]' <<<"$n")
+  n=${n//[[:space:]]/}
   # Only a clean count is kept as evidence: an error text can carry a hostname.
   if (( rc == 0 )) && [[ "$n" =~ ^[0-9]+$ ]]; then evidence sql 0 "$q" "$n"; else evidence sql "$rc" "$q" "unreadable"; fi
   (( rc == 0 )) || return 2
@@ -335,14 +370,16 @@ remote_app_exists() {
 # import this is 'unavailable' until someone edits in the Builder. The guard's
 # core check (export+diff vs BASE) does not depend on it — this only feeds
 # the who/when report.
-builder_stamp() {
+BS=""
+builder_stamp() {  # → BS
   local s
   s=$(run_sql "select to_char(greatest(
              nvl((select max(last_updated_on) from apex_application_pages where application_id=$APP_ID), date '1900-01-01'),
              nvl((select last_updated_on from apex_applications where application_id=$APP_ID), date '1900-01-01')
-           ),'YYYY-MM-DD\"T\"HH24:MI:SS') from dual;" | tr -d '[:space:]')
+           ),'YYYY-MM-DD\"T\"HH24:MI:SS') from dual;") || :      # best effort: who/when only
+  s=${s//[[:space:]]/}
   [[ "$s" == 1900-01-01* ]] && s="unavailable"
-  echo "$s"
+  BS=$s
 }
 
 pages_changed_since() {  # $1 = stamp 'YYYY-MM-DD"T"HH24:MI:SS' (skipped if unavailable)
@@ -365,7 +402,7 @@ SNAP_COMMIT=""    # snapshot_export: the syncpoint commit just recorded
 
 export_builder() {  # exports REMOTE (the Builder) to a scratch dir; sets REMOTE_DIR
   local scratch native; scratch=$(mktemp -d "${TMPDIR:-/tmp}/apex-sync-remote-XXXXXX"); TMPS+=("$scratch")
-  native=$(native_path "$scratch")
+  native_path "$scratch"; native=$NP
   # Quoted only when it has to be: how SQLcl's `apex export -dir` tokenizes a path
   # with spaces is unverified here, so the quoting is a best effort and the error
   # below points at TMPDIR if it still fails.
@@ -379,10 +416,13 @@ whenever sqlerror continue
 version
 select 'apex-sync-apex-version '||version_no from apex_release;") || rc=$?
   evidence command "$rc" "apex export -applicationid $APP_ID -expType APEXLANG -dir <scratch>"
-  (( rc == 0 )) || unknown EXPORT_FAILED "the Builder export failed (SQLcl exited non-zero) — check the connection with: $(basename "$0") doctor"
-  out=$(tr -d '\r' <<<"$out")
-  R_SQLCL_VERSION=$(sed -n 's/.*(SQLcl) version: .* build: *\([0-9][0-9.]*[0-9]\).*/\1/p' <<<"$out" | head -1)
-  R_APEX_VERSION=$(sed -n 's/^[[:space:]]*apex-sync-apex-version \([0-9][0-9.]*[0-9]\).*/\1/p' <<<"$out" | head -1)
+  (( rc == 0 )) || unknown EXPORT_FAILED "the Builder export failed (SQLcl exited non-zero) — check the connection with: $SELF doctor"
+  local l re_sqlcl='\(SQLcl\) version: .* build: *([0-9][0-9.]*[0-9])' re_apex='^[[:space:]]*apex-sync-apex-version ([0-9][0-9.]*[0-9])'
+  lines_of "${out//$'\r'/}"
+  for l in ${LINES[@]+"${LINES[@]}"}; do        # the first line that names each
+    [[ -z "$R_SQLCL_VERSION" && "$l" =~ $re_sqlcl ]] && R_SQLCL_VERSION=${BASH_REMATCH[1]}
+    [[ -z "$R_APEX_VERSION" && "$l" =~ $re_apex ]] && R_APEX_VERSION=${BASH_REMATCH[1]}
+  done
   [[ -f "$scratch/$ALIAS/application.apx" ]] || unknown EXPORT_FAILED "the Builder export produced no $ALIAS/application.apx in $scratch (SQLcl was given -dir $native) — check the connection and app id; if app $APP_ID does not exist in the workspace yet, remote_app_exists should have caught it before here; if that path holds spaces, point TMPDIR at one that does not"
   REMOTE_DIR=$scratch
 }
@@ -408,12 +448,13 @@ materialize_base() {  # extracts the BASE tree to a scratch dir; sets BASE_APP_D
 # only canonical-vs-canonical comparisons are noise-free.
 snapshot_export() {  # $1 = scratch dir containing <alias>/…; commits it to $REF; sets SNAP_COMMIT
   local tmpidx tree="" commit=""
+  now_iso
   tmpidx=$(mktemp -u "${TMPDIR:-/tmp}/apex-sync-idx-XXXXXX"); TMPS+=("$tmpidx")
   # Every step is checked, and the ref is read back: "recorded" must mean the ref
   # really points at the new commit (commit-tree fails without a git identity).
   if ! { GIT_INDEX_FILE=$tmpidx git "${GIT_HERMETIC[@]}" --git-dir="$ROOT/.git" --work-tree="$1" add -f -A -- . 2>/dev/null \
          && tree=$(GIT_INDEX_FILE=$tmpidx git --git-dir="$ROOT/.git" write-tree) \
-         && commit=$(git -C "$ROOT" commit-tree "$tree" -m "apex-sync syncpoint $ALIAS $(now_iso)") \
+         && commit=$(git -C "$ROOT" commit-tree "$tree" -m "apex-sync syncpoint $ALIAS $ISO") \
          && git -C "$ROOT" update-ref "$REF" "$commit" \
          && [[ -n "$commit" && "$(git -C "$ROOT" rev-parse -q --verify "$REF^{commit}")" == "$commit" ]]; }; then
     evidence command 1 "git commit-tree + git update-ref $REF"
@@ -438,14 +479,20 @@ list_files() { (cd "$1" 2>/dev/null && find . -type f | sed 's|^\./||' | LC_ALL=
 # userland), and assuming a tool is present is the mistake this skill just paid
 # for elsewhere. git is a hard requirement and `hash-object --no-filters` is
 # byte-exact by definition, so it is the fallback.
-if cmp -s /dev/null /dev/null 2>/dev/null; then BYTES_EQ="cmp"; else BYTES_EQ="git-hash"; fi
+BYTES_EQ=""
+bytes_eq_tool() {  # → BYTES_EQ, probed on first use (an export check compares nothing)
+  [[ -n "$BYTES_EQ" ]] && return 0
+  if cmp -s /dev/null /dev/null 2>/dev/null; then BYTES_EQ="cmp"; else BYTES_EQ="git-hash"; fi
+}
 
 bytes_equal() {
+  bytes_eq_tool
   if [[ "$BYTES_EQ" == cmp ]]; then cmp -s "$1" "$2"
   else [[ "$(git hash-object --no-filters -- "$1")" == "$(git hash-object --no-filters -- "$2")" ]]; fi
 }
 
 eol_equal() {  # equal once every CR is dropped
+  bytes_eq_tool
   if [[ "$BYTES_EQ" == cmp ]]; then cmp -s <(tr -d '\r' < "$1") <(tr -d '\r' < "$2")
   else [[ "$(tr -d '\r' < "$1" | git hash-object --no-filters --stdin)" \
        == "$(tr -d '\r' < "$2" | git hash-object --no-filters --stdin)" ]]; fi
@@ -471,28 +518,62 @@ ignored() {  # $1 = app-relative path; an entry matches whole path segments only
   return 1
 }
 
-tree_diff() {  # $1=dirA $2=dirB → "<status>\t<app-relative path>", ignorePaths filtered
-  local f rc                # D = only in A, A = only in B, M = differs, E = EOL only
+TD=""
+tree_diff() {  # $1=dirA $2=dirB → TD: "<status>\t<app-relative path>" lines, ignorePaths filtered
+  local f rc out="" i j=0 n=0 na nb list="" files=() kind=() hs=()
+  # Both listings through one sort, './' kept until after it: it does not change the
+  # order, and list_files twice cost a sed and a sort each.
   while IFS= read -r f; do
+    f=${f#./}
     [[ -z "$f" ]] && continue
     ignored "$f" && continue
-    if   [[ ! -e "$2/$f" ]]; then printf 'D\t%s\n' "$f"
-    elif [[ ! -e "$1/$f" ]]; then printf 'A\t%s\n' "$f"
-    else
-      rc=0; same_content "$1/$f" "$2/$f" || rc=$?
-      case $rc in 0) ;; 2) printf 'E\t%s\n' "$f" ;; *) printf 'M\t%s\n' "$f" ;; esac
+    files+=("$f")
+    if   [[ ! -e "$2/$f" ]]; then kind+=(D)          # D = only in A, A = only in B,
+    elif [[ ! -e "$1/$f" ]]; then kind+=(A)          # M = differs, E = EOL only
+    elif [[ -f "$1/$f" && ! -L "$1/$f" && -f "$2/$f" && ! -L "$2/$f" ]]; then kind+=(H); n=$((n + 1))
+    else kind+=(C)                                   # a symlink or a dir on one side
     fi
-  done < <( { list_files "$1"; list_files "$2"; } | LC_ALL=C sort -u )
+  done < <( { (cd "$1" 2>/dev/null && exec find . -type f); (cd "$2" 2>/dev/null && exec find . -type f); } | LC_ALL=C sort -u )
+  # A regular file on both sides is hashed, all of them by one git: a cmp per file was a
+  # process per file, and an app has hundreds. Equal hashes are equal bytes; anything
+  # else — or a git that fails — goes through same_content, which also tells E from M.
+  # The paths go to git on stdin, where MSYS converts nothing: native form first.
+  if (( n )); then
+    native_path "$1"; na=$NP; native_path "$2"; nb=$NP
+    for (( i = 0; i < ${#files[@]}; i++ )); do
+      [[ "${kind[$i]}" == H ]] && list+="$na/${files[$i]}"$'\n'"$nb/${files[$i]}"$'\n'
+    done
+    lines_of "$(git hash-object --no-filters --stdin-paths <<<"${list%$'\n'}" 2>/dev/null || :)"
+    if (( ${#LINES[@]} == 2 * n )); then hs=("${LINES[@]}"); fi
+  fi
+  for (( i = 0; i < ${#files[@]}; i++ )); do
+    f=${files[$i]}
+    case "${kind[$i]}" in
+      D) out+="D"$'\t'"$f"$'\n'; continue ;;
+      A) out+="A"$'\t'"$f"$'\n'; continue ;;
+      H) j=$((j + 2))
+         if (( ${#hs[@]} )) && [[ "${hs[$((j - 2))]}" == "${hs[$((j - 1))]}" ]]; then continue; fi ;;
+    esac
+    rc=0; same_content "$1/$f" "$2/$f" || rc=$?
+    case $rc in 0) ;; 2) out+="E"$'\t'"$f"$'\n' ;; *) out+="M"$'\t'"$f"$'\n' ;; esac
+  done
+  TD=${out%$'\n'}
 }
 
 # A line-ending-only difference cannot carry a Builder-side change, and blocking
 # on it would deadlock: every re-export reintroduces it. So E is reported, never gated.
-blocking() { grep -v $'^E\t' <<<"${1:-}" || true; }
+BL=""
+blocking() {  # $1 = tree_diff lines → BL: the ones that gate
+  local l out=""
+  lines_of "${1:-}"
+  for l in ${LINES[@]+"${LINES[@]}"}; do [[ "$l" == $'E\t'* ]] || out+="$l"$'\n'; done
+  BL=${out%$'\n'}
+}
 
 indent() { local l; while IFS= read -r l; do printf '    %s\n' "$l"; done; }
 
 eol_note() {  # $1 = tree_diff output
-  grep -q $'^E\t' <<<"${1:-}" || return 0
+  [[ $'\n'"${1:-}" == *$'\nE\t'* ]] || return 0
   echo "  Note: the files marked E differ only in line endings — not a Builder change, so they do not gate."
   echo "        To silence them, add to this repo's .gitattributes:  *.apx text eol=lf"
 }
@@ -503,28 +584,26 @@ eol_note() {  # $1 = tree_diff output
 # accumulated over days, changing behaviour nobody was expecting to change today.
 # Reported, never gating: every legitimate import has a payload.
 payload_report() {  # $1 = materialized BASE app dir
-  local dif n recorded commits
-  dif=$(tree_diff "$1" "$APP_SRC")
-  dif=$(blocking "$dif")
-  n=$(grep -c . <<<"$dif" || true)
-  R_PAYLOAD=$(repo_rel <<<"$dif"); R_PAYLOAD_SET=1
+  local dif n recorded="" commits head="" log
+  tree_diff "$1" "$APP_SRC"; blocking "$TD"; dif=$BL
+  lines_of "$dif"; n=${#LINES[@]}
+  repo_rel "$dif"; R_PAYLOAD=$RR; R_PAYLOAD_SET=1
   echo ""
   if (( n == 0 )); then
     note "Nothing to deploy: LOCAL matches the syncpoint (if you expected changes, they were not generated/saved)."
     return 0
   fi
-  recorded=""; [[ -f "$STATE" ]] && recorded=$(json_get "$STATE" recordedAt)
-  local head=""; [[ -f "$STATE" ]] && head=$(json_get "$STATE" headCommit)
+  if [[ -f "$STATE" ]]; then json_get "$STATE" recordedAt; recorded=$JG; json_get "$STATE" headCommit; head=$JG; fi
   # Count from the recorded revision, not from a timestamp: --since has one-second
   # granularity, so a commit made in the same second as the syncpoint was counted
   # or not depending on how fast the machine ran. Falls back to --since for state
   # files written before headCommit existed.
-  # wc, not `grep -c`: grep exits 1 on a zero count, so `| grep -c . || echo "?"`
-  # printed BOTH the count and the fallback, splitting the line in two.
+  # Counted here, one line per commit — `| grep -c . || echo "?"` once printed BOTH the
+  # count and the fallback (grep exits 1 on a zero count), splitting the line in two.
   if [[ -n "$head" ]] && git -C "$ROOT" rev-parse -q --verify "$head^{commit}" >/dev/null 2>&1; then
-    commits=$(git -C "$ROOT" log --oneline "$head..HEAD" -- "$SRC_REL" | wc -l | tr -d '[:space:]')
+    log=$(git -C "$ROOT" log --oneline "$head..HEAD" -- "$SRC_REL"); lines_of "$log"; commits=${#LINES[@]}
   elif [[ -n "$recorded" ]]; then
-    commits=$(git -C "$ROOT" log --oneline --since="$recorded" -- "$SRC_REL" | wc -l | tr -d '[:space:]')
+    log=$(git -C "$ROOT" log --oneline --since="$recorded" -- "$SRC_REL"); lines_of "$log"; commits=${#LINES[@]}
   else
     commits="?"
   fi
@@ -537,7 +616,8 @@ payload_report() {  # $1 = materialized BASE app dir
 }
 
 write_marker() {  # $1 = import|export — fails when the marker could not be written
-  printf '{"check":"%s","at":"%s"}\n' "$1" "$(now_iso)" > "$STATE_DIR/check-ok.$1" || return 1
+  now_iso
+  printf '{"check":"%s","at":"%s"}\n' "$1" "$ISO" > "$STATE_DIR/check-ok.$1" || return 1
   # Printed on purpose: the hook resolves the repo from the tool payload's cwd
   # and this script from its own, so a check run inside a command that `cd`s
   # elsewhere leaves the marker where the hook will not look. Showing both
@@ -545,15 +625,17 @@ write_marker() {  # $1 = import|export — fails when the marker could not be wr
   note "marker: $STATE_DIR/check-ok.$1"
 }
 
-stored_stamp() { if [[ -f "$STATE" ]]; then json_get "$STATE" builderStamp; fi; }
+SS=""
+stored_stamp() { SS=""; if [[ -f "$STATE" ]]; then json_get "$STATE" builderStamp; SS=$JG; fi; }   # → SS
 
 write_state() {  # $1 = syncpoint commit, $2 = builder stamp, $3 = basis (record-sync) or bootstrap
   # headCommit pins the payload's commit count to a revision instead of a clock:
   # `git log --since=<recordedAt>` has one-second granularity, so a commit made in
   # the same second as the syncpoint was counted or not depending on timing.
   local head; head=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo "")
+  now_iso
   printf '{"appId":%s,"appAlias":"%s","sqlclConnection":"%s","syncpoint":"%s","builderStamp":"%s","recordedAt":"%s","headCommit":"%s","basis":"%s"}\n' \
-    "$APP_ID" "$ALIAS" "$CONN" "$1" "$2" "$(now_iso)" "$head" "${3:-bootstrap}" > "$STATE"
+    "$APP_ID" "$ALIAS" "$CONN" "$1" "$2" "$ISO" "$head" "${3:-bootstrap}" > "$STATE"
 }
 
 # ------------------------------------------------------------ sync-result
@@ -569,10 +651,16 @@ US=$'\x1f'             # unit separator: never in a path or a statement, and IFS
 
 evidence() { R_EVIDENCE+="$1$US$2$US$3$US${4:-}"$'\n'; }   # $1 kind, $2 exit code, $3 text, $4 result
 
-repo_rel() {  # tree_diff lines (app-relative) → the same lines, repo-relative
-  local st f
-  while IFS=$'\t' read -r st f; do [[ -n "$f" ]] && printf '%s\t%s/%s\n' "$st" "$SRC_REL" "$f"; done
-  return 0
+RR=""
+repo_rel() {  # $1 = tree_diff lines (app-relative) → RR: the same lines, repo-relative
+  local l f out=""
+  lines_of "${1:-}"
+  for l in ${LINES[@]+"${LINES[@]}"}; do
+    [[ "$l" == *$'\t'* ]] || continue
+    f=${l#*$'\t'}
+    [[ -n "$f" ]] && out+="${l%%$'\t'*}"$'\t'"$SRC_REL/$f"$'\n'
+  done
+  RR=${out%$'\n'}
 }
 
 # Sets J to $1 as a JSON string literal — a global, not $(...): it runs once per
@@ -599,13 +687,19 @@ jstr() {
 # print — only where a path begins (after a space, a quote, a bracket, = or :), so a
 # relative path that merely contains the same letters is left alone.
 REDACT=()
+redact_add() {  # $1 = a path, $2 = what stands for it — in the shell's form and in the C:/… form
+  local n=""
+  [[ -n "$1" ]] || return 0
+  REDACT+=("$1" "$2")
+  if command -v cygpath >/dev/null 2>&1; then n=$(cygpath -m "$1" 2>/dev/null) || n=""; fi
+  [[ -n "$n" && "$n" != "$1" ]] && REDACT+=("$n" "$2")
+  return 0
+}
 jtext() {
   local s=$1 out pre p rep i
   if (( ! ${#REDACT[@]} )); then
-    [[ -n "$ROOT" ]] && REDACT+=("$ROOT" "<repo>")
-    [[ -n "$ROOT" ]] && [[ "$(native_path "$ROOT")" != "$ROOT" ]] && REDACT+=("$(native_path "$ROOT")" "<repo>")
-    [[ -n "${HOME:-}" && "$HOME" != / ]] && REDACT+=("$HOME" "~")
-    [[ -n "${HOME:-}" && "$HOME" != / ]] && [[ "$(native_path "$HOME")" != "$HOME" ]] && REDACT+=("$(native_path "$HOME")" "~")
+    redact_add "$ROOT" "<repo>"
+    [[ "${HOME:-}" != / ]] && redact_add "${HOME:-}" "~"
     REDACT+=("" "")
   fi
   for (( i = 0; i + 1 < ${#REDACT[@]}; i += 2 )); do
@@ -625,41 +719,58 @@ jtext() {
 }
 jstr_or_null() { if [[ -n "$1" ]]; then jstr "$1"; else J=null; fi; }
 
-json_changes() {  # $1 = "<status><TAB><path>" lines → a JSON array
-  local st f out="" sep=""
-  while IFS=$'\t' read -r st f; do
+JC=""
+json_changes() {  # $1 = "<status><TAB><path>" lines → JC, a JSON array
+  local l f out="" sep=""
+  lines_of "${1:-}"
+  for l in ${LINES[@]+"${LINES[@]}"}; do
+    [[ "$l" == *$'\t'* ]] || continue
+    f=${l#*$'\t'}
     [[ -z "$f" ]] && continue
-    jstr "$f"; out+="$sep{\"status\": \"$st\", \"path\": $J}"; sep=", "
-  done <<<"$1"
-  printf '[%s]' "$out"
+    jstr "$f"; out+="$sep{\"status\": \"${l%%$'\t'*}\", \"path\": $J}"; sep=", "
+  done
+  JC="[$out]"
 }
 
-json_evidence() {
-  local kind rc text res out="" sep="" key rkey
-  while IFS=$US read -r kind rc text res; do
+JE=""
+json_evidence() {  # → JE, a JSON array of R_EVIDENCE
+  local l kind rc text res out="" sep="" key rkey
+  lines_of "$R_EVIDENCE"
+  for l in ${LINES[@]+"${LINES[@]}"}; do
+    kind=${l%%"$US"*}; l=${l#*"$US"}; rc=${l%%"$US"*}; l=${l#*"$US"}; text=${l%%"$US"*}; res=${l#*"$US"}
     [[ -z "$kind" ]] && continue
     case "$kind" in sql) key="statement"; rkey="result" ;; *) key="command"; rkey="output" ;; esac
     jtext "$text"; out+="$sep{\"kind\": \"$kind\", \"$key\": $J, \"exitCode\": $rc"
     if [[ -n "$res" ]]; then jtext "$res"; out+=", \"$rkey\": $J"; fi
     out+="}"; sep=", "
-  done <<<"$R_EVIDENCE"
-  printf '[%s]' "$out"
+  done
+  JE="[$out]"
 }
 
-iso_in() {  # $1 = seconds from now → UTC ISO-8601 (GNU date, else BSD date)
-  local e=$(( $(date +%s) + $1 ))
-  date -u -d "@$e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$e" +%Y-%m-%dT%H:%M:%SZ
+iso_in() {  # $1 = seconds from now → ISO, UTC (GNU date, else BSD date)
+  local e
+  epoch_now; e=$(( ${EPOCH:-0} + $1 ))
+  if (( PRINTF_T )); then TZ=UTC0 printf -v ISO '%(%Y-%m-%dT%H:%M:%SZ)T' "$e"
+  else ISO=$(date -u -d "@$e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$e" +%Y-%m-%dT%H:%M:%SZ) || ISO=""; fi
 }
 
-result_json() {  # prints the sync-result for the current R_* state; never fails
-  local d head dirty=false spc mmd="" tgt dir written=false exp=null rec=false pc=null
-  head=$(git -C "$ROOT" rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null) || head=""
-  [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=normal 2>/dev/null | head -1)" ]] || dirty=true
-  spc=$(git -C "$ROOT" rev-parse -q --verify "$REF^{commit}" 2>/dev/null) || spc=""
-  if [[ -f "$APP_SRC/.apex/apexlang.json" ]]; then     # what Oracle's skills route on
-    mmd=$(json_get "$APP_SRC/.apex/apexlang.json" mmdVersion 2>/dev/null) || mmd=""
-    [[ "$mmd" =~ ^[0-9]+(\.[0-9]+)*(\+[0-9A-Za-z.-]+)?$ ]] || mmd=""
+RJ=""; RES_HEAD=""; RES_MMD=""; RES_ONCE=0
+result_json() {  # → RJ: the sync-result for the current R_* state; never fails
+  local d head dirty=false spc mmd tgt dir written=false exp=null rec=false pc=null st
+  # Read once per run: the revision and the app's mmdVersion do not change while it runs.
+  if (( ! RES_ONCE )); then
+    RES_HEAD=$(git -C "$ROOT" rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null) || RES_HEAD=""
+    if [[ -f "$APP_SRC/.apex/apexlang.json" ]] \
+       && json_get "$APP_SRC/.apex/apexlang.json" mmdVersion 2>/dev/null; then   # what Oracle's skills route on
+      RES_MMD=$JG
+      [[ "$RES_MMD" =~ ^[0-9]+(\.[0-9]+)*(\+[0-9A-Za-z.-]+)?$ ]] || RES_MMD=""
+    fi
+    RES_ONCE=1
   fi
+  head=$RES_HEAD; mmd=$RES_MMD
+  st=$(git -C "$ROOT" status --porcelain --untracked-files=normal 2>/dev/null) || st=""
+  [[ -z "$st" ]] || dirty=true
+  spc=$(git -C "$ROOT" rev-parse -q --verify "$REF^{commit}" 2>/dev/null) || spc=""
   d=$'{\n  "kind": "sync-result",\n  "schemaVersion": 1,\n'
   d+="  \"operation\": \"$R_OP\","$'\n'"  \"status\": \"$R_STATUS\","$'\n'
   jtext "$R_MESSAGE"; d+="  \"reasons\": [{\"code\": \"$R_REASON\", \"message\": $J}],"$'\n'
@@ -669,7 +780,7 @@ result_json() {  # prints the sync-result for the current R_* state; never fails
   jstr_or_null "$OPT_TASK"; d+="    \"task\": $J,"$'\n'
   jstr_or_null "$head"; d+="    \"repo\": {\"commit\": $J, \"dirty\": $dirty},"$'\n'
   d+="    \"frameworkVersion\": \"$FRAMEWORK_VERSION\","$'\n'
-  d+="    \"timestamp\": \"$(now_iso)\","$'\n'
+  now_iso; d+="    \"timestamp\": \"$ISO\","$'\n'
   d+=$'    "producer": {"skill": "apex-sync-guard", "method": "tool"},\n'
   jstr "$CONN"; tgt="\"connectionName\": $J"
   [[ -n "$R_SQLCL_VERSION" ]] && tgt+=", \"sqlclVersion\": \"$R_SQLCL_VERSION\""
@@ -677,24 +788,24 @@ result_json() {  # prints the sync-result for the current R_* state; never fails
   d+="    \"target\": {$tgt}"$'\n  },\n'
   if [[ "$R_OP" == check-* ]]; then
     dir=${R_OP#check-}
-    [[ "$R_STATUS" == PASS ]] && { written=true; exp="\"$(iso_in "$TTL_SECONDS")\""; }
+    [[ "$R_STATUS" == PASS ]] && { written=true; iso_in "$TTL_SECONDS"; exp="\"$ISO\""; }
     d+="  \"marker\": {\"written\": $written, \"path\": \".git/apex-sync/$ALIAS/check-ok.$dir\", \"ttlSeconds\": $TTL_SECONDS, \"expiresAt\": $exp},"$'\n'
   fi
   (( R_RECORDED )) && rec=true
   jstr_or_null "$spc"; d+="  \"syncpoint\": {\"ref\": \"$REF\", \"commit\": $J, \"recorded\": $rec},"$'\n'
-  d+="  \"changes\": $(json_changes "$R_CHANGES"),"$'\n'
+  json_changes "$R_CHANGES"; d+="  \"changes\": $JC,"$'\n'
   if [[ "$R_OP" == check-import ]] && (( R_PAYLOAD_SET )); then
     [[ "$R_PAYLOAD_COMMITS" =~ ^[0-9]+$ ]] && pc=$R_PAYLOAD_COMMITS
-    d+="  \"payload\": {\"changes\": $(json_changes "$R_PAYLOAD"), \"commits\": $pc},"$'\n'
+    json_changes "$R_PAYLOAD"; d+="  \"payload\": {\"changes\": $JC, \"commits\": $pc},"$'\n'
   fi
   [[ "$R_OP" == record-sync && -n "$R_BASIS" ]] && d+="  \"basis\": \"$R_BASIS\","$'\n'
-  d+="  \"evidence\": $(json_evidence)"$'\n}'
-  printf '%s\n' "$d"
+  json_evidence; d+="  \"evidence\": $JE"$'\n}'
+  RJ=$d
 }
 
 write_results() {  # the current verdict → every result file, each replaced atomically
   local doc f
-  doc=$(result_json)
+  result_json; doc=$RJ
   for f in "${RESULT_FILES[@]}"; do
     { printf '%s\n' "$doc" > "$f.tmp.$$" && mv -f "$f.tmp.$$" "$f"; } || { rm -f "$f.tmp.$$"; return 1; }
   done
@@ -730,10 +841,12 @@ results_init() {
 # The app's id lives in the source too: `apex import -input` takes it from
 # deployments/default.json unless -id overrides it. When it disagrees with
 # apex-sync.json, the guard would check one app while the import overwrites another.
-source_app_id() {  # prints app.id from deployments/default.json, if the file states one
+SID=""
+source_app_id() {  # → SID: app.id from deployments/default.json, if the file states one
   local dj="$APP_SRC/deployments/default.json"
+  SID=""
   [[ -f "$dj" ]] || return 0
-  json_get "$dj" app.id 2>/dev/null || true
+  if json_get "$dj" app.id 2>/dev/null; then SID=$JG; fi
 }
 
 require_source_dir() {
@@ -744,7 +857,7 @@ cmd_check_import() {
   revoke_marker import
   echo "apex-sync-guard: check-import (app $APP_ID '$ALIAS' via $CONN)"
   require_source_dir
-  local sid; sid=$(source_app_id)
+  source_app_id; local sid=$SID
   if [[ -n "$sid" && "$sid" != "$APP_ID" ]]; then
     blocked APP_ID_MISMATCH "$SRC_REL/deployments/default.json says app $sid, apex-sync.json says $APP_ID — an import would target app $sid while this check compares app $APP_ID. Fix whichever is wrong."
   fi
@@ -756,10 +869,10 @@ cmd_check_import() {
     # appId is wrong — or the app was deleted — and taking the shortcut would let an
     # import land on whatever app the source really names, unchecked.
     if have_base; then
-      local was="" via=""; [[ -f "$STATE" ]] && was=$(json_get "$STATE" sqlclConnection || true)
+      local was="" via=""; if [[ -f "$STATE" ]] && json_get "$STATE" sqlclConnection; then was=$JG; fi
       [[ -n "$was" ]] && via=", recorded via '$was'"
       blocked SYNCPOINT_WITHOUT_APP "app $APP_ID is not visible through '$CONN', but '$ALIAS' has a syncpoint ($(git -C "$ROOT" rev-parse --short "$REF")$via).
-      Wrong saved connection, wrong workspace or wrong appId — or the app was deleted. Check with: $(basename "$0") doctor
+      Wrong saved connection, wrong workspace or wrong appId — or the app was deleted. Check with: $SELF doctor
       If this really is a first publication into a NEW workspace, the user (not an agent) sets the old syncpoint aside:
         git update-ref refs/apex-sync-saved/$ALIAS $REF && git update-ref -d $REF"
     fi
@@ -777,10 +890,11 @@ cmd_check_import() {
     echo "  No syncpoint yet — bootstrap mode: comparing BUILDER vs LOCAL working tree."
     echo "  (note: formatting-only differences are expected if .apx were hand-edited;"
     echo "   the Builder export is the canonical serialization)"
-    local boot; boot=$(tree_diff "$APP_SRC" "$scratch/$ALIAS")
-    R_CHANGES=$(repo_rel <<<"$boot")
-    if [[ -z "$(blocking "$boot")" ]]; then
-      local c s; s=$(builder_stamp); snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s"
+    local boot; tree_diff "$APP_SRC" "$scratch/$ALIAS"; boot=$TD
+    repo_rel "$boot"; R_CHANGES=$RR
+    blocking "$boot"
+    if [[ -z "$BL" ]]; then
+      local c s; builder_stamp; s=$BS; snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s"
       pass BOOTSTRAP_IN_SYNC "replicas already agree — first syncpoint recorded ($c). Safe to import."
       eol_note "$boot"
       return 0
@@ -792,9 +906,10 @@ cmd_check_import() {
     fail CONFLICT BOOTSTRAP_DIVERGED "bootstrap: BUILDER ≠ LOCAL and there is no BASE to arbitrate. Reconcile once, file by file (Builder export kept at $scratch): where the Builder wins, copy its file into LOCAL and commit — check-import then PASSes and records the first syncpoint; where LOCAL must win, only the user can say the Builder holds nothing to keep: they run record-sync --force, then check-import, import, record-sync. See setup.md §2."
   fi
 
-  materialize_base; local base=$BASE_APP_DIR dif; dif=$(tree_diff "$base" "$scratch/$ALIAS")
-  R_CHANGES=$(repo_rel <<<"$dif")
-  if [[ -z "$(blocking "$dif")" ]]; then
+  materialize_base; local base=$BASE_APP_DIR dif; tree_diff "$base" "$scratch/$ALIAS"; dif=$TD
+  repo_rel "$dif"; R_CHANGES=$RR
+  blocking "$dif"
+  if [[ -z "$BL" ]]; then
     pass BUILDER_UNCHANGED "Builder untouched since last syncpoint. Safe to import."
     eol_note "$dif"
     payload_report "$base"
@@ -829,7 +944,7 @@ cmd_check_import() {
   echo "  (D = only in BASE, A = only in BUILDER, M = differs, E = line endings only)"
   indent <<<"$dif"
   eol_note "$dif"
-  local s; s=$(stored_stamp)
+  local s; stored_stamp; s=$SS
   if [[ -n "$s" ]]; then
     echo ""
     echo "  Pages touched in the Builder since $s (page  name  by  when):"
@@ -854,7 +969,7 @@ cmd_check_export() {
   local dirty line xy p st skip=0
   # --untracked-files=all: a user's status.showUntrackedFiles=no must not hide new work.
   dirty=$(git -C "$ROOT" status --porcelain -z --untracked-files=all --ignore-submodules=none -- "${EXPORT_SCOPE[@]}" | tr '\0' '\n')
-  evidence command 0 "git status --porcelain -- ${EXPORT_SCOPE[*]}" "$(grep -c . <<<"$dirty" || true) changed"
+  lines_of "$dirty"; evidence command 0 "git status --porcelain -- ${EXPORT_SCOPE[*]}" "${#LINES[@]} changed"
   if [[ -n "$dirty" ]]; then
     while IFS= read -r line; do
       if (( skip )); then skip=0; continue; fi
@@ -867,14 +982,15 @@ cmd_check_export() {
     fail FAIL LOCAL_DIRTY "the APEXlang source dir has uncommitted/untracked changes — the export would clobber them. Commit or stash first, then re-run."
   fi
   have_base || note "(no syncpoint yet — record-sync after this export will create it)"
-  pass LOCAL_CLEAN "working tree clean under ${SRCDIR:-the repo root}$( (( ${#EXPORT_SCOPE[@]} > 1 )) && echo " (other apps' dirs excluded)"). Safe to export."
+  local excl=""; (( ${#EXPORT_SCOPE[@]} > 1 )) && excl=" (other apps' dirs excluded)"
+  pass LOCAL_CLEAN "working tree clean under ${SRCDIR:-the repo root}$excl. Safe to export."
 }
 
 marker_fresh() {  # $1 = import|export — written by a PASS less than TTL_SECONDS ago
   local m="$STATE_DIR/check-ok.$1" t now
   [[ -f "$m" ]] || return 1
   t=$(mtime "$m" 2>/dev/null) || return 1
-  now=$(date +%s)
+  epoch_now; now=$EPOCH
   [[ "$t" =~ ^[0-9]+$ && "$now" =~ ^[0-9]+$ ]] || return 1
   (( now - t >= 0 && now - t < TTL_SECONDS ))
 }
@@ -898,9 +1014,9 @@ cmd_record_sync() {
   export_builder; scratch=$REMOTE_DIR
   if marker_fresh import; then
     basis=fresh-check
-  elif have_base && materialize_base && [[ -z "$(blocking "$(tree_diff "$BASE_APP_DIR" "$scratch/$ALIAS")")" ]]; then
+  elif have_base && materialize_base && tree_diff "$BASE_APP_DIR" "$scratch/$ALIAS" && blocking "$TD" && [[ -z "$BL" ]]; then
     basis=builder-unchanged
-  elif [[ -d "$APP_SRC" && -z "$(blocking "$(tree_diff "$APP_SRC" "$scratch/$ALIAS")")" ]]; then
+  elif [[ -d "$APP_SRC" ]] && tree_diff "$APP_SRC" "$scratch/$ALIAS" && blocking "$TD" && [[ -z "$BL" ]]; then
     basis=local-equals-builder
   elif (( OPT_FORCE )); then
     basis=forced
@@ -913,7 +1029,7 @@ cmd_record_sync() {
       Only if the user decides the current Builder IS the new truth: they run record-sync --force themselves."
   fi
   R_BASIS=$basis
-  s=$(builder_stamp); snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s" "$basis"
+  builder_stamp; s=$BS; snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s" "$basis"
   pass SYNCPOINT_RECORDED "syncpoint recorded for '$ALIAS'"
   note "commit:       $c"
   note "builderStamp: $s"
@@ -933,13 +1049,14 @@ cmd_doctor() {
   echo "apex-sync-guard: doctor"
   doc_ok "bash ${BASH_VERSION%%(*} on ${OSTYPE:-unknown}"
   case "${OSTYPE:-}" in
-    msys*|cygwin*) doc_ok "cygpath present — SQLcl will be handed e.g. $(native_path "${TMPDIR:-/tmp}")" ;;
+    msys*|cygwin*) native_path "${TMPDIR:-/tmp}"; doc_ok "cygpath present — SQLcl will be handed e.g. $NP" ;;
     *)             doc_note "not a Windows shell — no path conversion needed" ;;
   esac
   doc_ok "$(git --version)"
   if command -v sql >/dev/null 2>&1; then have_sql=1; doc_ok "SQLcl: $(command -v sql)"
   else doc_fail "SQLcl (sql) is not on PATH — every check needs it"; fi
   doc_ok "JSON parser (probed by execution): ${JSON_TOOL[*]}"
+  bytes_eq_tool
   doc_ok "byte comparator: $( [[ "$BYTES_EQ" == cmp ]] && echo "cmp" || echo "git hash-object --no-filters (cmp unavailable)" )"
   for e in "${CFG_NOTES[@]:-}"; do [[ -n "$e" ]] && doc_note "$e"; done
   if (( ${#CFG_ERRORS[@]} )); then
@@ -952,7 +1069,7 @@ cmd_doctor() {
     select_app "$i"
     echo ""
     echo "  app $APP_ID '$ALIAS' — source $SRC_REL, connection $CONN"
-    sid=$(source_app_id)
+    source_app_id; sid=$SID
     if [[ -n "$sid" && "$sid" != "$APP_ID" ]]; then
       doc_fail "deployments/default.json says app $sid, apex-sync.json says $APP_ID"
     fi
@@ -989,7 +1106,8 @@ cmd_doctor() {
 cmd_apps() {  # per app, tab-separated: alias, appId, source dir, connection, testUser, runtimeUrl
   local i
   for i in "${SEL[@]}"; do
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${APPS_ALIAS[$i]}" "${APPS_ID[$i]}" "$(app_src_rel "$i")" \
+    app_src "$i"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${APPS_ALIAS[$i]}" "${APPS_ID[$i]}" "$SR" \
       "${APPS_CONN[$i]}" "${APPS_USER[$i]}" "${APPS_URL[$i]}"
   done
 }
@@ -999,15 +1117,19 @@ cmd_status() {
   note "repo root:  $ROOT"
   note "source dir: $SRC_REL"
   if have_base; then
-    note "syncpoint:  $(git -C "$ROOT" rev-parse --short "$REF")  recorded $( [[ -f "$STATE" ]] && json_get "$STATE" recordedAt || echo '?')"
-    if [[ -f "$STATE" && "$(json_get "$STATE" basis || true)" == forced ]]; then
+    local rec='?' basis=""
+    if [[ -f "$STATE" ]] && json_get "$STATE" recordedAt; then rec=$JG; fi
+    note "syncpoint:  $(git -C "$ROOT" rev-parse --short "$REF")  recorded $rec"
+    if [[ -f "$STATE" ]] && json_get "$STATE" basis; then basis=$JG; fi
+    if [[ "$basis" == forced ]]; then
       note "            FORCED by record-sync --force — Builder-only work at that moment was not checked"
     fi
-    note "stored builderStamp:  $(stored_stamp)"
+    stored_stamp || SS=""
+    note "stored builderStamp:  $SS"
   else
     note "syncpoint:  NONE — bootstrap pending (run check-import once)"
   fi
-  note "current builderStamp: $(builder_stamp)"
+  builder_stamp; note "current builderStamp: $BS"
   local dirty; dirty=$(git -C "$ROOT" status --porcelain --untracked-files=all -- "${EXPORT_SCOPE[@]}" | wc -l | tr -d '[:space:]')
   note "LOCAL dirty files an export would overwrite: $dirty"
   for d in import export; do

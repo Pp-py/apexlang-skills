@@ -17,8 +17,9 @@ semantically. BASE↔REMOTE comparisons are therefore noise-free; only the one-t
 adopting the canonical form.
 
 **Comparison is byte-exact and independent of your git config.** Replicas are compared
-byte for byte (`cmp`, or `git hash-object --no-filters` where `cmp` is unavailable), never
-with `git diff --no-index`: git applies `.gitattributes` / `core.autocrlf` to whichever
+byte for byte — the files both sides hold by `git hash-object --no-filters`, all of them in
+one call; `cmp` (or that hash, where `cmp` is unavailable) for a file that differs or is not
+a regular file — never with `git diff --no-index`: git applies `.gitattributes` / `core.autocrlf` to whichever
 side it resolves inside the repo and not to the scratch export, so its verdict tracked the
 machine's git settings instead of the content (with `core.autocrlf=true` — the
 Git-for-Windows default — a CRLF and an LF copy of the same file compare *equal*).

@@ -20,50 +20,71 @@ set -uo pipefail
 
 TTL=600   # seconds a check PASS authorizes; must equal TTL_SECONDS in apex-sync-check.sh
 
-mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }   # GNU stat / BSD (macOS) stat
-
-# Resolved by EXECUTION, not by `command -v`: the Microsoft Store `python3` stub
-# satisfies presence checks and then exits without running. Resolved here, before
-# anything else, because the payload must be read to know whether the command is
-# relevant at all; apex-sync.json is only read (lib/, below) for those that are.
-JSON_TOOL=()
-if command -v jq >/dev/null 2>&1 && printf '{}' | jq -e . >/dev/null 2>&1; then
-  JSON_TOOL=(jq)
-else
-  for _c in "python3" "python" "py -3"; do
-    read -ra _cand <<<"$_c"
-    command -v "${_cand[0]}" >/dev/null 2>&1 || continue
-    if "${_cand[@]}" -c 'import json' >/dev/null 2>&1; then JSON_TOOL=("${_cand[@]}"); break; fi
-  done
-fi
+# This runs before every shell command of the session, so it spawns as few processes
+# as it can: under Git Bash each one costs tens of milliseconds. Helpers hand their
+# result back in a global instead of printing it into a $(...).
 
 # Native tooling on Windows writes CRLF, and a trailing \r survives command
 # substitution — it would break the repo lookup and the pattern match below.
 strip_cr() { tr -d '\r'; }
 
-json_get() {  # $1 = json file ('-' = stdin), $2 = dotted key path; 1 = no parser
-  [[ ${#JSON_TOOL[@]} -gt 0 ]] || return 1
-  if [[ "${JSON_TOOL[0]}" == "jq" ]]; then
-    jq -r ".$2 // empty" "$1" 2>/dev/null | strip_cr
-  else
-    "${JSON_TOOL[@]}" -c '
+# ASCII letters lowered, in LV — what tr did here: bash 3.2 has no ${x,,}.
+LV=""
+lower_v() {
+  local s=$1
+  s=${s//A/a}; s=${s//B/b}; s=${s//C/c}; s=${s//D/d}; s=${s//E/e}; s=${s//F/f}; s=${s//G/g}
+  s=${s//H/h}; s=${s//I/i}; s=${s//J/j}; s=${s//K/k}; s=${s//L/l}; s=${s//M/m}; s=${s//N/n}
+  s=${s//O/o}; s=${s//P/p}; s=${s//Q/q}; s=${s//R/r}; s=${s//S/s}; s=${s//T/t}; s=${s//U/u}
+  s=${s//V/v}; s=${s//W/w}; s=${s//X/x}; s=${s//Y/y}; s=${s//Z/z}
+  LV=$s
+}
+
+# The payload, read without a process where bash allows it: $(<file) forks nothing
+# from bash 5.2 on. /dev/stdin cannot be opened when stdin is a socket (Linux): cat.
+{ input=$(</dev/stdin); } 2>/dev/null || input=$(cat)
+
+PY_GET='
 import json, sys
 src = sys.stdin if sys.argv[1] == "-" else open(sys.argv[1])
 data = json.load(src)
 for k in sys.argv[2].split("."):
     data = data.get(k) if isinstance(data, dict) else None
     if data is None: break
-print("" if data is None else data)' "$1" "$2" 2>/dev/null | strip_cr
+print("" if data is None else data)'
+JV=""
+json_get() {  # $1 = dotted key path, read from the payload → JV; 1 = the parser failed
+  if [[ "${JSON_TOOL[0]}" == "jq" ]]; then
+    JV=$(jq -r ".$1 // empty" <<<"$input" 2>/dev/null) || return 1
+  else
+    JV=$("${JSON_TOOL[@]}" -c "$PY_GET" - "$1" <<<"$input" 2>/dev/null) || return 1
   fi
+  JV=${JV//$'\r'/}
 }
 
 raw_get() {  # $1 = field name — flat string extraction when there is no parser at all
   sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\(\([^"\]\|\\.\)*\)".*/\1/p' <<<"$input" | head -1 | strip_cr
 }
 
-input=$(cat)
+# The parser is resolved by EXECUTION, not by `command -v`: the Microsoft Store
+# `python3` stub satisfies presence checks and then exits without running. Its first
+# run is the read of the command — needed anyway to know whether the command is
+# relevant at all — and the probe on '{}' runs only when that read fails, to tell a
+# broken parser (try the next) from a payload the parser cannot read (scan it raw).
+# apex-sync.json is only read (lib/, below) for commands that are relevant.
+JSON_TOOL=(); _parsed=0
+for _c in jq "python3" "python" "py -3"; do
+  read -ra _cand <<<"$_c"
+  command -v "${_cand[0]}" >/dev/null 2>&1 || continue
+  JSON_TOOL=("${_cand[@]}")
+  if json_get tool_input.command; then _parsed=1; break; fi
+  if [[ "$_c" == jq ]]; then jq -e . <<<'{}' >/dev/null 2>&1 && break
+  else "${_cand[@]}" -c 'import json' >/dev/null 2>&1 && break; fi
+  JSON_TOOL=()
+done
+
 DEGRADED=0
-if cmd=$(printf '%s' "$input" | json_get - tool_input.command); then
+if (( _parsed )); then
+  cmd=$JV
   if [[ -z "$cmd" ]]; then
     # Empty is a real no-op only when the payload carries no command either; a parser
     # that reads nothing out of one that does is broken — scan the raw text instead.
@@ -103,13 +124,31 @@ block() {  # never echoes the command: it may carry a connection string with a p
   exit 2
 }
 
-# Case-insensitive ERE match against the command text. grep exits 2 when a pattern
-# is rejected (an older regex engine); that must read as a match — block — never
-# as "no match", which would allow.
+split_lines() {  # $1 = text → SL: its non-empty lines (word splitting on newlines, globbing off)
+  local IFS=$'\n' noglob=0
+  [[ $- == *f* ]] && noglob=1
+  set -f
+  # shellcheck disable=SC2206   # split on newlines on purpose, with globbing off
+  SL=($1)
+  (( noglob )) || set +f
+}
+# The command's lines, split once. Every pattern below is matched line by line, as
+# grep matched them — they depend on it: [^;&|]* stops at a newline, ^ and $ anchor
+# each line.
+split_lines "$cmd"; CMD_LINES=(${SL[@]+"${SL[@]}"})
+
+# Case-insensitive ERE match against the command, in bash: a grep per pattern was a
+# process per pattern, a dozen per command. A pattern the regex engine rejects
+# (status 2, an older engine) must read as a match — block — never as "no match",
+# which would allow.
 rx() {
-  local rc=0
-  grep -qiE -- "$1" <<<"$cmd" || rc=$?
-  (( rc == 2 )) && return 0
+  local l rc=1
+  shopt -s nocasematch
+  for l in ${CMD_LINES[@]+"${CMD_LINES[@]}"}; do
+    [[ "$l" =~ $1 ]] 2>/dev/null && { rc=0; break; }
+    (( $? == 2 )) && { rc=0; break; }
+  done
+  shopt -u nocasematch
   return "$rc"
 }
 
@@ -150,24 +189,25 @@ apex_subcommand() {  # $1 = subcommand ERE, $2 = its options ERE
 # plain reader — so `cat`/`grep`/`sed` of the script pass, while `bash … x`,
 # `cd d && ./deploy-apex-app.sh x`, `if ./deploy-apex-app.sh …`, `cat … | bash -s`
 # and `& 'C:\…\deploy-apex-app.sh'` (PowerShell) all count.
-# One command segment per line: every separator becomes a newline (sets of equal
-# length on purpose — BSD tr does not pad the second set).
-# shellcheck disable=SC2020
-segments() { printf '%s\n' "$cmd" | tr ';&|`(){}' '\n\n\n\n\n\n\n\n'; }
+# The command's segments, one per element: every separator splits.
+SEPARATORS='[;&|`(){}]'
+WORD_SEPARATORS=$'[;&|(){}<>\t`]'   # and, for path-like words, redirections and tabs too
+segments() { split_lines "${cmd//$SEPARATORS/$'\n'}"; SEGS=(${SL[@]+"${SL[@]}"}); }
 READERS='cat|less|more|head|tail|grep|egrep|fgrep|rg|ag|sed|awk|wc|ls|file|stat|shellcheck|git|echo|printf|cd|pushd|popd|diff|cmp|sha256sum|shasum|md5sum|sort|uniq|cut|tr|nl|bat|code|vi|vim|nano|get-content|gc|select-string|sls|type'
 deploy_invoked() {
   rx 'deploy-apex-app\.sh' || return 1
   (( DEGRADED )) && return 0
   local seg first assign='^[A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]*)[[:space:]]+(.*)$'
-  while IFS= read -r seg; do
+  segments
+  for seg in ${SEGS[@]+"${SEGS[@]}"}; do
     seg=${seg#"${seg%%[![:space:]]*}"}
     [[ -z "$seg" ]] && continue
     while [[ "$seg" =~ $assign ]]; do seg=${BASH_REMATCH[2]}; done   # VAR=value prefixes
     first=${seg%%[[:space:]]*}
     first=${first##*/}                                                 # /usr/bin/cat
-    first=$(printf '%s' "$first" | tr '[:upper:]' '[:lower:]')
-    [[ "$first" =~ ^($READERS)$ ]] || return 0
-  done < <(segments)
+    lower_v "$first"
+    [[ "$LV" =~ ^($READERS)$ ]] || return 0
+  done
   return 1
 }
 
@@ -199,16 +239,32 @@ fi
 [[ ${#needs[@]} -eq 0 && -z "$guard_override" ]] && exit 0
 
 # ---------------------------------------------------------------- repo
-if (( DEGRADED )); then cwd=$(raw_get cwd); else cwd=$(printf '%s' "$input" | json_get - cwd); fi
+if (( DEGRADED )); then cwd=$(raw_get cwd); else json_get cwd || JV=""; cwd=$JV; fi
 cwd=${cwd:-.}
 
-cfg_root_of() {  # $1 = an existing dir → the nearest ancestor holding apex-sync.json (physical path), or ''
-  local d i
-  d=$(cd "$1" 2>/dev/null && pwd -P) || return 0
+# The physical form of an existing dir, in PD, as `cd "$1" && pwd -P` gave it in a
+# subshell — but in this shell, which then returns: cd there (logically, so '..'
+# comes off before symlinks are resolved), re-enter it physically, come back.
+HERE=$PWD; PD=""
+phys_dir() {  # $1 = a dir → PD; 1 if it cannot be entered
+  PD=""
+  CDPATH='' cd -- "$1" 2>/dev/null || return 1
+  CDPATH='' cd -P . 2>/dev/null && PD=$PWD
+  cd -- "$HERE" 2>/dev/null || exit 1    # lost the session's footing: the trap blocks
+  [[ -n "$PD" ]]
+}
+
+CRO=""
+cfg_root_of() {  # $1 = an existing dir → CRO: the nearest ancestor holding apex-sync.json (physical path), or ''
+  local d p i
+  CRO=""
+  phys_dir "$1" || return 0
+  d=$PD
   for (( i = 0; i < 64; i++ )); do
-    [[ -f "$d/apex-sync.json" ]] && { printf '%s' "$d"; return 0; }
-    [[ "$d" == / || "$d" == "$(dirname "$d")" ]] && return 0
-    d=$(dirname "$d")
+    [[ -f "$d/apex-sync.json" ]] && { CRO=$d; return 0; }
+    p=${d%/*}; [[ -n "$p" ]] || p=/                 # dirname
+    [[ "$d" == / || "$d" == "$p" ]] && return 0
+    d=$p
   done
 }
 
@@ -216,14 +272,14 @@ if ! ROOT=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null); then
   # Not a repo — or git refused it (dubious ownership on /mnt/c is common under
   # WSL). Ours to police when an apex-sync.json sits up the tree; then git's
   # failure must block, never quietly allow.
-  found=$(cfg_root_of "$cwd")
+  cfg_root_of "$cwd"; found=$CRO
   if [[ -n "$found" ]]; then
     err=$(git -C "$cwd" rev-parse --show-toplevel 2>&1 | head -1)
     block "found $found/apex-sync.json, but git cannot resolve the repository here (${err:-no error text}), so the guard cannot check anything. Fix git first — e.g. git config --global --add safe.directory <repo> — then retry."
   fi
   ROOT=""
 fi
-SESSION=""; [[ -n "$ROOT" && -f "$ROOT/apex-sync.json" ]] && SESSION=$(cd "$ROOT" && pwd -P)
+SESSION=""; [[ -n "$ROOT" && -f "$ROOT/apex-sync.json" ]] && phys_dir "$ROOT" && SESSION=$PD
 
 # ---------------------------------------------------------------- reach
 # The markers checked below are the session repo's — the hook resolves its repo from
@@ -231,7 +287,8 @@ SESSION=""; [[ -n "$ROOT" && -f "$ROOT/apex-sync.json" ]] && SESSION=$(cd "$ROOT
 # points at one (a path argument) would be checked against the wrong markers, or —
 # from a session outside any onboarded repo — against none: it must run from inside
 # that repo. A `cd` whose target is computed at run time cannot be followed: it blocks.
-existing_dir() {  # $1 = a path as written, relative to the session cwd → the deepest existing dir on it
+ED=""
+existing_dir() {  # $1 = a path as written, relative to the session cwd → ED: the deepest existing dir on it
   local p=${1//\\//}
   # shellcheck disable=SC2088   # a literal '~/' as the command wrote it
   [[ "$p" == "~" || "$p" == "~/"* ]] && p="$HOME${p#\~}"
@@ -240,25 +297,66 @@ existing_dir() {  # $1 = a path as written, relative to the session cwd → the 
     [[ "$p" == */* ]] || { p=""; break; }
     p=${p%/*}
   done
-  printf '%s' "$p"
+  ED=$p
 }
-reach_paths() {  # every path the command names: cd/pushd targets, then path-like words
-  grep -oE '(^|[;&|({`[:space:]])(cd|pushd)[[:space:]]+("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:];&|)]+)' <<<"$cmd" \
-    | sed -E -e 's/^.*(cd|pushd)[[:space:]]+//' -e "s/^[\"']//" -e "s/[\"']\$//" | sed 's/^/cd /' || true
-  # shellcheck disable=SC2020
-  printf '%s\n' "$cmd" | tr ';&|(){}<>\t`' '           ' | tr -s ' ' '\n' \
-    | sed -e "s/^[\"']//" -e "s/[\"']\$//" -e 's/^[^=\/]*=//' | grep -E '/|^~' | sed 's/^/path /' || true
+
+# Every match of an ERE in the command, as `grep -o` printed them: line by line,
+# leftmost first, each search resuming where the last match ended. A resumed search
+# runs behind a sentinel character, so ^ cannot match there — grep's ^ is the
+# start of the line only. Case-insensitive with $2 = nocase. → MATCHES
+MATCHES=()
+matches() {  # $1 = ERE, $2 = nocase|''
+  local l rest m pre sent hit
+  MATCHES=()
+  for l in ${CMD_LINES[@]+"${CMD_LINES[@]}"}; do
+    rest=$l; sent=""
+    while :; do
+      [[ "${2:-}" == nocase ]] && shopt -s nocasematch
+      [[ "$sent$rest" =~ $1 ]] 2>/dev/null; hit=$?
+      shopt -u nocasematch
+      (( hit == 0 )) || break
+      m=${BASH_REMATCH[0]}
+      [[ -n "$m" ]] || break
+      MATCHES+=("$m")
+      pre=${rest%%"$m"*}                         # where the match is: its first occurrence
+      rest=${rest:$(( ${#pre} + ${#m} ))}; sent=x
+    done
+  done
 }
-while IFS= read -r _r; do
-  [[ -z "$_r" ]] && continue
+
+REACH=()
+reach_paths() {  # → REACH: every path the command names, "cd <dir>" targets first, then "path <word>"
+  local m w words=()
+  REACH=()
+  matches '(^|[;&|({`[:space:]])(cd|pushd)[[:space:]]+("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:];&|)]+)'
+  for m in ${MATCHES[@]+"${MATCHES[@]}"}; do
+    [[ "$m" =~ ^.*(cd|pushd)[[:space:]]+ ]] && m=${m:${#BASH_REMATCH[0]}}   # up to the last cd/pushd
+    m=${m#[\"\']}; m=${m%[\"\']}
+    REACH+=("cd $m")
+  done
+  # The words, split on blanks once the shell's separators are blanks too.
+  local IFS=$' \n' noglob=0
+  [[ $- == *f* ]] && noglob=1
+  set -f
+  # shellcheck disable=SC2206   # split on blanks on purpose, with globbing off
+  words=(${cmd//$WORD_SEPARATORS/ })
+  (( noglob )) || set +f
+  for w in ${words[@]+"${words[@]}"}; do
+    w=${w#[\"\']}; w=${w%[\"\']}
+    [[ "$w" =~ ^[^=/]*= ]] && w=${w:${#BASH_REMATCH[0]}}                   # VAR=value
+    [[ "$w" == */* || "$w" == "~"* ]] && REACH+=("path $w")
+  done
+}
+reach_paths
+for _r in ${REACH[@]+"${REACH[@]}"}; do
   _kind=${_r%% *}; _p=${_r#* }
   case "$_p" in
     *'$'*|*'`'*|-) [[ "$_kind" == cd ]] && block "the command changes into a directory computed at run time ($_p), so the guard cannot tell which repository it acts on. Write the path out, or run it from inside the repo." ; continue ;;
   esac
-  _d=$(existing_dir "$_p"); [[ -n "$_d" ]] || continue
-  _c=$(cfg_root_of "$_d"); [[ -n "$_c" && "$_c" != "$SESSION" ]] || continue
+  existing_dir "$_p"; _d=$ED; [[ -n "$_d" ]] || continue
+  cfg_root_of "$_d"; _c=$CRO; [[ -n "$_c" && "$_c" != "$SESSION" ]] || continue
   block "the command reaches $_c, a repository the guard watches, but this session runs in '${cwd}'${SESSION:+ (repository $SESSION)} — the guard can only check the repository it runs in. Run the command from inside $_c."
-done < <(reach_paths)
+done
 
 [[ -n "$SESSION" ]] || exit 0                                               # not ours to police
 CFG="$ROOT/apex-sync.json"
@@ -273,7 +371,9 @@ _self=${BASH_SOURCE[0]}
 while [[ -L "$_self" ]]; do
   _d=$(cd -P "$(dirname "$_self")" && pwd); _self=$(readlink "$_self"); [[ "$_self" == /* ]] || _self="$_d/$_self"
 done
-_lib="$(cd -P "$(dirname "$_self")" && pwd)/lib/sync-config.sh"
+case "$_self" in */*) _d=${_self%/*}; _d=${_d:-/} ;; *) _d=. ;; esac   # dirname
+_libdir=""; CDPATH='' cd -P -- "$_d" && _libdir=$PWD; cd -- "$HERE" 2>/dev/null || exit 1
+_lib="$_libdir/lib/sync-config.sh"
 # shellcheck source=skills/apex-sync-guard/scripts/lib/sync-config.sh
 . "$_lib" 2>/dev/null || block "incomplete installation: $_lib is missing, so the guard cannot read apex-sync.json."
 
@@ -307,16 +407,18 @@ NAPPS=${#APPS_ALIAS[@]}
 # string), through `cd … && pwd -P`; Windows compares without case.
 NOCASE=""; case "${OSTYPE:-}" in msys*|cygwin*) NOCASE=1 ;; esac; [[ "$ROOT" =~ ^[A-Za-z]: ]] && NOCASE=1
 
-lex_norm() {  # an absolute '/'-separated path → '.' and '..' resolved lexically
+LN=""
+lex_norm() {  # an absolute '/'-separated path → LN: '.' and '..' resolved lexically
   local p=$1 out="" seg
   while [[ -n "$p" ]]; do
     seg=${p%%/*}
     if [[ "$p" == */* ]]; then p=${p#*/}; else p=""; fi
     case "$seg" in ""|.) ;; ..) out=${out%/*} ;; *) out+="/$seg" ;; esac
   done
-  printf '%s' "${out:-/}"
+  LN=${out:-/}
 }
-phys() {  # $1 = a path as a command wrote it (relative to the session cwd) → comparable with ROOT_N
+PH=""
+phys() {  # $1 = a path as a command wrote it (relative to the session cwd) → PH, comparable with ROOT_N
   local p=${1//\\//} rest="" d
   # shellcheck disable=SC2088   # a literal '~/' as the command wrote it
   [[ "$p" == "~" || "$p" == "~/"* ]] && p="$HOME${p#\~}"
@@ -325,14 +427,14 @@ phys() {  # $1 = a path as a command wrote it (relative to the session cwd) → 
     [[ "$p" == */* ]] || { p=""; break; }
     rest="/${p##*/}$rest"; p=${p%/*}
   done
-  d=$(cd "${p:-/}" 2>/dev/null && pwd -P) || d=${p:-/}
-  p=$(lex_norm "$d$rest")
-  if [[ -n "$NOCASE" ]]; then lower "$p"; else printf '%s' "$p"; fi
+  if phys_dir "${p:-/}"; then d=$PD; else d=${p:-/}; fi
+  lex_norm "$d$rest"
+  if [[ -n "$NOCASE" ]]; then lower_v "$LN"; PH=$LV; else PH=$LN; fi
 }
 ROOT_N=""; CWD_N=""
 if (( ! DEGRADED && NAPPS > 1 )); then
-  CWD_N=$(cd "$cwd" 2>/dev/null && pwd -P) || CWD_N=$(cd "$ROOT" && pwd -P)
-  ROOT_N=$(phys "$ROOT")
+  if phys_dir "$cwd"; then CWD_N=$PD; else phys_dir "$ROOT"; CWD_N=$PD; fi
+  phys "$ROOT"; ROOT_N=$PH
 fi
 
 # shellcheck disable=SC2034   # read and written by name: T_$direction
@@ -343,21 +445,25 @@ unresolved() { [[ -n "$UNRESOLVED" ]] || UNRESOLVED=$1; }
 
 # Each invocation's own text: from the subcommand (or script) to the end of its
 # command segment, so another command's options (`grep -i x; apex import …`) are
-# never read as its arguments.
-spans()       { grep -oiE -- "$1" <<<"$cmd" || true; }
-flag_values() {  # $1 = text, $2 = options ERE → every value they take, one per line
+# never read as its arguments — the spans are `matches … nocase`.
+FV=()
+flag_values() {  # $1 = text, $2 = options ERE → FV: every value they take
   local rest=$1 re
+  FV=()
   re="(^|[[:space:]])($2)([[:space:]]+|=)(\"([^\"]*)\"|'([^']*)'|([^[:space:];&|()\`<>\"']+))"
   shopt -s nocasematch
   while [[ "$rest" =~ $re ]]; do
-    printf '%s\n' "${BASH_REMATCH[5]}${BASH_REMATCH[6]}${BASH_REMATCH[7]}"
+    FV+=("${BASH_REMATCH[5]}${BASH_REMATCH[6]}${BASH_REMATCH[7]}")
     rest=${rest#*"${BASH_REMATCH[0]}"}
   done
   shopt -u nocasematch
 }
-first_arg() {  # $1 = a deploy-script span → the argument after the script, if any
+FA=""
+first_arg() {  # $1 = a deploy-script span → FA: the argument after the script, if any
   local re="^deploy-apex-app\.sh[\"']?[[:space:]]+(\"([^\"]*)\"|'([^']*)'|([^[:space:];&|()\`<>\"']+))"
-  [[ "$1" =~ $re ]] && printf '%s\n' "${BASH_REMATCH[2]}${BASH_REMATCH[3]}${BASH_REMATCH[4]}"
+  FA=""
+  [[ "$1" =~ $re ]] && FA="${BASH_REMATCH[2]}${BASH_REMATCH[3]}${BASH_REMATCH[4]}"
+  return 0
 }
 
 target_of_path() {  # $1 = direction, $2 = a source path from the command
@@ -366,11 +472,11 @@ target_of_path() {  # $1 = direction, $2 = a source path from the command
     *'$'*|*'`'*)  unresolved "a path is computed at run time ($v)"; return ;;
     *.zip|*.ZIP)  unresolved "a .zip ($v) cannot be traced to an app's source dir"; return ;;
   esac
-  p=$(phys "$v")
+  phys "$v"; p=$PH
   if [[ "$p" != "$ROOT_N"/* ]]; then unresolved "$v is not inside this repository"; return; fi
   r=${p#"$ROOT_N"/}
   for (( i = 0; i < NAPPS; i++ )); do
-    src=$(app_src_rel "$i"); [[ -n "$NOCASE" ]] && src=$(lower "$src")
+    app_src "$i"; src=$SR; [[ -n "$NOCASE" ]] && { lower_v "$src"; src=$LV; }
     if [[ "$r" == "$src" || "$r" == "$src/"* ]]; then add_target "$1" "${APPS_ALIAS[$i]}"; return; fi
   done
   unresolved "$v is not inside any app's source dir"
@@ -386,32 +492,38 @@ target_of_id() {  # $1 = direction, $2 = an app id from the command
 # Every invocation must name its app — one that does cannot vouch for another in the
 # same command (`apex import -input a && cd b && apex import`).
 resolve_import() {
-  local s v n seg first runs=0
-  while IFS= read -r s; do
+  local s v n seg first runs=0 spans
+  matches "apex[[:space:]]+$IMPORT_SUB([^[:alnum:]_-][^;&|]*)?" nocase; spans=(${MATCHES[@]+"${MATCHES[@]}"})
+  for s in ${spans[@]+"${spans[@]}"}; do
     [[ -z "$s" ]] && continue
     runs=1; n=0
-    while IFS= read -r v; do [[ -n "$v" ]] && { n=1; target_of_path import "$v"; }; done < <(flag_values "$s" '-input|-i')
-    while IFS= read -r v; do [[ -n "$v" ]] && { n=1; target_of_id import "$v"; }; done < <(flag_values "$s" '-id|-applicationid|-api')
+    flag_values "$s" '-input|-i'
+    for v in ${FV[@]+"${FV[@]}"}; do [[ -n "$v" ]] && { n=1; target_of_path import "$v"; }; done
+    flag_values "$s" '-id|-applicationid|-api'
+    for v in ${FV[@]+"${FV[@]}"}; do [[ -n "$v" ]] && { n=1; target_of_id import "$v"; }; done
     (( n )) || unresolved "an apex import names no app — no -input, no -id (a bare apex import imports the current directory)"
-  done < <(spans "apex[[:space:]]+$IMPORT_SUB([^[:alnum:]_-][^;&|]*)?")
+  done
   if (( APEXCTL_IMPORT )); then
-    while IFS= read -r s; do
+    matches 'apexctl[^;&|]*' nocase; spans=(${MATCHES[@]+"${MATCHES[@]}"})
+    for s in ${spans[@]+"${spans[@]}"}; do
       [[ -z "$s" ]] && continue
       runs=1; n=0
-      while IFS= read -r v; do [[ -n "$v" ]] && { n=1; target_of_path import "$v"; }; done < <(flag_values "$s" '--app-path')
+      flag_values "$s" '--app-path'
+      for v in ${FV[@]+"${FV[@]}"}; do [[ -n "$v" ]] && { n=1; target_of_path import "$v"; }; done
       (( n )) || unresolved "an apexctl run names no --app-path"
-    done < <(spans 'apexctl[^;&|]*')
+    done
   fi
   # The deploy script: every segment that runs it (not a plain reader) names its dir.
   n=0
-  while IFS= read -r seg; do
+  segments
+  for seg in ${SEGS[@]+"${SEGS[@]}"}; do
     [[ "$seg" == *deploy-apex-app.sh* ]] || continue
-    first=${seg#"${seg%%[![:space:]]*}"}; first=${first%%[[:space:]]*}; first=$(lower "${first##*/}")
+    first=${seg#"${seg%%[![:space:]]*}"}; first=${first%%[[:space:]]*}; lower_v "${first##*/}"; first=$LV
     [[ "$first" =~ ^($READERS)$ ]] && continue
     runs=1; n=1
-    v=$(first_arg "deploy-apex-app.sh${seg#*deploy-apex-app.sh}")
+    first_arg "deploy-apex-app.sh${seg#*deploy-apex-app.sh}"; v=$FA
     if [[ -n "$v" ]]; then target_of_path import "$v"; else unresolved "the deploy script is run without an app directory"; fi
-  done < <(segments)
+  done
   if deploy_invoked && (( n == 0 )); then
     unresolved "the deploy script is run in a way the guard cannot read (piped or computed)"
   fi
@@ -419,18 +531,20 @@ resolve_import() {
 }
 
 resolve_export() {
-  local s v ids
-  while IFS= read -r s; do
+  local s v ids spans
+  matches "apex[[:space:]]+$EXPORT_SUB([^[:alnum:]_-][^;&|]*)?" nocase; spans=(${MATCHES[@]+"${MATCHES[@]}"})
+  for s in ${spans[@]+"${spans[@]}"}; do
     [[ -z "$s" ]] && continue
-    ids=$(flag_values "$s" '-applicationid|-api')
+    flag_values "$s" '-applicationid|-api'
+    ids=""; for v in ${FV[@]+"${FV[@]}"}; do ids+=$v; done
     if [[ -z "$ids" ]]; then
       # No app id: a workspace-, instance- or all-applications export writes the
       # tree of every app it holds — every declared app needs its check.
       for v in "${APPS_ALIAS[@]}"; do add_target export "$v"; done
     else
-      while IFS= read -r v; do [[ -n "$v" ]] && target_of_id export "$v"; done <<<"$ids"
+      for v in ${FV[@]+"${FV[@]}"}; do [[ -n "$v" ]] && target_of_id export "$v"; done
     fi
-  done < <(spans "apex[[:space:]]+$EXPORT_SUB([^[:alnum:]_-][^;&|]*)?")
+  done
 }
 
 if (( DEGRADED || NAPPS == 1 )); then
@@ -440,9 +554,11 @@ else
     case "$d" in import) resolve_import ;; export) resolve_export ;; esac
     if [[ -n "$UNRESOLVED" ]]; then
       _dirs=""; _ids=""
-      for (( i = 0; i < NAPPS; i++ )); do _dirs+="${_dirs:+, }$(app_src_rel "$i")"; _ids+="${_ids:+, }${APPS_ID[$i]}"; done
+      for (( i = 0; i < NAPPS; i++ )); do app_src "$i"; _dirs+="${_dirs:+, }$SR"; _ids+="${_ids:+, }${APPS_ID[$i]}"; done
+      if [[ "$d" == import ]]; then _how="its source dir ($_dirs) as the -input, deploy-apex-app.sh or --app-path argument, or its id ($_ids) as -id"
+      else _how="its id ($_ids) as -applicationid"; fi
       block "apex-sync.json declares $NAPPS apps (${APPS_ALIAS[*]}) and this $d cannot be traced to one of them: $UNRESOLVED.
-Name the app in the command, so the guard can require that app's check: $( [[ "$d" == import ]] && echo "its source dir ($_dirs) as the -input, deploy-apex-app.sh or --app-path argument, or its id ($_ids) as -id" || echo "its id ($_ids) as -applicationid")."
+Name the app in the command, so the guard can require that app's check: $_how."
     fi
   done
 fi
@@ -452,15 +568,19 @@ fi
 # names. `sql -name prod … apex import` after a check through dev would overwrite a
 # Builder nobody checked. (A connect string, as Oracle's deploy script takes, cannot
 # be compared with a saved name: GAP-6.)
-conn_names() {  # the saved-connection names the command's SQLcl launchers are given
+CN=()
+conn_names() {  # → CN: the saved-connection names the command's SQLcl launchers are given
   local s pre re='(^|[[:space:]])-name[[:space:]=]+("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^[:space:]]+))'
-  while IFS= read -r s; do
+  CN=()
+  matches '(^|[;&|(`[:space:]/\\])(sql|sql\.exe|sql\.bat|sqlcl)["'"'"']?[[:space:]][^;&|]*' nocase
+  for s in ${MATCHES[@]+"${MATCHES[@]}"}; do
     pre=${s%%[<\"\'@]*}
-    if [[ "$pre" =~ $re ]]; then printf '%s\n' "${BASH_REMATCH[3]}${BASH_REMATCH[4]}${BASH_REMATCH[5]}"; fi
-  done < <(spans '(^|[;&|(`[:space:]/\\])(sql|sql\.exe|sql\.bat|sqlcl)["'"'"']?[[:space:]][^;&|]*')
+    if [[ "$pre" =~ $re ]]; then CN+=("${BASH_REMATCH[3]}${BASH_REMATCH[4]}${BASH_REMATCH[5]}"); fi
+  done
 }
 if (( ! DEGRADED )); then
-  while IFS= read -r _n; do
+  conn_names
+  for _n in ${CN[@]+"${CN[@]}"}; do
     [[ -z "$_n" ]] && continue
     for d in "${needs[@]}"; do
       _v="T_$d"
@@ -470,18 +590,21 @@ if (( ! DEGRADED )); then
         block "this $d connects through '$_n', but app '$a' is checked through '${APPS_CONN[$APP_I]}' (apex-sync.json): a check speaks only for the Builder it compared. Connect through '${APPS_CONN[$APP_I]}', or describe the other target as its own app in apex-sync.json."
       done
     done
-  done < <(conn_names)
+  done
 fi
 
 # ---------------------------------------------------------------- freshness
 # Every app the operation acts on needs a fresh marker in the needed direction.
-now=$(date +%s)
+# The clock without a process where bash has one: EPOCHSECONDS (bash 5).
+now=""; (( BASH_VERSINFO[0] >= 5 )) && now=${EPOCHSECONDS:-}
+[[ "$now" =~ ^[0-9]+$ ]] || now=$(date +%s)
 [[ "$now" =~ ^[0-9]+$ ]] || block "cannot read the clock, so the marker's age is unknown."
 for d in "${needs[@]}"; do
   _v="T_$d"
   for a in ${!_v}; do
     m="$ROOT/.git/apex-sync/$a/check-ok.$d"
-    t=""; [[ -f "$m" ]] && t=$(mtime "$m" 2>/dev/null)
+    t=""   # its mtime: GNU stat, else BSD (macOS) stat
+    if [[ -f "$m" ]]; then t=$(stat -c %Y "$m" 2>/dev/null) || t=$(stat -f %m "$m" 2>/dev/null) || t=""; fi
     # A missing, unreadable, expired — or future-dated (clock skew) — marker is no marker.
     if [[ ! -f "$m" || ! "$t" =~ ^[0-9]+$ ]] || (( now - t >= TTL || now - t < -60 )); then
       _app=""; (( NAPPS > 1 )) && _app=" --app $a"

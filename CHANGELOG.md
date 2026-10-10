@@ -75,6 +75,12 @@ verified revision (`framework/oracle-skills.lock.json`).
   the `C:/…` form of a Windows home; it now rewrites only where a path begins, in both forms.
 - Multi-app tracing compared the session's logical cwd with git's physical root, so it blocked
   legitimate commands under a symlinked dir (macOS `/var`) or Git Bash (`/tmp` vs `C:/…`).
+- Slow on Windows. Under Git Bash every process costs tens of milliseconds, and the scripts
+  spawned them by the dozen — a grep per pattern, an awk per config key, a `cmp` per file. The
+  hook clears a command that mentions apex in 0.14 s (0.43 s in 0.5.0) and decides an `apex
+  import` in 0.35 s (0.71 s); a check compares the files both replicas hold in one `git hash-object` call,
+  so check-import on a 200-file app in sync takes 2.8 s, not 43 s (SQLcl stubbed: a real
+  export adds its own time); `pw.sh` reads `apex-sync.json` without an awk per key.
 - The upstream tier no longer reports a pass for a run that did not happen; the lint and the
   compiler are separate lanes, and the lint is advisory.
 - Docs no longer claim what was not true: "the official `apex` skill", "apex validate-green
