@@ -286,7 +286,10 @@ def check_criterion_ids():
         if not prefix:
             problems.append(f"{rel}: no criterion prefix registered for this check")
             continue
-        for line in criteria_section(read(rel)).splitlines():
+        section = criteria_section(read(rel))
+        if not re.search(r"^- `", section, re.M):
+            problems.append(f"{rel}: no criterion with an ID — is its '## Pass criteria' section gone?")
+        for line in section.splitlines():
             if not line.startswith("- ") or line.startswith("- (Not a runtime criterion"):
                 continue
             m = re.match(r"^- `([^`]+)` — ", line)

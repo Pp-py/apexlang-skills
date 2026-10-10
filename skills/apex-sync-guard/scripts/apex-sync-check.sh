@@ -69,6 +69,76 @@ native_path() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
 }
 
+TMP_KEEP=""                       # scratch dirs preserved on FAIL for resolution
+TMPS=()
+RESULT_FILES=()                   # where this run's sync-result goes (results_init)
+ROOT=""; STATE_DIR=""             # known once the repo and the app are
+
+# A check that does not end in PASS leaves no authorization behind: not the marker it
+# set out to renew, nor one an earlier or a concurrent run left — what it guards is
+# unknown again. Stopped before its app was known (a bad option, no SQLcl, an invalid
+# config, --app missing), it withdraws that direction for every app the file names,
+# read without a parser: one may not exist yet.
+withdraw_markers() {  # $1 = import|export
+  local root a
+  if [[ -n "$STATE_DIR" ]]; then rm -f "$STATE_DIR/check-ok.$1"; return 0; fi
+  root=${ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}
+  [[ -n "$root" && -f "$root/apex-sync.json" ]] || return 0
+  while IFS= read -r a; do
+    [[ "$a" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ ]] && rm -f "$root/.git/apex-sync/$a/check-ok.$1"
+  done < <(grep -o '"appAlias"[[:space:]]*:[[:space:]]*"[^"]*"' "$root/apex-sync.json" 2>/dev/null \
+           | sed 's/.*"\([^"]*\)"$/\1/' | tr -d '\r')
+  return 0
+}
+
+# The single exit path. The verdict is persisted HERE, and the freshness marker the
+# hook trusts is written here and nowhere else: after the verdict line, the deploy
+# payload and everything else the run printed, after the result file says PASS, and
+# only when the run actually ended in a check PASS. A crash after the PASS line (an
+# unreadable state.json, a full disk) therefore never leaves the gate open — it ends
+# UNKNOWN, exit 3, no marker.
+on_exit() {
+  local rc=$? t f
+  set +e
+  if [[ -n "$R_OP" ]]; then
+    if [[ -z "$R_STATUS" ]]; then
+      if (( rc >= 128 )); then t=INTERRUPTED; else t=UNEXPECTED_ERROR; fi
+      classify UNKNOWN "$t" "$R_OP ended (exit $rc) before reaching a verdict; nothing is authorized."
+      echo "apex-sync-guard: ERROR: $R_OP ended (exit $rc) before reaching a verdict — UNKNOWN ($R_REASON); nothing is authorized." >&2
+    elif [[ "$R_STATUS" == PASS && $rc -ne 0 ]]; then
+      classify UNKNOWN UNEXPECTED_ERROR "$R_OP reached PASS ($R_REASON), then failed (exit $rc); nothing is authorized, re-run it."
+      echo "apex-sync-guard: ERROR: $R_OP reached PASS, then failed (exit $rc) — UNKNOWN ($R_REASON); nothing is authorized, re-run it." >&2
+    fi
+    case "$R_STATUS" in PASS) rc=0 ;; FAIL|CONFLICT) rc=1 ;; BLOCKED) rc=2 ;; *) rc=3 ;; esac
+    if [[ "$R_OP" == check-* && "$R_STATUS" != PASS ]]; then withdraw_markers "${R_OP#check-}"; fi
+    if (( ${#RESULT_FILES[@]} )); then
+      if write_results; then
+        for f in "${RESULT_FILES[@]}"; do note "result: $f"; done
+      elif [[ "$R_STATUS" == PASS ]]; then
+        # The placeholder (UNKNOWN) stays behind, which is the truth now.
+        classify UNKNOWN UNEXPECTED_ERROR "the PASS could not be written to its result file"; rc=3
+        echo "apex-sync-guard: ERROR: could not write the result file — UNKNOWN; no marker, the hook keeps blocking." >&2
+      else
+        echo "apex-sync-guard: WARNING: could not write the result file(s): ${RESULT_FILES[*]}" >&2
+      fi
+    fi
+    if [[ "$R_STATUS" == PASS && "$R_OP" == check-* ]]; then
+      if ! write_marker "${R_OP#check-}"; then
+        rm -f "$STATE_DIR/check-ok.${R_OP#check-}"
+        classify UNKNOWN UNEXPECTED_ERROR "the PASS could not be turned into the hook's freshness marker"; rc=3
+        (( ${#RESULT_FILES[@]} )) && write_results
+        echo "apex-sync-guard: ERROR: could not write the freshness marker — UNKNOWN; the hook will keep blocking." >&2
+      fi
+    fi
+  fi
+  for t in "${TMPS[@]:-}"; do [[ -n "$t" && "$t" != "$TMP_KEEP" ]] && rm -rf "$t"; done
+  exit "$rc"
+}
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
 # ------------------------------------------------------------ arguments
 # Parsed before any setup, so a usage error never depends on SQLcl or a parser.
 USAGE="usage: $(basename "$0") check-import|check-export|record-sync|status|doctor|apps [--app <alias>] [--task <id>] [--force]"
@@ -82,7 +152,8 @@ while (( $# )); do
     --task=*)  OPT_TASK=${1#--task=}; [[ -n "$OPT_TASK" ]] || die "--task needs a value — $USAGE" ;;
     -h|--help) echo "$USAGE"; exit 0 ;;
     -*)        die "unknown option: $1 — $USAGE" ;;
-    *)         [[ -z "$SUB" ]] || die "unexpected argument: $1 — $USAGE"; SUB=$1 ;;
+    *)         [[ -z "$SUB" ]] || die "unexpected argument: $1 — $USAGE"; SUB=$1
+               case "$SUB" in check-import|check-export|record-sync) R_OP=$SUB ;; esac ;;
   esac
   shift
 done
@@ -213,57 +284,6 @@ select_app() {  # $1 = index into the APPS_* arrays; sets the per-app globals
 APP_SRC=""; STATE_DIR=""; STATE=""; REF=""; GIT_HERMETIC=()
 export GIT_ATTR_NOSYSTEM=1
 [[ -z "$R_OP" ]] || select_app "${SEL[0]}"
-
-TMP_KEEP=""                       # scratch dirs preserved on FAIL for resolution
-TMPS=()
-RESULT_FILES=()                   # where this run's sync-result goes (results_init)
-
-# The single exit path. The verdict is persisted HERE, and the freshness marker the
-# hook trusts is written here and nowhere else: after the verdict line, the deploy
-# payload and everything else the run printed, after the result file says PASS, and
-# only when the run actually ended in a check PASS. A crash after the PASS line (an
-# unreadable state.json, a full disk) therefore never leaves the gate open — it ends
-# UNKNOWN, exit 3, no marker.
-on_exit() {
-  local rc=$? t f
-  set +e
-  if [[ -n "$R_OP" ]]; then
-    if [[ -z "$R_STATUS" ]]; then
-      if (( rc >= 128 )); then t=INTERRUPTED; else t=UNEXPECTED_ERROR; fi
-      classify UNKNOWN "$t" "$R_OP ended (exit $rc) before reaching a verdict; nothing is authorized."
-      echo "apex-sync-guard: ERROR: $R_OP ended (exit $rc) before reaching a verdict — UNKNOWN ($R_REASON); nothing is authorized." >&2
-    elif [[ "$R_STATUS" == PASS && $rc -ne 0 ]]; then
-      classify UNKNOWN UNEXPECTED_ERROR "$R_OP reached PASS ($R_REASON), then failed (exit $rc); nothing is authorized, re-run it."
-      echo "apex-sync-guard: ERROR: $R_OP reached PASS, then failed (exit $rc) — UNKNOWN ($R_REASON); nothing is authorized, re-run it." >&2
-    fi
-    case "$R_STATUS" in PASS) rc=0 ;; FAIL|CONFLICT) rc=1 ;; BLOCKED) rc=2 ;; *) rc=3 ;; esac
-    if (( ${#RESULT_FILES[@]} )); then
-      if write_results; then
-        for f in "${RESULT_FILES[@]}"; do note "result: $f"; done
-      elif [[ "$R_STATUS" == PASS ]]; then
-        # The placeholder (UNKNOWN) stays behind, which is the truth now.
-        classify UNKNOWN UNEXPECTED_ERROR "the PASS could not be written to its result file"; rc=3
-        echo "apex-sync-guard: ERROR: could not write the result file — UNKNOWN; no marker, the hook keeps blocking." >&2
-      else
-        echo "apex-sync-guard: WARNING: could not write the result file(s): ${RESULT_FILES[*]}" >&2
-      fi
-    fi
-    if [[ "$R_STATUS" == PASS && "$R_OP" == check-* ]]; then
-      if ! write_marker "${R_OP#check-}"; then
-        rm -f "$STATE_DIR/check-ok.${R_OP#check-}"
-        classify UNKNOWN UNEXPECTED_ERROR "the PASS could not be turned into the hook's freshness marker"; rc=3
-        (( ${#RESULT_FILES[@]} )) && write_results
-        echo "apex-sync-guard: ERROR: could not write the freshness marker — UNKNOWN; the hook will keep blocking." >&2
-      fi
-    fi
-  fi
-  for t in "${TMPS[@]:-}"; do [[ -n "$t" && "$t" != "$TMP_KEEP" ]] && rm -rf "$t"; done
-  exit "$rc"
-}
-trap on_exit EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-trap 'exit 129' HUP
 
 # A check always starts by withdrawing its own authorization: a FAIL, a BLOCKED or
 # a crash must never leave an earlier PASS's marker fresh for the hook to trust.
@@ -516,8 +536,8 @@ payload_report() {  # $1 = materialized BASE app dir
   note "(may include formatting-only entries: LOCAL is hand-edited, BASE is the exporter's canonical form)"
 }
 
-write_marker() {  # $1 = import|export
-  printf '{"check":"%s","at":"%s"}\n' "$1" "$(now_iso)" > "$STATE_DIR/check-ok.$1"
+write_marker() {  # $1 = import|export — fails when the marker could not be written
+  printf '{"check":"%s","at":"%s"}\n' "$1" "$(now_iso)" > "$STATE_DIR/check-ok.$1" || return 1
   # Printed on purpose: the hook resolves the repo from the tool payload's cwd
   # and this script from its own, so a check run inside a command that `cd`s
   # elsewhere leaves the marker where the hook will not look. Showing both
@@ -556,13 +576,10 @@ repo_rel() {  # tree_diff lines (app-relative) → the same lines, repo-relative
 }
 
 # Sets J to $1 as a JSON string literal — a global, not $(...): it runs once per
-# changed file, and a fork per file is slow under Git Bash. The repo root and
-# $HOME are redacted: a result is evidence that may be shared, a home path names
-# the user. Control characters other than \n \r \t become \u00XX.
+# changed file, and a fork per file is slow under Git Bash. Control characters other
+# than \n \r \t become \u00XX.
 jstr() {
   local s=$1 out="" c i LC_ALL=C
-  [[ -n "${ROOT:-}" ]] && s=${s//"$ROOT"/<repo>}
-  [[ -n "${HOME:-}" && "$HOME" != / ]] && s=${s//"$HOME/"/\~/}
   s=${s//\\/\\\\}; s=${s//\"/\\\"}
   s=${s//$'\n'/\\n}; s=${s//$'\r'/\\r}; s=${s//$'\t'/\\t}
   if [[ "$s" == *[$'\001'-$'\037']* ]]; then
@@ -574,6 +591,37 @@ jstr() {
     s=$out
   fi
   J="\"$s\""
+}
+
+# Free text (messages, recorded commands) is redacted before it is encoded: a result is
+# evidence that may be shared, and a home path names the user. The repo root becomes
+# <repo>/ and $HOME/ becomes ~/ — in the shell's form and in the C:/… form native tools
+# print — only where a path begins (after a space, a quote, a bracket, = or :), so a
+# relative path that merely contains the same letters is left alone.
+REDACT=()
+jtext() {
+  local s=$1 out pre p rep i
+  if (( ! ${#REDACT[@]} )); then
+    [[ -n "$ROOT" ]] && REDACT+=("$ROOT" "<repo>")
+    [[ -n "$ROOT" ]] && [[ "$(native_path "$ROOT")" != "$ROOT" ]] && REDACT+=("$(native_path "$ROOT")" "<repo>")
+    [[ -n "${HOME:-}" && "$HOME" != / ]] && REDACT+=("$HOME" "~")
+    [[ -n "${HOME:-}" && "$HOME" != / ]] && [[ "$(native_path "$HOME")" != "$HOME" ]] && REDACT+=("$(native_path "$HOME")" "~")
+    REDACT+=("" "")
+  fi
+  for (( i = 0; i + 1 < ${#REDACT[@]}; i += 2 )); do
+    p=${REDACT[$i]}; rep=${REDACT[$((i + 1))]}
+    [[ -n "$p" ]] || continue
+    out=""
+    while [[ "$s" == *"$p/"* ]]; do
+      pre=${s%%"$p/"*}; s=${s#*"$p/"}
+      case "${pre: -1}" in
+        ""|" "|"("|"'"|'"'|"="|":"|"["|$'\t'|$'\n') out+="$pre$rep/" ;;
+        *) out+="$pre$p/" ;;
+      esac
+    done
+    s=$out$s
+  done
+  jstr "$s"
 }
 jstr_or_null() { if [[ -n "$1" ]]; then jstr "$1"; else J=null; fi; }
 
@@ -591,8 +639,8 @@ json_evidence() {
   while IFS=$US read -r kind rc text res; do
     [[ -z "$kind" ]] && continue
     case "$kind" in sql) key="statement"; rkey="result" ;; *) key="command"; rkey="output" ;; esac
-    jstr "$text"; out+="$sep{\"kind\": \"$kind\", \"$key\": $J, \"exitCode\": $rc"
-    if [[ -n "$res" ]]; then jstr "$res"; out+=", \"$rkey\": $J"; fi
+    jtext "$text"; out+="$sep{\"kind\": \"$kind\", \"$key\": $J, \"exitCode\": $rc"
+    if [[ -n "$res" ]]; then jtext "$res"; out+=", \"$rkey\": $J"; fi
     out+="}"; sep=", "
   done <<<"$R_EVIDENCE"
   printf '[%s]' "$out"
@@ -606,7 +654,7 @@ iso_in() {  # $1 = seconds from now → UTC ISO-8601 (GNU date, else BSD date)
 result_json() {  # prints the sync-result for the current R_* state; never fails
   local d head dirty=false spc mmd="" tgt dir written=false exp=null rec=false pc=null
   head=$(git -C "$ROOT" rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null) || head=""
-  [[ -z "$(git -C "$ROOT" status --porcelain 2>/dev/null | head -1)" ]] || dirty=true
+  [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=normal 2>/dev/null | head -1)" ]] || dirty=true
   spc=$(git -C "$ROOT" rev-parse -q --verify "$REF^{commit}" 2>/dev/null) || spc=""
   if [[ -f "$APP_SRC/.apex/apexlang.json" ]]; then     # what Oracle's skills route on
     mmd=$(json_get "$APP_SRC/.apex/apexlang.json" mmdVersion 2>/dev/null) || mmd=""
@@ -614,7 +662,7 @@ result_json() {  # prints the sync-result for the current R_* state; never fails
   fi
   d=$'{\n  "kind": "sync-result",\n  "schemaVersion": 1,\n'
   d+="  \"operation\": \"$R_OP\","$'\n'"  \"status\": \"$R_STATUS\","$'\n'
-  jstr "$R_MESSAGE"; d+="  \"reasons\": [{\"code\": \"$R_REASON\", \"message\": $J}],"$'\n'
+  jtext "$R_MESSAGE"; d+="  \"reasons\": [{\"code\": \"$R_REASON\", \"message\": $J}],"$'\n'
   jstr "$ALIAS"; d+="  \"app\": {\"appId\": $APP_ID, \"appAlias\": $J"
   [[ -n "$mmd" ]] && { jstr "$mmd"; d+=", \"mmdVersion\": $J"; }
   d+=$'},\n  "context": {\n'
@@ -665,10 +713,10 @@ results_init() {
   if [[ -n "$OPT_TASK" ]]; then
     # Created ignored: raw evidence is never committed by accident. Committing
     # some of it is an opt-in — the user edits this .gitignore.
-    if [[ ! -d "$ev" ]]; then
-      if ! { mkdir -p "$ev" && printf '*\n' > "$ev/.gitignore"; }; then
-        blocked STATE_UNWRITABLE "cannot create the evidence dir $EVIDENCE_DIR"
-      fi
+    # Kept, not only created: an agent may have made the dir first. Edit the file to
+    # opt in to committing a manifest — a deleted one comes back.
+    if ! { mkdir -p "$ev" && { [[ -f "$ev/.gitignore" ]] || printf '*\n' > "$ev/.gitignore"; }; }; then
+      blocked STATE_UNWRITABLE "cannot create the evidence dir $EVIDENCE_DIR"
     fi
     mkdir -p "$ev/$OPT_TASK" || blocked STATE_UNWRITABLE "cannot create $EVIDENCE_DIR/$OPT_TASK"
     RESULT_FILES+=("$ev/$OPT_TASK/sync-$ALIAS-$R_OP.json")
@@ -741,7 +789,7 @@ cmd_check_import() {
     echo "  (D = only in LOCAL, A = only in BUILDER, M = differs, E = line endings only)"
     indent <<<"$boot"
     eol_note "$boot"
-    fail CONFLICT BOOTSTRAP_DIVERGED "bootstrap: BUILDER ≠ LOCAL and there is no BASE to arbitrate. Reconcile once by hand (Builder export kept at $scratch), commit, then record-sync. See setup.md §2."
+    fail CONFLICT BOOTSTRAP_DIVERGED "bootstrap: BUILDER ≠ LOCAL and there is no BASE to arbitrate. Reconcile once, file by file (Builder export kept at $scratch): where the Builder wins, copy its file into LOCAL and commit — check-import then PASSes and records the first syncpoint; where LOCAL must win, only the user can say the Builder holds nothing to keep: they run record-sync --force, then check-import, import, record-sync. See setup.md §2."
   fi
 
   materialize_base; local base=$BASE_APP_DIR dif; dif=$(tree_diff "$base" "$scratch/$ALIAS")
@@ -792,7 +840,7 @@ cmd_check_import() {
   echo "  Resolution per file (see SKILL.md):"
   echo "   - Changed only in the Builder: copy it from the export into $SRC_REL/, commit as 'capture Builder changes'."
   echo "   - Changed on both sides: git show $REF:$ALIAS/<file> > /tmp/base && git merge-file <local-file> /tmp/base <export-file>"
-  echo "   Then re-run check-import (PASSes once LOCAL contains every Builder change), apex validate, import, record-sync."
+  echo "   Then re-run check-import (it PASSes once LOCAL contains every Builder change); validate; check-import again right before the import; import; record-sync."
   fail CONFLICT BUILDER_DIVERGED "importing now would overwrite the Builder changes above."
 }
 
@@ -804,7 +852,8 @@ cmd_check_export() {
   require_source_dir
   # -z: names are never quoted, and a rename puts its source on the next record.
   local dirty line xy p st skip=0
-  dirty=$(git -C "$ROOT" status --porcelain -z -- "${EXPORT_SCOPE[@]}" | tr '\0' '\n')
+  # --untracked-files=all: a user's status.showUntrackedFiles=no must not hide new work.
+  dirty=$(git -C "$ROOT" status --porcelain -z --untracked-files=all --ignore-submodules=none -- "${EXPORT_SCOPE[@]}" | tr '\0' '\n')
   evidence command 0 "git status --porcelain -- ${EXPORT_SCOPE[*]}" "$(grep -c . <<<"$dirty" || true) changed"
   if [[ -n "$dirty" ]]; then
     while IFS= read -r line; do
@@ -959,7 +1008,7 @@ cmd_status() {
     note "syncpoint:  NONE — bootstrap pending (run check-import once)"
   fi
   note "current builderStamp: $(builder_stamp)"
-  local dirty; dirty=$(git -C "$ROOT" status --porcelain -- "${EXPORT_SCOPE[@]}" | wc -l | tr -d '[:space:]')
+  local dirty; dirty=$(git -C "$ROOT" status --porcelain --untracked-files=all -- "${EXPORT_SCOPE[@]}" | wc -l | tr -d '[:space:]')
   note "LOCAL dirty files an export would overwrite: $dirty"
   for d in import export; do
     local m="$STATE_DIR/check-ok.$d"

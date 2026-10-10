@@ -5,7 +5,10 @@
      every regex in it compiles;
   2. every fixture in fixtures/<kind>/ validates;
   3. every negative in negatives.json — a valid fixture with one invariant broken —
-     is rejected (each encodes a way an unsafe result could pass for a safe one);
+     is rejected, and rejected by the rule it names: with that one rule removed from
+     the schemas, the same document validates (so it breaks nothing else, and the
+     rule is what stops it). Each encodes a way an unsafe result could pass for a
+     safe one;
   4. with --captured DIR: every result a tool emitted during the integration suite
      validates, carries no $HOME path and no APEX session id, and there is at least one.
 
@@ -60,22 +63,40 @@ for path in sorted(glob.glob(os.path.join(SCHEMA_DIR, "*.schema.json"))):
     SCHEMAS[os.path.basename(path)] = load(path)
 
 
-def validator(name):
+def validator(name, schemas=None):
     """A validator for one schema that resolves $refs to its siblings offline."""
-    schema = SCHEMAS[name]
+    schemas = schemas or SCHEMAS
+    schema = schemas[name]
     try:
         from referencing import Registry, Resource
         from referencing.jsonschema import DRAFT202012
         registry = Registry().with_resources(
-            (s["$id"], Resource.from_contents(s, default_specification=DRAFT202012)) for s in SCHEMAS.values())
+            (s["$id"], Resource.from_contents(s, default_specification=DRAFT202012)) for s in schemas.values())
         return Draft202012Validator(schema, registry=registry)
     except ImportError:
-        store = {s["$id"]: s for s in SCHEMAS.values()}
+        store = {s["$id"]: s for s in schemas.values()}
         return Draft202012Validator(schema, resolver=jsonschema.RefResolver.from_schema(schema, store=store))
 
 
-def errors(name, doc):
-    return sorted(validator(name).iter_errors(doc), key=lambda e: list(e.absolute_path))
+def errors(name, doc, schemas=None):
+    return sorted(validator(name, schemas).iter_errors(doc), key=lambda e: list(e.absolute_path))
+
+
+def without_rule(rule):
+    """The schemas with the node a negative names ('file.schema.json#/json/pointer')
+    replaced by `true` — the schema that accepts anything."""
+    fname, _, pointer = rule.partition("#")
+    schemas = copy.deepcopy(SCHEMAS)
+    if fname not in schemas or not pointer.startswith("/"):
+        raise KeyError(f"no such rule: {rule}")
+    keys = [k.replace("~1", "/").replace("~0", "~") for k in pointer[1:].split("/")]
+    node = schemas[fname]
+    for k in keys[:-1]:
+        node = node[int(k)] if isinstance(node, list) else node[k]
+    last = int(keys[-1]) if isinstance(node, list) else keys[-1]
+    node[last]  # KeyError/IndexError when the pointer names nothing
+    node[last] = True
+    return schemas
 
 
 def walk_patterns(node, where=""):
@@ -151,10 +172,23 @@ def check_fixtures():
         except (KeyError, IndexError, TypeError) as e:
             bad(f"negative '{neg['name']}': cannot apply its edit", repr(e))
             continue
-        if errors(kind_schema(kind), doc):
-            ok(f"rejected: {neg['name']}")
-        else:
+        if not errors(kind_schema(kind), doc):
             bad(f"accepted, must be rejected: {neg['name']}", neg.get("why", ""))
+            continue
+        rule = neg.get("rule")
+        if not rule:
+            bad(f"negative '{neg['name']}' names no rule: which rule must stop it?")
+            continue
+        try:
+            rest = errors(kind_schema(kind), doc, without_rule(rule))
+        except (KeyError, IndexError, ValueError) as e:
+            bad(f"negative '{neg['name']}': its rule {rule} names nothing", repr(e))
+            continue
+        if rest:
+            bad(f"negative '{neg['name']}' is also rejected by another rule than {rule}",
+                "\n".join(f"{list(e.absolute_path)}: {e.message}" for e in rest[:4]))
+        else:
+            ok(f"rejected, by its own rule: {neg['name']}")
 
 
 def check_captured(directory):

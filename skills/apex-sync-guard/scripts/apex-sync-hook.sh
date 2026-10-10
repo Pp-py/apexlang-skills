@@ -64,7 +64,13 @@ raw_get() {  # $1 = field name — flat string extraction when there is no parse
 input=$(cat)
 DEGRADED=0
 if cmd=$(printf '%s' "$input" | json_get - tool_input.command); then
-  [[ -z "$cmd" ]] && exit 0
+  if [[ -z "$cmd" ]]; then
+    # Empty is a real no-op only when the payload carries no command either; a parser
+    # that reads nothing out of one that does is broken — scan the raw text instead.
+    cmd=$(raw_get command)
+    [[ -z "$cmd" ]] && exit 0
+    DEGRADED=1
+  fi
 else
   # No usable JSON parser. A guard that cannot read its input must not therefore
   # wave the call through — that is exactly how an unchecked import gets in.
@@ -195,23 +201,67 @@ fi
 # ---------------------------------------------------------------- repo
 if (( DEGRADED )); then cwd=$(raw_get cwd); else cwd=$(printf '%s' "$input" | json_get - cwd); fi
 cwd=${cwd:-.}
-if ! ROOT=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null); then
-  # Not a repo — or git refused it (dubious ownership on /mnt/c is common under
-  # WSL). Only ours to police when an apex-sync.json sits up the tree; then git's
-  # failure must block, never quietly allow.
-  d=$(cd "$cwd" 2>/dev/null && pwd) || d=""
-  found=""
-  for (( i = 0; i < 64 && ${#d} > 0; i++ )); do
-    [[ -f "$d/apex-sync.json" ]] && { found="$d/apex-sync.json"; break; }
-    [[ "$d" == / || "$d" == "$(dirname "$d")" ]] && break
+
+cfg_root_of() {  # $1 = an existing dir → the nearest ancestor holding apex-sync.json (physical path), or ''
+  local d i
+  d=$(cd "$1" 2>/dev/null && pwd -P) || return 0
+  for (( i = 0; i < 64; i++ )); do
+    [[ -f "$d/apex-sync.json" ]] && { printf '%s' "$d"; return 0; }
+    [[ "$d" == / || "$d" == "$(dirname "$d")" ]] && return 0
     d=$(dirname "$d")
   done
-  [[ -z "$found" ]] && exit 0                                             # not ours to police
-  err=$(git -C "$cwd" rev-parse --show-toplevel 2>&1 | head -1)
-  block "found $found, but git cannot resolve the repository here (${err:-no error text}), so the guard cannot check anything. Fix git first — e.g. git config --global --add safe.directory <repo> — then retry."
+}
+
+if ! ROOT=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null); then
+  # Not a repo — or git refused it (dubious ownership on /mnt/c is common under
+  # WSL). Ours to police when an apex-sync.json sits up the tree; then git's
+  # failure must block, never quietly allow.
+  found=$(cfg_root_of "$cwd")
+  if [[ -n "$found" ]]; then
+    err=$(git -C "$cwd" rev-parse --show-toplevel 2>&1 | head -1)
+    block "found $found/apex-sync.json, but git cannot resolve the repository here (${err:-no error text}), so the guard cannot check anything. Fix git first — e.g. git config --global --add safe.directory <repo> — then retry."
+  fi
+  ROOT=""
 fi
+SESSION=""; [[ -n "$ROOT" && -f "$ROOT/apex-sync.json" ]] && SESSION=$(cd "$ROOT" && pwd -P)
+
+# ---------------------------------------------------------------- reach
+# The markers checked below are the session repo's — the hook resolves its repo from
+# the session's cwd. A command that moves into another onboarded repo (cd, pushd) or
+# points at one (a path argument) would be checked against the wrong markers, or —
+# from a session outside any onboarded repo — against none: it must run from inside
+# that repo. A `cd` whose target is computed at run time cannot be followed: it blocks.
+existing_dir() {  # $1 = a path as written, relative to the session cwd → the deepest existing dir on it
+  local p=${1//\\//}
+  # shellcheck disable=SC2088   # a literal '~/' as the command wrote it
+  [[ "$p" == "~" || "$p" == "~/"* ]] && p="$HOME${p#\~}"
+  [[ "$p" == /* || "$p" =~ ^[A-Za-z]: ]] || p="$cwd/$p"
+  while [[ -n "$p" && ! -d "$p" ]]; do
+    [[ "$p" == */* ]] || { p=""; break; }
+    p=${p%/*}
+  done
+  printf '%s' "$p"
+}
+reach_paths() {  # every path the command names: cd/pushd targets, then path-like words
+  grep -oE '(^|[;&|({`[:space:]])(cd|pushd)[[:space:]]+("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:];&|)]+)' <<<"$cmd" \
+    | sed -E -e 's/^.*(cd|pushd)[[:space:]]+//' -e "s/^[\"']//" -e "s/[\"']\$//" | sed 's/^/cd /' || true
+  # shellcheck disable=SC2020
+  printf '%s\n' "$cmd" | tr ';&|(){}<>\t`' '           ' | tr -s ' ' '\n' \
+    | sed -e "s/^[\"']//" -e "s/[\"']\$//" -e 's/^[^=\/]*=//' | grep -E '/|^~' | sed 's/^/path /' || true
+}
+while IFS= read -r _r; do
+  [[ -z "$_r" ]] && continue
+  _kind=${_r%% *}; _p=${_r#* }
+  case "$_p" in
+    *'$'*|*'`'*|-) [[ "$_kind" == cd ]] && block "the command changes into a directory computed at run time ($_p), so the guard cannot tell which repository it acts on. Write the path out, or run it from inside the repo." ; continue ;;
+  esac
+  _d=$(existing_dir "$_p"); [[ -n "$_d" ]] || continue
+  _c=$(cfg_root_of "$_d"); [[ -n "$_c" && "$_c" != "$SESSION" ]] || continue
+  block "the command reaches $_c, a repository the guard watches, but this session runs in '${cwd}'${SESSION:+ (repository $SESSION)} — the guard can only check the repository it runs in. Run the command from inside $_c."
+done < <(reach_paths)
+
+[[ -n "$SESSION" ]] || exit 0                                               # not ours to police
 CFG="$ROOT/apex-sync.json"
-[[ -f "$CFG" ]] || exit 0                                                   # project not onboarded → allow
 
 [[ -n "$guard_override" ]] && block "$guard_override It is the user's call: ask them to run it in their own terminal."
 
@@ -252,7 +302,10 @@ NAPPS=${#APPS_ALIAS[@]}
 # -applicationid/-api. What cannot be read is not guessed — it blocks, naming what
 # would make it readable. (Without a parser there is no reading at all: DEGRADED
 # needs every app's marker.)
-WIN=""; [[ "$ROOT" =~ ^[A-Za-z]: ]] && WIN=1     # Git for Windows: C:/… paths, no case
+# Paths are compared in one form: physical (symlinks resolved — macOS's /var is
+# /private/var) and shell-native (Git Bash's /tmp and git's C:/… become the same
+# string), through `cd … && pwd -P`; Windows compares without case.
+NOCASE=""; case "${OSTYPE:-}" in msys*|cygwin*) NOCASE=1 ;; esac; [[ "$ROOT" =~ ^[A-Za-z]: ]] && NOCASE=1
 
 lex_norm() {  # an absolute '/'-separated path → '.' and '..' resolved lexically
   local p=$1 out="" seg
@@ -263,20 +316,23 @@ lex_norm() {  # an absolute '/'-separated path → '.' and '..' resolved lexical
   done
   printf '%s' "${out:-/}"
 }
-abs_norm() {  # $1 = a path as a command wrote it → absolute and normalized, comparable with ROOT_N
-  local p=${1//\\//}
+phys() {  # $1 = a path as a command wrote it (relative to the session cwd) → comparable with ROOT_N
+  local p=${1//\\//} rest="" d
   # shellcheck disable=SC2088   # a literal '~/' as the command wrote it
-  [[ "$p" == "~/"* ]] && p="$HOME/${p#\~/}"
-  [[ -n "$WIN" && "$p" =~ ^/([A-Za-z])/(.*)$ ]] && p="${BASH_REMATCH[1]}:/${BASH_REMATCH[2]}"   # Git Bash /c/…
+  [[ "$p" == "~" || "$p" == "~/"* ]] && p="$HOME${p#\~}"
   [[ "$p" == /* || "$p" =~ ^[A-Za-z]: ]] || p="$CWD_N/$p"
-  p=$(lex_norm "$p")
-  if [[ -n "$WIN" ]]; then lower "$p"; else printf '%s' "$p"; fi
+  while [[ -n "$p" && ! -d "$p" ]]; do          # the part that exists is resolved, the rest kept
+    [[ "$p" == */* ]] || { p=""; break; }
+    rest="/${p##*/}$rest"; p=${p%/*}
+  done
+  d=$(cd "${p:-/}" 2>/dev/null && pwd -P) || d=${p:-/}
+  p=$(lex_norm "$d$rest")
+  if [[ -n "$NOCASE" ]]; then lower "$p"; else printf '%s' "$p"; fi
 }
 ROOT_N=""; CWD_N=""
 if (( ! DEGRADED && NAPPS > 1 )); then
-  CWD_N=$ROOT
-  [[ "$cwd" == /* || "$cwd" =~ ^[A-Za-z]: ]] && CWD_N=$cwd
-  CWD_N=$(abs_norm "$CWD_N"); ROOT_N=$(abs_norm "$ROOT")
+  CWD_N=$(cd "$cwd" 2>/dev/null && pwd -P) || CWD_N=$(cd "$ROOT" && pwd -P)
+  ROOT_N=$(phys "$ROOT")
 fi
 
 # shellcheck disable=SC2034   # read and written by name: T_$direction
@@ -310,11 +366,11 @@ target_of_path() {  # $1 = direction, $2 = a source path from the command
     *'$'*|*'`'*)  unresolved "a path is computed at run time ($v)"; return ;;
     *.zip|*.ZIP)  unresolved "a .zip ($v) cannot be traced to an app's source dir"; return ;;
   esac
-  p=$(abs_norm "$v")
+  p=$(phys "$v")
   if [[ "$p" != "$ROOT_N"/* ]]; then unresolved "$v is not inside this repository"; return; fi
   r=${p#"$ROOT_N"/}
   for (( i = 0; i < NAPPS; i++ )); do
-    src=$(app_src_rel "$i"); [[ -n "$WIN" ]] && src=$(lower "$src")
+    src=$(app_src_rel "$i"); [[ -n "$NOCASE" ]] && src=$(lower "$src")
     if [[ "$r" == "$src" || "$r" == "$src/"* ]]; then add_target "$1" "${APPS_ALIAS[$i]}"; return; fi
   done
   unresolved "$v is not inside any app's source dir"
@@ -327,24 +383,39 @@ target_of_id() {  # $1 = direction, $2 = an app id from the command
   if (( n == 1 )); then add_target "$1" "$hit"; else unresolved "app id $2 is not declared exactly once in apex-sync.json"; fi
 }
 
+# Every invocation must name its app — one that does cannot vouch for another in the
+# same command (`apex import -input a && cd b && apex import`).
 resolve_import() {
-  local s v found=0
+  local s v n seg first runs=0
   while IFS= read -r s; do
     [[ -z "$s" ]] && continue
-    while IFS= read -r v; do [[ -n "$v" ]] && { found=1; target_of_path import "$v"; }; done < <(flag_values "$s" '-input|-i')
-    while IFS= read -r v; do [[ -n "$v" ]] && { found=1; target_of_id import "$v"; }; done < <(flag_values "$s" '-id')
+    runs=1; n=0
+    while IFS= read -r v; do [[ -n "$v" ]] && { n=1; target_of_path import "$v"; }; done < <(flag_values "$s" '-input|-i')
+    while IFS= read -r v; do [[ -n "$v" ]] && { n=1; target_of_id import "$v"; }; done < <(flag_values "$s" '-id|-applicationid|-api')
+    (( n )) || unresolved "an apex import names no app — no -input, no -id (a bare apex import imports the current directory)"
   done < <(spans "apex[[:space:]]+$IMPORT_SUB([^[:alnum:]_-][^;&|]*)?")
   if (( APEXCTL_IMPORT )); then
     while IFS= read -r s; do
-      while IFS= read -r v; do [[ -n "$v" ]] && { found=1; target_of_path import "$v"; }; done < <(flag_values "$s" '--app-path')
+      [[ -z "$s" ]] && continue
+      runs=1; n=0
+      while IFS= read -r v; do [[ -n "$v" ]] && { n=1; target_of_path import "$v"; }; done < <(flag_values "$s" '--app-path')
+      (( n )) || unresolved "an apexctl run names no --app-path"
     done < <(spans 'apexctl[^;&|]*')
   fi
-  while IFS= read -r s; do
-    [[ -z "$s" ]] && continue
-    v=$(first_arg "$s")
-    if [[ -n "$v" ]]; then found=1; target_of_path import "$v"; fi
-  done < <(spans 'deploy-apex-app\.sh[^;&|]*')
-  (( found )) || unresolved "the command names no app — no -input, -id, --app-path or deploy-script argument (a bare apex import imports the current directory)"
+  # The deploy script: every segment that runs it (not a plain reader) names its dir.
+  n=0
+  while IFS= read -r seg; do
+    [[ "$seg" == *deploy-apex-app.sh* ]] || continue
+    first=${seg#"${seg%%[![:space:]]*}"}; first=${first%%[[:space:]]*}; first=$(lower "${first##*/}")
+    [[ "$first" =~ ^($READERS)$ ]] && continue
+    runs=1; n=1
+    v=$(first_arg "deploy-apex-app.sh${seg#*deploy-apex-app.sh}")
+    if [[ -n "$v" ]]; then target_of_path import "$v"; else unresolved "the deploy script is run without an app directory"; fi
+  done < <(segments)
+  if deploy_invoked && (( n == 0 )); then
+    unresolved "the deploy script is run in a way the guard cannot read (piped or computed)"
+  fi
+  (( runs )) || unresolved "the command names no app — no -input, -id, --app-path or deploy-script argument"
 }
 
 resolve_export() {
@@ -371,9 +442,35 @@ else
       _dirs=""; _ids=""
       for (( i = 0; i < NAPPS; i++ )); do _dirs+="${_dirs:+, }$(app_src_rel "$i")"; _ids+="${_ids:+, }${APPS_ID[$i]}"; done
       block "apex-sync.json declares $NAPPS apps (${APPS_ALIAS[*]}) and this $d cannot be traced to one of them: $UNRESOLVED.
-Name the app in the command, so the guard can require that app's check: its source dir ($_dirs) as the -input, deploy-apex-app.sh or --app-path argument, or its id ($_ids) as -id / -applicationid."
+Name the app in the command, so the guard can require that app's check: $( [[ "$d" == import ]] && echo "its source dir ($_dirs) as the -input, deploy-apex-app.sh or --app-path argument, or its id ($_ids) as -id" || echo "its id ($_ids) as -applicationid")."
     fi
   done
+fi
+
+# ---------------------------------------------------------------- connection
+# A check speaks for the Builder it compared, through the connection apex-sync.json
+# names. `sql -name prod … apex import` after a check through dev would overwrite a
+# Builder nobody checked. (A connect string, as Oracle's deploy script takes, cannot
+# be compared with a saved name: GAP-6.)
+conn_names() {  # the saved-connection names the command's SQLcl launchers are given
+  local s pre re='(^|[[:space:]])-name[[:space:]=]+("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^[:space:]]+))'
+  while IFS= read -r s; do
+    pre=${s%%[<\"\'@]*}
+    if [[ "$pre" =~ $re ]]; then printf '%s\n' "${BASH_REMATCH[3]}${BASH_REMATCH[4]}${BASH_REMATCH[5]}"; fi
+  done < <(spans '(^|[;&|(`[:space:]/\\])(sql|sql\.exe|sql\.bat|sqlcl)["'"'"']?[[:space:]][^;&|]*')
+}
+if (( ! DEGRADED )); then
+  while IFS= read -r _n; do
+    [[ -z "$_n" ]] && continue
+    for d in "${needs[@]}"; do
+      _v="T_$d"
+      for a in ${!_v}; do
+        app_index "$a" || continue
+        [[ "${APPS_CONN[$APP_I]}" == "$_n" ]] && continue
+        block "this $d connects through '$_n', but app '$a' is checked through '${APPS_CONN[$APP_I]}' (apex-sync.json): a check speaks only for the Builder it compared. Connect through '${APPS_CONN[$APP_I]}', or describe the other target as its own app in apex-sync.json."
+      done
+    done
+  done < <(conn_names)
 fi
 
 # ---------------------------------------------------------------- freshness

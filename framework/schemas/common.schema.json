@@ -5,7 +5,7 @@
   "description": "Definitions every result schema references. The $id is an identifier, not (yet) a published URL. Patterns stay within the regex subset shared by ECMA-262 and Python re (no lookbehind, no inline flags).",
   "$defs": {
     "producerStatus": {
-      "description": "What a producer may emit. NOT_RUN is never emitted: only a consumer assigns it (not invoked, not required, or stale).",
+      "description": "What a producer may emit as its verdict. NOT_RUN is never a verdict: a consumer assigns it to a gate (not invoked, not required, or stale); a criterion inside a runtime-result may be NOT_RUN (not exercised).",
       "enum": ["PASS", "FAIL", "CONFLICT", "BLOCKED", "UNKNOWN"]
     },
     "gateStatus": {

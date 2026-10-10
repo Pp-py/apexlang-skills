@@ -29,6 +29,8 @@ for a in "$@"; do
   if [[ "$prev" == "--filename" && -n "${PW_SNIP_LOG:-}" ]]; then
     { stat -c %a "$a" 2>/dev/null || stat -f %Lp "$a" 2>/dev/null; cat "$a"; } >> "$PW_SNIP_LOG"
   fi
+  # a CLI that fails and echoes the code it was handed — password included
+  [[ "$prev" == "--filename" && -n "${PW_FAKE_RUNCODE_ECHO:-}" ]] && { cat "$a"; exit 1; }
   prev=$a
 done
 case " $* " in *" run-code "*) printf '"%s"\n' "${PW_FAKE_URL:-}"; exit 0 ;; esac
@@ -131,8 +133,15 @@ else bad "login: signed-in guard ($guard) must precede the goto ($nav)" "$WORK/s
 # POSIX modes are synthetic under Git Bash, so assert this only where it means something.
 case "${OSTYPE:-}" in
   msys*|cygwin*) echo "skip mode assertion (synthetic POSIX modes on Windows)" ;;
-  *) check_in "login: the snippet is created 600, before a byte is written" "$WORK/snip" '^[0-7]?[0-7]00$' ;;
+  *) check_in "login: the snippet file is mode 600" "$WORK/snip" '^[0-7]?[0-7]00$' ;;
 esac
+
+# A CLI that fails and prints back what it was handed must not print the password:
+# every message pw.sh builds from that output goes through redact().
+PW_FAKE_RUNCODE_ECHO=1 run "$OPEN" login
+if [[ $RC -eq 2 ]] && ! grep -qF -- "$SECRET" "$WORK/err" "$WORK/out" && grep -qF '***' "$WORK/err"; then
+  ok "login: a failing CLI that echoes the snippet never prints the password"
+else bad "login: the password leaked, or the failure was not reported (exit $RC)" "$WORK/err"; fi
 
 # An explicit URL argument wins, so a run can target another page or environment.
 run "$OPEN" login "https://other.example/r/ws/APP/"

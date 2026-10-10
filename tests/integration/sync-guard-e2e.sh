@@ -22,6 +22,10 @@ if grep -q 'apex export' <<<"$stmts"; then
   [[ -n "${FAKE_EXPORT_FAIL:-}" ]] && { echo "SQL Error: simulated export failure" >&2; exit 1; }
   # what a reader of the result file sees while the run is still going
   [[ -n "${FAKE_PEEK_FROM:-}" ]] && cp "$FAKE_PEEK_FROM" "$FAKE_PEEK_TO"
+  # sabotage after the check has started: a directory where the marker goes, or a
+  # state dir that can no longer be written
+  [[ -n "${FAKE_MARKER_DIR:-}" ]] && mkdir -p "$FAKE_MARKER_DIR"
+  [[ -n "${FAKE_LOCK_DIR:-}" ]] && chmod a-w "$FAKE_LOCK_DIR"
   if grep -q -- '-dir "' <<<"$stmts"; then          # the guard quotes paths holding spaces
     dir=$(sed -n 's/.*-dir "\([^"]*\)".*/\1/p' <<<"$stmts")
   else
@@ -40,6 +44,8 @@ if grep -q 'apex export' <<<"$stmts"; then
 elif grep -q 'greatest' <<<"$stmts"; then
   echo "2026-07-17T10:00:00"
 elif grep -q 'apex-sync-appcount' <<<"$stmts"; then
+  # a SQLcl that errors is "cannot tell", never "no app here"
+  [[ -n "${FAKE_APPCOUNT_FAIL:-}" ]] && { echo "ORA-12541: TNS:no listener" >&2; exit 1; }
   # Unset means "1 row" — the app exists, which every other case here assumes.
   # Empty means the answer came back unreadable, which the guard must treat as
   # "cannot tell", never as "no app".
@@ -56,6 +62,7 @@ cd "$WORK/proj"
 git init -q
 git config user.email sync-guard-e2e@example.com
 git config user.name  sync-guard-e2e
+git config commit.gpgsign false; git config tag.gpgsign false
 printf '{ "appId": 100, "appAlias": "demo", "apexlangDir": "src", "sqlclConnection": "fake", "ignorePaths": ["apex-exports/"] }\n' > apex-sync.json
 printf 'application 100 (\n  name: Demo\n)\n' > src/demo/application.apx
 printf 'page 30 (\n  name: One\n)\n' > src/demo/p30.apx
@@ -64,6 +71,10 @@ git add -A && git commit -qm init
 mkdir -p "$WORK/remote" && cp -r src/demo "$WORK/remote/demo" && rm -rf "$WORK/remote/demo/apex-exports"
 
 pass=0; fail=0
+touch_at() {  # $1 = file, $2 = epoch seconds → its mtime (POSIX touch -t; GNU date, else BSD date)
+  touch -t "$(date -d "@$2" +%Y%m%d%H%M.%S 2>/dev/null || date -r "$2" +%Y%m%d%H%M.%S)" "$1"
+}
+crlf() { awk '{ printf "%s\r\n", $0 }'; }
 expect() {  # $1 = description, $2 = expected exit code, rest = command
   local desc=$1 want=$2; shift 2
   local out got=0; out=$("$@" 2>&1) || got=$?
@@ -190,7 +201,7 @@ expect "record-sync to clear the CONFLICT -> BLOCKED"            2 "$CHK" record
 expect "and the syncpoint did not move"                          0 test "$(git rev-parse refs/apex-sync/demo)" = "$ref_before"
 "$CHK" check-export >/dev/null
 expect "a fresh EXPORT marker is no basis -> BLOCKED"            2 "$CHK" record-sync
-printf '{"check":"import"}\n' > "$MK/check-ok.import" && touch -d '11 minutes ago' "$MK/check-ok.import"
+printf '{"check":"import"}\n' > "$MK/check-ok.import" && touch_at "$MK/check-ok.import" $(( $(date +%s) - 660 ))
 expect "an import marker past the TTL is no basis -> BLOCKED"    2 "$CHK" record-sync
 expect "--force is refused outside record-sync"                  2 "$CHK" check-import --force
 expect     "record-sync --force records it anyway"               0 "$CHK" record-sync --force
@@ -208,7 +219,7 @@ expect_out "no marker but Builder == BASE -> recorded"           'basis: +builde
 # that is only in line endings is reported apart and does not gate.
 printf 'src/** text eol=lf\n' > .gitattributes
 git add -A && git commit -qm "line-ending attributes"
-sed 's/$/\r/' src/demo/p30.apx > "$WORK/remote/demo/p30.apx"          # same text, CRLF in the Builder
+crlf < src/demo/p30.apx > "$WORK/remote/demo/p30.apx"                # same text, CRLF in the Builder
 expect     "EOL-only difference -> check-import PASS"        0 "$CHK" check-import
 expect_out "EOL-only difference is named, not silent"        'only in line endings' "$CHK" check-import
 printf 'page 30 (\r\n  name: OneChangedInBuilder\r\n)\r\n' > "$WORK/remote/demo/p30.apx"
@@ -274,7 +285,8 @@ git commit -qm "back to the syncpoint"
 # match failing and the repo-only apex-exports/ showed up as a Builder-side deletion.
 mkdir -p "$WORK/crlf"
 printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/crlf/jq" && chmod +x "$WORK/crlf/jq"
-printf '#!/usr/bin/env bash\ncommand %s "$@" | sed "s/$/\\r/"\n' "$(command -v python3)" \
+# shellcheck disable=SC2016   # the $0 belongs to the awk program the stub runs
+printf '#!/usr/bin/env bash\ncommand %s "$@" | awk '"'"'{ printf "%%s\\r\\n", $0 }'"'"'\n' "$(command -v python3)" \
   > "$WORK/crlf/python3" && chmod +x "$WORK/crlf/python3"
 # shellcheck disable=SC2030,SC2031
 with_crlf_json() { ( export PATH="$WORK/crlf:$PATH"; "$@" ); }
@@ -548,6 +560,111 @@ expect_out "its message keeps the path, home-relative"           '~/apex-sync-re
 expect     "and the home path itself never lands in it"          1 grep -qF "$WORK/" "$RES_I"
 "$CHK" check-import >/dev/null
 
+# --- what an earlier version of this suite let through (found in review). Each case
+# below failed before its fix: none of them is a mention, all of them reached a Builder.
+
+# The hook resolves its repo from the session cwd. A command that moves into — or points
+# at — an onboarded repo from elsewhere was checked against no marker at all.
+mkdir -p "$WORK/notrepo" "$WORK/plainrepo" && git -C "$WORK/plainrepo" init -q
+"$CHK" check-import >/dev/null                                   # even a fresh marker does not help
+expect "hook reach: cd into an onboarded repo from outside blocks"   2 hook_at "$WORK/notrepo" "cd $WORK/proj && sql -name fake <<< \"apex import -input src/demo\""
+expect "hook reach: an absolute -input into it from outside blocks"  2 hook_at "$WORK/notrepo" "sql -name fake <<< \"apex import -input $WORK/proj/src/demo\""
+expect "hook reach: from a repo that is not onboarded, too"          2 hook_at "$WORK/plainrepo" 'cd ../proj && apex import -input src/demo'
+expect "hook reach: an export into it from outside"                  2 hook_at "$WORK/notrepo" "sql -name fake <<< \"apex export -applicationid 100 -dir $WORK/proj/src\""
+expect "hook reach: writing its markers from outside"                2 hook_at "$WORK/notrepo" "touch $WORK/proj/.git/apex-sync/demo/check-ok.import"
+expect_out "and the block names the repo to run from"                "reaches $(cd "$WORK/proj" && pwd -P)" hook_at "$WORK/notrepo" "cd $WORK/proj && apex import -input src/demo"
+# shellcheck disable=SC2016   # the literal $PROJ is the point
+expect "hook reach: a cd computed at run time blocks"                2 hook_cmd 'cd "$PROJ" && apex import -input src/demo'
+expect "hook reach: a cd inside the session's own repo is fine"      0 hook_cmd 'cd src && sql -name fake <<< "apex import -input demo"'
+expect "hook reach: reading another repo stays a read"               0 hook_at "$WORK/notrepo" "ls $WORK/proj/src"
+
+# A check speaks for the Builder it compared, through its connection.
+expect     "hook: a connection other than the app's blocks"          2 hook_cmd 'sql -name prod <<< "apex import -input src/demo"'
+expect_out "and says which"                                          "connects through 'prod', but app 'demo' is checked through 'fake'" hook_cmd 'sql -name prod <<< "apex import -input src/demo"'
+expect     "hook: the app's own connection passes"                   0 hook_cmd 'sql -name fake <<< "apex import -input src/demo"'
+
+# A parser that reads nothing out of a payload that carries a command must not read
+# as "no command".
+mkdir -p "$WORK/mutejq" && printf '#!/usr/bin/env bash\ncat >/dev/null\nexit 0\n' > "$WORK/mutejq/jq" && chmod +x "$WORK/mutejq/jq"
+# shellcheck disable=SC2030,SC2031
+with_mute_jq() { ( export PATH="$WORK/mutejq:$PATH"; "$@" ); }
+rm -f "$MK"/check-ok.*
+expect "hook: a parser that reads an empty command still blocks"     2 with_mute_jq hook_cmd 'apex import -input src/demo'
+
+# The python lane is the one Git for Windows users get (it ships no jq).
+if [[ -n "$real_python" ]]; then
+  expect "hook (python): no marker blocks an import"                 2 without_jq hook_cmd 'apex import -input src/demo'
+  "$CHK" check-import >/dev/null
+  expect "hook (python): a fresh marker allows it"                   0 without_jq hook_cmd 'apex import -input src/demo'
+else
+  echo "skip hook (python) cases: no python3"
+fi
+
+# A crash inside the hook must block: Claude Code lets the command run on any exit but 2.
+mkdir -p "$WORK/brokenhook/lib" && cp "$HOOK" "$WORK/brokenhook/" && printf 'exit 1\n' > "$WORK/brokenhook/lib/sync-config.sh"
+broken_hook() { printf '{"tool_input":{"command":"%s"},"cwd":"%s"}' "$(json_esc "$1")" "$WORK/proj" | bash "$WORK/brokenhook/apex-sync-hook.sh"; }
+expect "hook: a crash inside the guard blocks (the EXIT trap)"       2 broken_hook 'apex import -input src/demo'
+
+# A marker dated in the future is no marker (clock skew, or a forged mtime).
+"$CHK" check-import >/dev/null
+touch_at "$MK/check-ok.import" $(( $(date +%s) + 300 ))
+expect "hook: a marker dated in the future is no marker"             2 hook_cmd 'apex import -input src/demo'
+
+# A check that stops early still withdraws the marker of its direction: the earlier
+# PASS must not outlive a re-check that could not run.
+"$CHK" check-import >/dev/null
+expect "a check-import with a bad option -> BLOCKED"                 2 "$CHK" check-import --task ../x
+expect "and the earlier PASS's marker is withdrawn"                  1 test -f "$MK/check-ok.import"
+"$CHK" check-import >/dev/null
+expect "a check-import over an invalid config -> BLOCKED"            2 with_config '{ "appId": "abc", "appAlias": "demo", "apexlangDir": "src", "sqlclConnection": "fake" }' "$CHK" check-import
+expect "and the marker is withdrawn too"                             1 test -f "$MK/check-ok.import"
+
+# An erroring count query means "cannot tell", never "no app here" — with no
+# syncpoint the shortcut would publish over a divergent Builder.
+saved_ref=$(git rev-parse refs/apex-sync/demo)
+git update-ref -d refs/apex-sync/demo
+cp "$WORK/remote/demo/p30.apx" "$WORK/p30.saved"
+printf 'page 30 (\n  name: DivergedNoBase\n)\n' > "$WORK/remote/demo/p30.apx"
+expect     "a count query that errors, no syncpoint -> no PASS"      1 env FAKE_APPCOUNT_FAIL=1 "$CHK" check-import
+expect_out "it compared the replicas instead"                        '^CONFLICT BOOTSTRAP_DIVERGED$' rget "$RES_I" status reasons.0.code
+mv "$WORK/p30.saved" "$WORK/remote/demo/p30.apx"
+git update-ref refs/apex-sync/demo "$saved_ref"
+
+# A PASS that cannot be written down is not a PASS.
+expect     "a PASS whose marker cannot be written -> exit 3"         3 env FAKE_MARKER_DIR="$MK/check-ok.import" "$CHK" check-import
+expect_out "and its result says UNKNOWN"                             '^UNKNOWN UNEXPECTED_ERROR false$' rget "$RES_I" status reasons.0.code marker.written
+expect     "and the hook sees no marker"                             2 hook_cmd 'apex import -input src/demo'
+rmdir "$MK/check-ok.import"
+case "${OSTYPE:-}" in
+  msys*|cygwin*) echo "skip the unwritable-state case: POSIX modes are synthetic on Windows" ;;
+  *) if [[ $(id -u) -eq 0 ]]; then echo "skip the unwritable-state case: root writes anywhere"
+     else
+       expect "a PASS whose result cannot be written -> exit 3"      3 env FAKE_LOCK_DIR="$MK" "$CHK" check-import
+       chmod u+w "$MK"
+       expect "and no marker is left behind"                         1 test -f "$MK/check-ok.import"
+     fi ;;
+esac
+"$CHK" check-import >/dev/null
+
+# record-sync's own freshness test: a future-dated import marker is no basis.
+cp "$WORK/remote/demo/p30.apx" "$WORK/p30.saved"
+printf 'page 30 (\n  name: FutureBasis\n)\n' > "$WORK/remote/demo/p30.apx"
+printf '{"check":"import"}\n' > "$MK/check-ok.import" && touch_at "$MK/check-ok.import" $(( $(date +%s) + 300 ))
+expect "record-sync: a marker dated in the future is no basis"       2 "$CHK" record-sync
+mv "$WORK/p30.saved" "$WORK/remote/demo/p30.apx"
+
+# A user's git config must not hide new work from check-export.
+git config status.showUntrackedFiles no
+printf 'page 50 (\n)\n' > src/demo/p50.apx
+expect "check-export sees untracked work whatever status.showUntrackedFiles says" 1 "$CHK" check-export
+rm -f src/demo/p50.apx; git config --unset status.showUntrackedFiles
+
+# The evidence dir is ignored even when someone else created it first.
+rm -rf "$EV"; mkdir -p "$EV"
+"$CHK" check-import --task T-2 >/dev/null
+expect_out "the evidence dir gets its .gitignore when it already existed" '^\*$' cat "$EV/.gitignore"
+"$CHK" check-import >/dev/null
+
 # --- setup.md §4 is how a user proves the wiring on a real install. Its commands
 # must be the ones written there AND must trip the hook as its table says: a smoke
 # command the hook lets through "passes" on a broken install. (`echo "apex export"`
@@ -560,7 +677,7 @@ rm -f "$MK"/check-ok.*
 expect "setup.md §4 row 1: no marker -> blocked"                2 hook_cmd "$SMOKE_EXPORT"
 "$CHK" check-export >/dev/null
 expect "setup.md §4 row 2: fresh export marker -> allowed"      0 hook_cmd "$SMOKE_EXPORT"
-touch -d '11 minutes ago' "$MK/check-ok.export"
+touch_at "$MK/check-ok.export" $(( $(date +%s) - 660 ))
 expect "setup.md §4 row 3: marker past the TTL -> blocked"      2 hook_cmd "$SMOKE_EXPORT"
 "$CHK" check-export >/dev/null
 expect "setup.md §4 row 4: export marker only, import -> blocked" 2 hook_cmd "$SMOKE_IMPORT"
@@ -598,6 +715,10 @@ expect_out "and it names the apps to choose from"              'name the one to 
 expect     "multi: --app naming no app -> BLOCKED"             2 "$CHK" check-import --app nope
 expect_out "and it lists the declared ones"                    "declares no app 'nope' — it declares: demo sales" "$CHK" check-import --app nope
 expect     "multi: --app that is no alias at all -> 2"         2 "$CHK" check-import --app ../x
+"$CHK" check-import --app demo >/dev/null 2>&1 || true            # demo may not be fresh yet: try
+mkdir -p "$WORK/proj/.git/apex-sync/demo" && printf '{}\n' > "$WORK/proj/.git/apex-sync/demo/check-ok.import"
+expect     "multi: a check without --app -> BLOCKED"           2 "$CHK" check-import
+expect     "and it withdraws that direction for every app"     1 test -f "$WORK/proj/.git/apex-sync/demo/check-ok.import"
 expect_out "multi: apps applies the top-level defaults"        "^demo${TAB}100${TAB}src/demo${TAB}fake${TAB}${TAB}\$" "$CHK" apps
 expect_out "multi: and each app's own settings"                "^sales${TAB}200${TAB}src/sales${TAB}fake${TAB}QA_SALES${TAB}https://apex.example/ords/r/ws/sales/\$" "$CHK" apps
 expect     "multi: check-import --app sales bootstraps sales"  0 "$CHK" check-import --app sales
@@ -636,14 +757,33 @@ expect "hook multi: -id names another app (both needed)"       2 hook_cmd 'apex 
 expect "hook multi: -id of the same app"                       0 hook_cmd 'apex import -input src/demo -id 100'
 expect "hook multi: the shared parent dir is no app"           2 hook_cmd 'apex import -input src'
 expect_out "and the block says why and what to do"             "cannot be traced to one of them: src is not inside any app's source dir" hook_cmd 'apex import -input src'
-expect "hook multi: a .zip cannot be traced"                   2 hook_cmd 'apex import -input demo.zip'
+# inside demo's own dir, so only the rule under test can refuse them
+expect_out "hook multi: a .zip cannot be traced"               "a .zip \(src/demo/sales-app.zip\) cannot be traced" hook_cmd 'apex import -input src/demo/sales-app.zip'
 expect "hook multi: a bare import (current dir) blocks"        2 hook_cmd 'sql -name fake <<< "apex import"'
-# shellcheck disable=SC2016   # the literal $APP_DIR is the point
-expect "hook multi: a path computed at run time blocks"        2 hook_cmd 'apex import -input "$APP_DIR"'
+# shellcheck disable=SC2016   # the literal $APP_SUBDIR is the point
+expect_out "hook multi: a path computed at run time blocks"    'a path is computed at run time' hook_cmd 'apex import -input "src/demo/$APP_SUBDIR"'
 expect "hook multi: an app id nobody declared blocks"          2 hook_cmd 'apex import -input src/demo -id 999'
 expect "hook multi: a path outside the repo blocks"            2 hook_cmd 'apex import -input /elsewhere/demo'
 expect "hook multi: the deploy script piped to a shell blocks" 2 hook_cmd 'cat deploy-apex-app.sh | bash -s src/demo'
 expect "hook multi: another command's -i is not the import's"  0 hook_cmd 'grep -i x README.md; apex import -input src/demo'
+# Every invocation names its own app: one that does cannot vouch for another.
+expect "hook multi: a traced import cannot vouch for an untraced one" 2 hook_cmd 'sql -name fake <<< "apex import -input src/demo" && cd src/sales && sql -name fake <<< "apex import"'
+expect "hook multi: ... nor inside one heredoc"                2 hook_cmd $'sql -name fake <<EOF\napex import -input src/demo\ncd src/sales\napex import\nEOF'
+expect "hook multi: a SQLcl substitution variable is no app"   2 hook_cmd 'sql -name fake <<< "apex import -input &d"'
+expect "hook multi: -applicationid on an import is read too"   2 hook_cmd 'apex import -input src/demo -applicationid 200'
+expect "hook multi: reading the deploy script, then running it" 0 hook_cmd 'cat /o/deploy-apex-app.sh && bash /o/deploy-apex-app.sh src/demo'
+if [[ -n "$real_python" ]]; then
+  expect "hook multi (python): demo's import with demo's check"  0 without_jq hook_cmd 'apex import -input src/demo'
+  expect "hook multi (python): sales' import needs sales' check" 2 without_jq hook_cmd 'apex import -input src/sales'
+else
+  echo "skip hook multi (python) cases: no python3"
+fi
+# Paths are compared physically: a symlinked cwd (macOS's /var is /private/var).
+case "${OSTYPE:-}" in
+  msys*|cygwin*) echo "skip the symlinked-cwd case: no symlinks without privileges on Windows" ;;
+  *) ln -s "$WORK/proj" "$WORK/projlink"
+     expect "hook multi: a symlinked session cwd still traces"   0 hook_at "$WORK/projlink" 'apex import -input src/demo' ;;
+esac
 "$CHK" check-export --app demo >/dev/null
 expect "hook multi: demo's export by id"                       0 hook_cmd 'sql -name fake <<< "apex export -applicationid 100 -dir src"'
 expect "hook multi: sales' export by id (short forms)"         2 hook_cmd 'sql -name fake <<< "apex exap -api 200 -dir src"'

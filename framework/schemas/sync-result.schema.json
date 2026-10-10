@@ -99,7 +99,7 @@
     },
     {
       "description": "a check's marker is written if and only if the check PASSed",
-      "if": { "properties": { "status": { "const": "PASS" } } },
+      "if": { "properties": { "operation": { "enum": ["check-import", "check-export"] }, "status": { "const": "PASS" } } },
       "then": { "properties": { "marker": { "properties": { "written": { "const": true } } } } },
       "else": { "properties": { "marker": { "properties": { "written": { "const": false } } } } }
     },
@@ -117,11 +117,11 @@
       "then": { "properties": { "operation": { "const": "check-export" }, "changes": { "minItems": 1 } } }
     },
     {
-      "description": "a recorded syncpoint needs its basis and its commit",
+      "description": "a recorded syncpoint names its basis",
       "if": { "properties": { "operation": { "const": "record-sync" }, "status": { "const": "PASS" } } },
       "then": {
         "required": ["basis"],
-        "properties": { "syncpoint": { "properties": { "recorded": { "const": true }, "commit": { "$ref": "common.schema.json#/$defs/gitSha" } } } }
+        "properties": { "syncpoint": { "properties": { "recorded": { "const": true } } } }
       }
     },
     {
@@ -156,9 +156,14 @@
         "ttlSeconds": { "type": "integer", "minimum": 1 },
         "expiresAt": { "oneOf": [{ "$ref": "common.schema.json#/$defs/utcTimestamp" }, { "type": "null" }] }
       },
-      "if": { "properties": { "written": { "const": true } } },
-      "then": { "properties": { "expiresAt": { "$ref": "common.schema.json#/$defs/utcTimestamp" } } },
-      "else": { "properties": { "expiresAt": { "type": "null" } } }
+      "allOf": [
+        {
+          "description": "a written marker says when it lapses; an unwritten one has no expiry",
+          "if": { "properties": { "written": { "const": true } } },
+          "then": { "properties": { "expiresAt": { "$ref": "common.schema.json#/$defs/utcTimestamp" } } },
+          "else": { "properties": { "expiresAt": { "type": "null" } } }
+        }
+      ]
     },
     "syncpoint": {
       "description": "BASE: refs/apex-sync/<alias> as this run left it. recorded = this run wrote it (record-sync, or a bootstrap that found the replicas equal).",
@@ -170,8 +175,13 @@
         "commit": { "oneOf": [{ "$ref": "common.schema.json#/$defs/gitSha" }, { "type": "null" }] },
         "recorded": { "type": "boolean" }
       },
-      "if": { "properties": { "recorded": { "const": true } } },
-      "then": { "properties": { "commit": { "$ref": "common.schema.json#/$defs/gitSha" } } }
+      "allOf": [
+        {
+          "description": "recorded means a commit exists",
+          "if": { "properties": { "recorded": { "const": true } } },
+          "then": { "properties": { "commit": { "$ref": "common.schema.json#/$defs/gitSha" } } }
+        }
+      ]
     },
     "payload": {
       "type": "object",

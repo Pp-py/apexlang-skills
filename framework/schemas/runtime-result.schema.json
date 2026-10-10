@@ -86,9 +86,12 @@
       },
       "allOf": [
         {
-          "description": "a criterion PASSes on evidence, never on the agent's word",
+          "description": "a criterion PASSes on evidence, never on the agent's word: a saved file, or a command or query that exited 0",
           "if": { "properties": { "status": { "const": "PASS" } } },
-          "then": { "required": ["evidence", "observed"], "properties": { "evidence": { "minItems": 1 } } }
+          "then": { "required": ["evidence", "observed"], "properties": { "evidence": { "minItems": 1, "contains": { "anyOf": [
+            { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "file" } } },
+            { "type": "object", "required": ["kind", "exitCode"], "properties": { "kind": { "enum": ["command", "sql"] }, "exitCode": { "const": 0 } } }
+          ] } } } }
         },
         {
           "description": "a criterion not exercised says why",
