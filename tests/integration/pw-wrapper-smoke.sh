@@ -259,14 +259,17 @@ rm -f "$WORK/proj/.gitignore"; rm -rf "$WORK/proj/ws"
 # git may name the repo root in another form than the shell does — Git for Windows says
 # C:/Users/… where `pwd -P` says /c/Users/…. Reproduced here with a git that reports the
 # root through a symlink: the in-repo refusal must hold whatever form git uses.
-ln -s "$WORK_P" "$WORK/link" 2>/dev/null || true
+# Without the right to make symlinks, Git Bash's `ln -s` deep-copies the target instead;
+# nativestrict makes it fail, and a link to the repo (not to an ancestor of the link)
+# keeps even a copy finite — a link inside its own target copied itself for minutes.
+MSYS=winsymlinks:nativestrict CYGWIN=winsymlinks:nativestrict ln -s "$WORK_P/proj" "$WORK/link" 2>/dev/null || true
 if [[ -L "$WORK/link" ]]; then
   REAL_GIT=$(command -v git); mkdir -p "$WORK/gitform"
   cat > "$WORK/gitform/git" <<EOF
 #!/usr/bin/env bash
 if [[ "\$*" == "rev-parse --show-toplevel" ]]; then
   r=\$("$REAL_GIT" rev-parse --show-toplevel) || exit \$?
-  printf '%s\\n' "$WORK/link\${r#"$WORK_P"}"
+  printf '%s\\n' "$WORK/link\${r#"$WORK_P/proj"}"
   exit 0
 fi
 exec "$REAL_GIT" "\$@"
