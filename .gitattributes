@@ -2,3 +2,7 @@
 # CRLF checkout breaks them outright ($'\r': command not found). Pin them to LF
 # so a clone made with core.autocrlf=true — the Git-for-Windows default — works.
 *.sh text eol=lf
+
+# The config fixtures are compared byte for byte — a .apps file is the exact output a
+# reader must produce — and a CRLF checkout puts a \r inside every expected line.
+tests/integration/fixtures/** text eol=lf

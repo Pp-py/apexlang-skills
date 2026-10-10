@@ -1,0 +1,11 @@
+{
+  "apexlangDir": "./apex/apexlang/",
+  "sqlclConnection": "dev_ws",
+  "testUser": "QA",
+  "ignorePaths": ["apex-exports/"],
+  "apps": [
+    { "appId": 100, "appAlias": "rrhh", "testUser": "QA_RRHH", "runtimeUrl": "https://apex.example/ords/r/ws/rrhh/" },
+    { "appId": 101, "appAlias": "ventas", "sqlclConnection": "dev_ventas", "apexlangDir": "other" },
+    { "appId": 102, "appAlias": "Stock_2" }
+  ]
+}

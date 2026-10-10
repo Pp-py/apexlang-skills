@@ -10,3 +10,11 @@ Thumbs.db
 .playwright-mcp/
 .playwright-cli/
 .playwright/
+
+# Evidence of gate runs (apex-sync-check.sh --task, apex-sentinel): raw, machine-local
+.apex-evidence/
+
+# Test passwords for apex-sentinel never live in the repo
+.env
+
+__pycache__/

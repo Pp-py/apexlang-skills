@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pp-py.github.io/apexlang-skills/schemas/1/sync-result.schema.json",
+  "title": "sync-result (STABLE, schemaVersion 1)",
+  "description": "The verdict of one apex-sync-check.sh gate run. Always written to .git/apex-sync/<alias>/last-<operation>.json; with --task <id> also to <evidenceDir>/<id>/sync-<alias>-<operation>.json. A placeholder (UNKNOWN, INTERRUPTED) is written when the run starts, so a run that never finished cannot be read as an earlier verdict. The exit code mirrors status: PASS 0, FAIL/CONFLICT 1, BLOCKED 2, UNKNOWN 3. A run stopped before its app was known (no repo, no SQLcl, invalid config, bad arguments) writes no file: exit 2 is BLOCKED.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schemaVersion", "operation", "status", "reasons", "app", "context", "syncpoint", "changes", "evidence"],
+  "properties": {
+    "kind": { "const": "sync-result" },
+    "schemaVersion": { "const": 1 },
+    "operation": { "enum": ["check-import", "check-export", "record-sync"] },
+    "status": { "$ref": "common.schema.json#/$defs/producerStatus" },
+    "reasons": {
+      "description": "The first reason is the verdict's own; its code belongs to the status (catalog below).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/reason" }
+    },
+    "app": { "$ref": "common.schema.json#/$defs/app" },
+    "context": { "$ref": "common.schema.json#/$defs/context" },
+    "marker": { "$ref": "#/$defs/marker" },
+    "syncpoint": { "$ref": "#/$defs/syncpoint" },
+    "changes": {
+      "description": "check-import: Builder-side differences against the reference — BASE, or LOCAL while bootstrapping (A = only in the Builder export, D = only in the reference, M = differs, E = line endings only, never gating). check-export: what is dirty under the source dir (A = new or untracked, D = deleted, M = modified).",
+      "type": "array",
+      "items": { "$ref": "#/$defs/change" }
+    },
+    "payload": {
+      "description": "check-import with a syncpoint: what the import DEPLOYS — LOCAL against BASE (A = new in LOCAL, D = removed from LOCAL, M = differs). Reported, never gating.",
+      "$ref": "#/$defs/payload"
+    },
+    "basis": {
+      "description": "record-sync: what proved the Builder held no unsynchronized work. 'forced' is the user's --force.",
+      "enum": ["fresh-check", "builder-unchanged", "local-equals-builder", "forced"]
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/evidenceRef" }
+    }
+  },
+  "allOf": [
+    {
+      "description": "reason catalog — PASS",
+      "if": { "properties": { "status": { "const": "PASS" } } },
+      "then": { "properties": { "reasons": { "prefixItems": [{ "properties": { "code": { "enum": [
+        "FIRST_PUBLICATION", "BOOTSTRAP_IN_SYNC", "BUILDER_UNCHANGED", "BUILDER_CHANGES_CAPTURED", "LOCAL_CLEAN", "SYNCPOINT_RECORDED"
+      ] } } }] } } }
+    },
+    {
+      "description": "reason catalog — CONFLICT",
+      "if": { "properties": { "status": { "const": "CONFLICT" } } },
+      "then": { "properties": { "reasons": { "prefixItems": [{ "properties": { "code": { "enum": [
+        "BOOTSTRAP_DIVERGED", "BUILDER_DIVERGED"
+      ] } } }] } } }
+    },
+    {
+      "description": "reason catalog — FAIL",
+      "if": { "properties": { "status": { "const": "FAIL" } } },
+      "then": { "properties": { "reasons": { "prefixItems": [{ "properties": { "code": { "enum": [
+        "LOCAL_DIRTY"
+      ] } } }] } } }
+    },
+    {
+      "description": "reason catalog — BLOCKED (USAGE … APP_UNKNOWN stop a run before its app is known, so they reach the exit code, never a file)",
+      "if": { "properties": { "status": { "const": "BLOCKED" } } },
+      "then": { "properties": { "reasons": { "prefixItems": [{ "properties": { "code": { "enum": [
+        "USAGE", "UNSUPPORTED_SHELL", "NO_GIT", "NO_SQLCL", "NO_JSON_PARSER", "NO_CONFIG", "CONFIG_INVALID",
+        "APP_REQUIRED", "APP_UNKNOWN",
+        "STATE_UNWRITABLE", "SOURCE_DIR_MISSING", "APP_ID_MISMATCH", "SYNCPOINT_WITHOUT_APP", "NO_FRESH_CHECK"
+      ] } } }] } } }
+    },
+    {
+      "description": "reason catalog — UNKNOWN",
+      "if": { "properties": { "status": { "const": "UNKNOWN" } } },
+      "then": { "properties": { "reasons": { "prefixItems": [{ "properties": { "code": { "enum": [
+        "EXPORT_FAILED", "SNAPSHOT_FAILED", "INTERRUPTED", "UNEXPECTED_ERROR"
+      ] } } }] } } }
+    },
+    {
+      "description": "a PASS rests on a command or query that ran and exited 0, against a named connection",
+      "if": { "properties": { "status": { "const": "PASS" } } },
+      "then": {
+        "properties": {
+          "evidence": { "contains": {
+            "type": "object",
+            "required": ["kind", "exitCode"],
+            "properties": { "kind": { "enum": ["command", "sql"] }, "exitCode": { "const": 0 } }
+          } },
+          "context": { "required": ["target"], "properties": { "target": { "required": ["connectionName"] } } }
+        }
+      }
+    },
+    {
+      "description": "a check carries its marker; record-sync has none",
+      "if": { "properties": { "operation": { "const": "record-sync" } } },
+      "then": { "not": { "required": ["marker"] } },
+      "else": { "required": ["marker"] }
+    },
+    {
+      "description": "a check's marker is written if and only if the check PASSed",
+      "if": { "properties": { "operation": { "enum": ["check-import", "check-export"] }, "status": { "const": "PASS" } } },
+      "then": { "properties": { "marker": { "properties": { "written": { "const": true } } } } },
+      "else": { "properties": { "marker": { "properties": { "written": { "const": false } } } } }
+    },
+    {
+      "description": "CONFLICT comes only from check-import, with at least one Builder-side change that is more than line endings",
+      "if": { "properties": { "status": { "const": "CONFLICT" } } },
+      "then": { "properties": {
+        "operation": { "const": "check-import" },
+        "changes": { "contains": { "properties": { "status": { "enum": ["A", "D", "M"] } } } }
+      } }
+    },
+    {
+      "description": "FAIL comes only from check-export, naming what is dirty",
+      "if": { "properties": { "status": { "const": "FAIL" } } },
+      "then": { "properties": { "operation": { "const": "check-export" }, "changes": { "minItems": 1 } } }
+    },
+    {
+      "description": "a recorded syncpoint names its basis",
+      "if": { "properties": { "operation": { "const": "record-sync" }, "status": { "const": "PASS" } } },
+      "then": {
+        "required": ["basis"],
+        "properties": { "syncpoint": { "properties": { "recorded": { "const": true } } } }
+      }
+    },
+    {
+      "description": "basis belongs to record-sync",
+      "if": { "properties": { "operation": { "enum": ["check-import", "check-export"] } } },
+      "then": { "not": { "required": ["basis"] } }
+    },
+    {
+      "description": "payload belongs to check-import",
+      "if": { "properties": { "operation": { "enum": ["check-export", "record-sync"] } } },
+      "then": { "not": { "required": ["payload"] } }
+    }
+  ],
+  "$defs": {
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "path"],
+      "properties": {
+        "status": { "enum": ["A", "D", "M", "E"] },
+        "path": { "$ref": "common.schema.json#/$defs/relPath" }
+      }
+    },
+    "marker": {
+      "description": "The hook's authorization: .git/apex-sync/<alias>/check-ok.<direction>, trusted for ttlSeconds after it is written. Withdrawn when a check of that direction starts.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["written", "path", "ttlSeconds", "expiresAt"],
+      "properties": {
+        "written": { "type": "boolean" },
+        "path": { "$ref": "common.schema.json#/$defs/relPath" },
+        "ttlSeconds": { "type": "integer", "minimum": 1 },
+        "expiresAt": { "oneOf": [{ "$ref": "common.schema.json#/$defs/utcTimestamp" }, { "type": "null" }] }
+      },
+      "allOf": [
+        {
+          "description": "a written marker says when it lapses; an unwritten one has no expiry",
+          "if": { "properties": { "written": { "const": true } } },
+          "then": { "properties": { "expiresAt": { "$ref": "common.schema.json#/$defs/utcTimestamp" } } },
+          "else": { "properties": { "expiresAt": { "type": "null" } } }
+        }
+      ]
+    },
+    "syncpoint": {
+      "description": "BASE: refs/apex-sync/<alias> as this run left it. recorded = this run wrote it (record-sync, or a bootstrap that found the replicas equal).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "commit", "recorded"],
+      "properties": {
+        "ref": { "type": "string", "pattern": "^refs/apex-sync/[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+        "commit": { "oneOf": [{ "$ref": "common.schema.json#/$defs/gitSha" }, { "type": "null" }] },
+        "recorded": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "description": "recorded means a commit exists",
+          "if": { "properties": { "recorded": { "const": true } } },
+          "then": { "properties": { "commit": { "$ref": "common.schema.json#/$defs/gitSha" } } }
+        }
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changes", "commits"],
+      "properties": {
+        "changes": { "type": "array", "items": { "$ref": "#/$defs/change" } },
+        "commits": {
+          "description": "Commits touching the source dir since the syncpoint; null when not computed.",
+          "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+        }
+      }
+    }
+  }
+}

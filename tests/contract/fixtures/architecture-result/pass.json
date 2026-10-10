@@ -1,0 +1,18 @@
+{
+  "kind": "architecture-result",
+  "schemaVersion": 1,
+  "status": "PASS",
+  "reasons": [{"code": "DECISIONS_ON_EVIDENCE", "message": "2 decisions recorded; the red-flag scan found nothing."}],
+  "app": {"appAlias": "hr"},
+  "context": { "task": "T-42", "repo": {"commit": "0123456789abcdef0123456789abcdef01234567", "dirty": false}, "frameworkVersion": "0.6.0", "timestamp": "2026-10-09T12:30:00Z",
+    "producer": {"skill": "apexlang-architecture", "method": "agent"} },
+  "decisions": [
+    {"subject": "a sector code is unique", "type": "rule", "branch": "A1", "layer": "constraint",
+     "evidence": [{"kind": "file", "path": "db/hr_sectors.sql", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}]},
+    {"subject": "saving a sector from the grid", "type": "operation", "branch": "B1", "layer": "entity", "package": "pkg_sectors",
+     "evidence": [{"kind": "file", "path": "db/pkg_sectors.pkb", "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}]}
+  ],
+  "redFlags": [],
+  "missingInputs": [],
+  "evidence": [{"kind": "command", "command": "grep -rnE 'autoRowProcessing|formAutoRowProcessing|interactiveGridAutoRowProcessing' apex/apexlang/hr", "exitCode": 1, "output": "no match"}]
+}

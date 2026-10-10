@@ -1,0 +1,23 @@
+{
+  "kind": "sync-result",
+  "schemaVersion": 1,
+  "operation": "check-import",
+  "status": "CONFLICT",
+  "reasons": [{"code": "BUILDER_DIVERGED", "message": "importing now would overwrite the Builder changes above."}],
+  "app": {"appId": 100, "appAlias": "hr"},
+  "context": {
+    "task": null,
+    "repo": {"commit": "0123456789abcdef0123456789abcdef01234567", "dirty": true},
+    "frameworkVersion": "0.6.0",
+    "timestamp": "2026-10-09T12:00:00Z",
+    "producer": {"skill": "apex-sync-guard", "method": "tool"},
+    "target": {"connectionName": "dev_hr", "sqlclVersion": "26.2.0.181.2110", "apexVersion": "24.2.0"}
+  },
+  "marker": {"written": false, "path": ".git/apex-sync/hr/check-ok.import", "ttlSeconds": 600, "expiresAt": null},
+  "syncpoint": {"ref": "refs/apex-sync/hr", "commit": "89abcdef0123456789abcdef0123456789abcdef", "recorded": false},
+  "changes": [{"status": "M", "path": "apex/apexlang/hr/pages/p00030-sectors-catalog.apx"}, {"status": "D", "path": "apex/apexlang/hr/pages/p00031-sector-detail.apx"}],
+  "evidence": [
+    {"kind": "sql", "statement": "select count(*) from apex_applications where application_id=100", "exitCode": 0, "result": "1"},
+    {"kind": "command", "command": "apex export -applicationid 100 -expType APEXLANG -dir <scratch>", "exitCode": 0}
+  ]
+}

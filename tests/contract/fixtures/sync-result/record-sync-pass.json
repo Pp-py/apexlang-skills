@@ -1,0 +1,23 @@
+{
+  "kind": "sync-result",
+  "schemaVersion": 1,
+  "operation": "record-sync",
+  "status": "PASS",
+  "reasons": [{"code": "SYNCPOINT_RECORDED", "message": "syncpoint recorded for 'hr'"}],
+  "app": {"appId": 100, "appAlias": "hr"},
+  "context": {
+    "task": "T-42",
+    "repo": {"commit": "0123456789abcdef0123456789abcdef01234567", "dirty": false},
+    "frameworkVersion": "0.6.0",
+    "timestamp": "2026-10-09T12:05:00Z",
+    "producer": {"skill": "apex-sync-guard", "method": "tool"},
+    "target": {"connectionName": "dev_hr", "sqlclVersion": "26.2.0.181.2110", "apexVersion": "24.2.0"}
+  },
+  "syncpoint": {"ref": "refs/apex-sync/hr", "commit": "fedcba9876543210fedcba9876543210fedcba98", "recorded": true},
+  "changes": [],
+  "basis": "fresh-check",
+  "evidence": [
+    {"kind": "command", "command": "apex export -applicationid 100 -expType APEXLANG -dir <scratch>", "exitCode": 0},
+    {"kind": "command", "command": "git commit-tree + git update-ref refs/apex-sync/hr", "exitCode": 0, "output": "fedcba9876543210fedcba9876543210fedcba98"}
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pp-py.github.io/apexlang-skills/schemas/1/verification-manifest.schema.json",
+  "title": "verification-manifest (EXPERIMENTAL, schemaVersion 1)",
+  "description": "One task's gates, as a consumer (a future apexlang-delivery, or a person) records them: per gate, whether it was required, its status, and the result files it read (with their sha256). The manifest adds no rule of its own — each status comes from a result file or, for Validation, from Oracle's compile script — and its own status is the aggregation of the required gates: FAIL > CONFLICT > UNKNOWN > BLOCKED > NOT_RUN > PASS; with no required gate it is NOT_RUN. Written to <evidenceDir>/<task>/manifest.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schemaVersion", "status", "context", "gates"],
+  "properties": {
+    "kind": { "const": "verification-manifest" },
+    "schemaVersion": { "const": 1 },
+    "status": { "$ref": "common.schema.json#/$defs/gateStatus" },
+    "context": {
+      "allOf": [
+        { "$ref": "common.schema.json#/$defs/context" },
+        { "description": "a manifest belongs to a task", "properties": { "task": { "$ref": "common.schema.json#/$defs/taskId" } } }
+      ]
+    },
+    "gates": { "type": "array", "items": { "$ref": "#/$defs/gate" } }
+  },
+  "allOf": [
+    { "$ref": "#/$defs/aggregation" }
+  ],
+  "$defs": {
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate", "required", "status"],
+      "properties": {
+        "gate": { "description": "Phase 3 adds its gates here (security, ui-ux).", "enum": ["architecture", "validation", "sync", "runtime"] },
+        "app": { "$ref": "common.schema.json#/$defs/appAlias" },
+        "required": { "type": "boolean" },
+        "status": { "$ref": "common.schema.json#/$defs/gateStatus" },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "path", "sha256"],
+            "properties": {
+              "kind": { "enum": ["architecture-result", "sync-result", "runtime-result"] },
+              "path": { "$ref": "common.schema.json#/$defs/relPath" },
+              "sha256": { "$ref": "common.schema.json#/$defs/sha256" }
+            }
+          }
+        },
+        "evidence": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/evidenceRef" } },
+        "notApplicableReason": { "$ref": "common.schema.json#/$defs/safeText" }
+      },
+      "allOf": [
+        {
+          "description": "CONFLICT belongs to the sync gate",
+          "if": { "properties": { "status": { "const": "CONFLICT" } } },
+          "then": { "properties": { "gate": { "const": "sync" } } }
+        },
+        {
+          "description": "a gate that is not required is NOT_RUN, and says why",
+          "if": { "properties": { "required": { "const": false } } },
+          "then": { "required": ["notApplicableReason"], "properties": { "status": { "const": "NOT_RUN" } } }
+        },
+        {
+          "description": "a gate with its own producer PASSes on that producer's result file",
+          "if": { "properties": { "gate": { "enum": ["architecture", "sync", "runtime"] }, "status": { "const": "PASS" } } },
+          "then": { "required": ["results"], "properties": { "results": { "minItems": 1 } } }
+        },
+        {
+          "description": "Validation PASSes only on the compiler's own words — Oracle's 26.1 lint is advisory and never makes it PASS",
+          "if": { "properties": { "gate": { "const": "validation" }, "status": { "const": "PASS" } } },
+          "then": {
+            "required": ["evidence"],
+            "properties": { "evidence": { "contains": {
+              "type": "object",
+              "required": ["kind", "exitCode", "output"],
+              "properties": { "kind": { "const": "command" }, "exitCode": { "const": 0 }, "output": { "pattern": "Validation successful" } }
+            } } }
+          }
+        }
+      ]
+    },
+    "aggregation": {
+      "description": "status = the worst status among the required gates (FAIL > CONFLICT > UNKNOWN > BLOCKED > NOT_RUN > PASS); none required = NOT_RUN. Encoded both ways: the status is present among the required gates (or NOT_RUN for none), and no required gate is worse.",
+      "allOf": [
+        {
+          "if": { "properties": { "gates": { "contains": { "properties": { "required": { "const": true }, "status": { "const": "FAIL" } } } } } },
+          "then": { "properties": { "status": { "const": "FAIL" } } }
+        },
+        {
+          "if": { "properties": { "gates": { "contains": { "properties": { "required": { "const": true }, "status": { "const": "CONFLICT" } } } } } },
+          "then": { "properties": { "status": { "enum": ["FAIL", "CONFLICT"] } } }
+        },
+        {
+          "if": { "properties": { "gates": { "contains": { "properties": { "required": { "const": true }, "status": { "const": "UNKNOWN" } } } } } },
+          "then": { "properties": { "status": { "enum": ["FAIL", "CONFLICT", "UNKNOWN"] } } }
+        },
+        {
+          "if": { "properties": { "gates": { "contains": { "properties": { "required": { "const": true }, "status": { "const": "BLOCKED" } } } } } },
+          "then": { "properties": { "status": { "enum": ["FAIL", "CONFLICT", "UNKNOWN", "BLOCKED"] } } }
+        },
+        {
+          "if": { "properties": { "gates": { "contains": { "properties": { "required": { "const": true }, "status": { "const": "NOT_RUN" } } } } } },
+          "then": { "properties": { "status": { "not": { "const": "PASS" } } } }
+        },
+        {
+          "if": { "properties": { "gates": { "not": { "contains": { "properties": { "required": { "const": true } } } } } } },
+          "then": { "properties": { "status": { "const": "NOT_RUN" } } }
+        },
+        {
+          "description": "the claimed status is held by a required gate — NOT_RUN by one, or by having none",
+          "anyOf": [
+            { "properties": { "status": { "const": "PASS" } } },
+            { "properties": { "status": { "const": "NOT_RUN" }, "gates": { "not": { "contains": { "properties": { "required": { "const": true } } } } } } },
+            { "properties": { "status": { "const": "NOT_RUN" }, "gates": { "contains": { "properties": { "required": { "const": true }, "status": { "const": "NOT_RUN" } } } } } },
+            { "properties": { "status": { "const": "FAIL" }, "gates": { "contains": { "properties": { "required": { "const": true }, "status": { "const": "FAIL" } } } } } },
+            { "properties": { "status": { "const": "CONFLICT" }, "gates": { "contains": { "properties": { "required": { "const": true }, "status": { "const": "CONFLICT" } } } } } },
+            { "properties": { "status": { "const": "UNKNOWN" }, "gates": { "contains": { "properties": { "required": { "const": true }, "status": { "const": "UNKNOWN" } } } } } },
+            { "properties": { "status": { "const": "BLOCKED" }, "gates": { "contains": { "properties": { "required": { "const": true }, "status": { "const": "BLOCKED" } } } } } }
+          ]
+        },
+        {
+          "description": "a PASS needs at least one required gate, all PASS",
+          "if": { "properties": { "status": { "const": "PASS" } } },
+          "then": { "properties": { "gates": {
+            "contains": { "properties": { "required": { "const": true } } },
+            "not": { "contains": { "properties": { "required": { "const": true }, "status": { "not": { "const": "PASS" } } } } }
+          } } }
+        }
+      ]
+    }
+  }
+}

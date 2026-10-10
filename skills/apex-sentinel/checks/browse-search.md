@@ -48,8 +48,10 @@ showed. A filter that returns *plausible* rows for the wrong predicate is invisi
 
 ## Pass criteria
 
-- Applying a facet lowers the count; clearing it restores the baseline.
-- Selector-mode count and current-facets targets are populated when used.
-- Zero results shows the no-data message.
-- Cards/content rows render title, badge and media — no empty boxes, no broken images.
-- The row's link opens the right record with no checksum error.
+Each criterion has an ID: a runtime-result (`framework/schemas/runtime-result.schema.json`) reports it by that ID, with what was observed and the evidence it rests on.
+
+- `BROWSE-FACET-COUNT` — Applying a facet lowers the count; clearing it restores the baseline.
+- `BROWSE-FACET-TARGETS` — Selector-mode count and current-facets targets are populated when used.
+- `BROWSE-NO-DATA` — Zero results shows the no-data message.
+- `BROWSE-ROW-CONTENT` — Cards/content rows render title, badge and media — no empty boxes, no broken images.
+- `BROWSE-ROW-LINK` — The row's link opens the right record with no checksum error.

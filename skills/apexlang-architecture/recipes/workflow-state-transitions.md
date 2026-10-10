@@ -117,7 +117,7 @@ region requests (
 )
 ```
 
-Two rules the compiler enforces here:
+Two rules Oracle's 26.1 lint enforces here:
 
 - **No markup in the query.** `source.sqlQuery` must be data-only (`REPORT_SQL_HTML_LITERAL_FORBIDDEN_001`): project the status and a plain CSS token, and let the column's `columnFormatting.htmlExpression` build the badge. The `case` above therefore yields `u-color-9-text`, not a `<span>`.
 - **The link belongs to a column**, never to the region — see `modal-crud-to-package.md` for the full note.

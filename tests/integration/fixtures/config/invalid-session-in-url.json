@@ -1,0 +1,1 @@
+{ "apexlangDir": "src", "sqlclConnection": "dev", "apps": [ { "appId": 100, "appAlias": "hr", "runtimeUrl": "https://apex.example/ords/r/ws/hr/home?session=8808821264318" } ] }

@@ -1,0 +1,1 @@
+{ "apexlangDir": "src", "sqlclConnection": "dev", "appAlias": "hr", "apps": [ { "appId": 100, "appAlias": "hr" } ] }

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "source": "github:oracle/skills",
+  "plugin": "apex@oracle-skills",
+  "commit": "014cdb29f12dfa6a689bbe8a80ee1c5f0bf15be1",
+  "commitDate": "2026-10-09T11:27:22Z",
+  "verifiedAt": "2026-10-10",
+  "verifiedWith": [
+    "tests/upstream/verify-citations.sh: 41/41 anchors",
+    "tests/upstream/validate-examples.sh --lint: PASS (4 documented diagnostics)"
+  ]
+}

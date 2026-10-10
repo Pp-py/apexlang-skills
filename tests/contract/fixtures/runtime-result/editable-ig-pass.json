@@ -1,0 +1,22 @@
+{
+  "kind": "runtime-result",
+  "schemaVersion": 1,
+  "status": "PASS",
+  "reasons": [{"code": "REQUIRED_CRITERIA_PASSED", "message": "IG-RENDER, IG-REJECT-DUPLICATE and IG-FRIENDLY-ERROR passed on page 30."}],
+  "app": {"appId": 100, "appAlias": "hr"},
+  "context": { "task": "T-42", "repo": {"commit": "0123456789abcdef0123456789abcdef01234567", "dirty": false}, "frameworkVersion": "0.6.0", "timestamp": "2026-10-09T12:30:00Z",
+    "producer": {"skill": "apex-sentinel", "method": "agent"},
+    "target": {"runtimeUrl": "https://apex.example/ords/r/ws/hr/"} },
+  "check": "editable-ig",
+  "backend": {"kind": "playwright-cli", "version": "0.1.22"},
+  "login": {"user": "QA_HR", "status": "PASS", "evidence": [{"kind": "command", "command": "pw.sh --app hr login", "exitCode": 0}]},
+  "criteria": [
+    {"id": "IG-RENDER", "required": true, "status": "PASS", "observed": "rows=2, no notification",
+     "evidence": [{"kind": "file", "path": ".apex-evidence/T-42/raw/runtime-hr/ig-render.json", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]},
+    {"id": "IG-REJECT-DUPLICATE", "required": true, "status": "PASS", "observed": "A sector with code PROD already exists.",
+     "evidence": [{"kind": "file", "path": ".apex-evidence/T-42/raw/runtime-hr/ig-duplicate.json", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+                  {"kind": "sql", "statement": "select count(*) from hr_sectors where upper(code) = 'PROD'", "exitCode": 0, "result": "1"}]},
+    {"id": "IG-FRIENDLY-ERROR", "required": true, "status": "PASS", "observed": "the message carries no ORA- prefix",
+     "evidence": [{"kind": "file", "path": ".apex-evidence/T-42/raw/runtime-hr/ig-duplicate.json", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}
+  ]
+}

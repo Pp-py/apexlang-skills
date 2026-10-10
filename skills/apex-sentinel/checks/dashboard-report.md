@@ -19,6 +19,8 @@
 
 ## Pass criteria
 
-- Every KPI shows a real number (matches a SQL spot-check); charts drew.
-- IR returns expected rows; view toggle swaps regions; badges render as HTML.
-- No empty/error tiles where data is expected.
+Each criterion has an ID: a runtime-result (`framework/schemas/runtime-result.schema.json`) reports it by that ID, with what was observed and the evidence it rests on.
+
+- `DASH-KPI-VALUES` — Every KPI shows a real number (matches a SQL spot-check); charts drew.
+- `DASH-REPORT-ROWS` — IR returns expected rows; view toggle swaps regions; badges render as HTML.
+- `DASH-NO-EMPTY-TILES` — No empty/error tiles where data is expected.

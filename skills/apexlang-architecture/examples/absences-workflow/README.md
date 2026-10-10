@@ -34,10 +34,11 @@ apex validate -input <apexlang-src-dir>                   # copy both .apx into 
 apex import   -input <apexlang-src-dir>
 ```
 
-> Validated against APEXlang **2026.08.01**: page 62 is clean; page 60 reports only
+> Oracle's 26.1 lint (release 2026.09.21): page 62 is clean; page 60 reports only
 > `BREADCRUMB_COVERAGE_ENTRY_REQUIRED_001`, which is satisfied by adding a `pageNumber: 60`
 > entry to **your** app's `shared-components/breadcrumbs.apx` — a page file cannot carry it.
-> Re-validate against your own APEX version before importing, and mind that page numbers
+> The SQLcl compiler currently rejects page 60 (see `../README.md` §Grammar status). Validate
+> against your own APEX version before importing, and mind that page numbers
 > (60/62) and aliases must not collide with your app's.
 
 ## Notes

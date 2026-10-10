@@ -1,0 +1,17 @@
+{
+  "kind": "verification-manifest",
+  "schemaVersion": 1,
+  "status": "PASS",
+  "context": { "task": "T-42", "repo": {"commit": "0123456789abcdef0123456789abcdef01234567", "dirty": false}, "frameworkVersion": "0.6.0", "timestamp": "2026-10-09T12:30:00Z",
+    "producer": {"skill": "apexlang-delivery", "method": "tool"} },
+  "gates": [
+    {"gate": "architecture", "required": true, "status": "PASS",
+     "results": [{"kind": "architecture-result", "path": ".apex-evidence/T-42/architecture.json", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]},
+    {"gate": "validation", "app": "hr", "required": true, "status": "PASS",
+     "evidence": [{"kind": "command", "command": "validate-apex-app.sh apex/apexlang/hr", "exitCode": 0, "output": "Validation successful"}]},
+    {"gate": "sync", "app": "hr", "required": true, "status": "PASS",
+     "results": [{"kind": "sync-result", "path": ".apex-evidence/T-42/sync-hr-check-import.json", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]},
+    {"gate": "runtime", "app": "hr", "required": true, "status": "PASS",
+     "results": [{"kind": "runtime-result", "path": ".apex-evidence/T-42/runtime-hr.json", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}]}
+  ]
+}

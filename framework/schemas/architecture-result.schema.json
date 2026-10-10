@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pp-py.github.io/apexlang-skills/schemas/1/architecture-result.schema.json",
+  "title": "architecture-result (EXPERIMENTAL, schemaVersion 1)",
+  "description": "The apexlang-architecture decision record for one task: where each rule lives and which package owns each operation (package-boundaries.md, procedures A and B), plus the red-flag scan of the source. Written by the agent (method: agent) to <evidenceDir>/<task>/architecture.json. A record alone never PASSes: each decision rests on evidence, and the red-flag scan must have run and found nothing.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schemaVersion", "status", "reasons", "context", "decisions", "redFlags", "missingInputs"],
+  "properties": {
+    "kind": { "const": "architecture-result" },
+    "schemaVersion": { "const": 1 },
+    "status": { "enum": ["PASS", "FAIL", "BLOCKED", "UNKNOWN"] },
+    "reasons": { "type": "array", "minItems": 1, "items": { "$ref": "common.schema.json#/$defs/reason" } },
+    "app": { "$ref": "common.schema.json#/$defs/appRef" },
+    "context": { "$ref": "common.schema.json#/$defs/context" },
+    "decisions": { "type": "array", "items": { "$ref": "#/$defs/decision" } },
+    "redFlags": {
+      "description": "What the scan found (SKILL.md §Red flags). Empty only when the scan ran: its command is in evidence.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/redFlag" }
+    },
+    "missingInputs": {
+      "description": "What the decision needs and nobody has said (the schema, the requirement, which app): the run is BLOCKED until someone answers.",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/safeText" }
+    },
+    "evidence": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/evidenceRef" } }
+  },
+  "allOf": [
+    {
+      "description": "PASS: decisions on evidence, and a scan that ran (a command in evidence that exited 0 or 1 — grep's found / not found; 2 and up is an error, not a scan). What it found and what is missing are the two rules below",
+      "if": { "properties": { "status": { "const": "PASS" } } },
+      "then": {
+        "required": ["evidence"],
+        "properties": {
+          "decisions": { "minItems": 1 },
+          "evidence": { "contains": { "type": "object", "required": ["kind", "exitCode"], "properties": { "kind": { "const": "command" }, "exitCode": { "enum": [0, 1] } } } }
+        }
+      }
+    },
+    {
+      "description": "an unanswered input blocks",
+      "if": { "properties": { "missingInputs": { "minItems": 1 } } },
+      "then": { "properties": { "status": { "const": "BLOCKED" } } }
+    },
+    {
+      "description": "a red flag with every input present is a FAIL",
+      "if": { "properties": { "redFlags": { "minItems": 1 }, "missingInputs": { "maxItems": 0 } } },
+      "then": { "properties": { "status": { "const": "FAIL" } } }
+    }
+  ],
+  "$defs": {
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "type", "branch", "layer", "evidence"],
+      "properties": {
+        "subject": { "$ref": "common.schema.json#/$defs/safeText" },
+        "type": { "description": "rule: procedure A (where a rule lives); operation: procedure B (which package owns it).", "enum": ["rule", "operation"] },
+        "branch": { "description": "The first branch that matched (package-boundaries.md).", "enum": ["A1", "A2", "A3", "B0", "B1", "B2", "B3"] },
+        "layer": {
+          "description": "constraint (A1) · apx (A2) · read: inline SQL or a v_* view (B0) · entity: pkg_<entity> (B1) · entity-sequence: the .apx calls entity packages in turn (B2, Test 2 not firing) · flow: pkg_<flow>_flow (B2) · integration: pkg_<system>_api (B3)",
+          "enum": ["constraint", "apx", "read", "entity", "entity-sequence", "flow", "integration"]
+        },
+        "package": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_$#]{0,127}(\\.[A-Za-z][A-Za-z0-9_$#]{0,127})?$" },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "common.schema.json#/$defs/evidenceRef" } }
+      },
+      "allOf": [
+        {
+          "description": "a package layer names its package",
+          "if": { "properties": { "layer": { "enum": ["entity", "flow", "integration"] } } },
+          "then": { "required": ["package"] }
+        },
+        {
+          "description": "a rule is placed by procedure A, an operation by procedure B",
+          "if": { "properties": { "type": { "const": "rule" } } },
+          "then": { "properties": { "branch": { "enum": ["A1", "A2", "A3"] } } },
+          "else": { "properties": { "branch": { "enum": ["B0", "B1", "B2", "B3"] } } }
+        }
+      ]
+    },
+    "redFlag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "path"],
+      "properties": {
+        "code": {
+          "enum": [
+            "AUTOMATIC_ROW_PROCESSING",
+            "DML_IN_PAGE_PROCESS",
+            "RULE_OUTSIDE_PACKAGE",
+            "FOREIGN_TABLE_WRITE",
+            "FLOW_ISSUES_DML",
+            "FLOW_WRAPS_ONE_ENTITY",
+            "NO_VERSION_TOKEN"
+          ]
+        },
+        "path": { "$ref": "common.schema.json#/$defs/relPath" },
+        "line": { "type": "integer", "minimum": 1 },
+        "detail": { "$ref": "common.schema.json#/$defs/safeText" }
+      }
+    }
+  }
+}

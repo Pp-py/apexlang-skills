@@ -36,7 +36,8 @@ apex validate -input <apexlang-src-dir>                   # add both .apx into y
 apex import   -input <apexlang-src-dir>
 ```
 
-> Validated against APEXlang **2026.08.01** with one known diagnostic:
+> Oracle's 26.1 lint (release 2026.09.21) reports one known diagnostic — and the SQLcl
+> compiler currently rejects both pages (see `../README.md` §Grammar status):
 > `BREADCRUMB_COVERAGE_ENTRY_REQUIRED_001` for page 41, satisfied by adding a `pageNumber: 41` entry
 > to **your** app's `shared-components/breadcrumbs.apx` (page 42 is a modal drawer, so it needs
 > none). Page numbers (41, 42) and aliases (`EMPLOYEE-FORM`, `EMPLOYEE-DRAWER`) must not collide

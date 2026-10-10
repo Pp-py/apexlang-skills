@@ -1,0 +1,24 @@
+{
+  "kind": "sync-result",
+  "schemaVersion": 1,
+  "operation": "check-import",
+  "status": "PASS",
+  "reasons": [{"code": "BUILDER_CHANGES_CAPTURED", "message": "Builder changed since last syncpoint, but LOCAL already contains every Builder-side change. Safe to import (those files are rewritten identically). Remember record-sync afterwards."}],
+  "app": {"appId": 100, "appAlias": "hr", "mmdVersion": "26.1.0+3102"},
+  "context": {
+    "task": "T-42",
+    "repo": {"commit": "0123456789abcdef0123456789abcdef01234567", "dirty": false},
+    "frameworkVersion": "0.6.0",
+    "timestamp": "2026-10-09T12:00:00Z",
+    "producer": {"skill": "apex-sync-guard", "method": "tool"},
+    "target": {"connectionName": "dev_hr", "sqlclVersion": "26.2.0.181.2110", "apexVersion": "24.2.0"}
+  },
+  "marker": {"written": true, "path": ".git/apex-sync/hr/check-ok.import", "ttlSeconds": 600, "expiresAt": "2026-10-09T12:10:00Z"},
+  "syncpoint": {"ref": "refs/apex-sync/hr", "commit": "89abcdef0123456789abcdef0123456789abcdef", "recorded": false},
+  "changes": [{"status": "M", "path": "apex/apexlang/hr/pages/p00030-sectors-catalog.apx"}, {"status": "E", "path": "apex/apexlang/hr/application.apx"}],
+  "payload": {"changes": [{"status": "M", "path": "apex/apexlang/hr/pages/p00030-sectors-catalog.apx"}, {"status": "A", "path": "apex/apexlang/hr/pages/p00041-employee-form.apx"}], "commits": 3},
+  "evidence": [
+    {"kind": "sql", "statement": "select count(*) from apex_applications where application_id=100", "exitCode": 0, "result": "1"},
+    {"kind": "command", "command": "apex export -applicationid 100 -expType APEXLANG -dir <scratch>", "exitCode": 0}
+  ]
+}
