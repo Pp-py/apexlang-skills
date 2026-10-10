@@ -242,7 +242,8 @@ cp "$WORK/stub/python3" "$WORK/stub/py"        # the Windows launcher: without i
 printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/stub/jq" && chmod +x "$WORK/stub/jq"   # jq present but broken
 mkdir -p "$WORK/nojq"
 printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/nojq/jq" && chmod +x "$WORK/nojq/jq"
-real_python=$(command -v python3 || true)
+# Probed by execution too: behind the Store stub the python cases cannot pass, and skip.
+real_python=""; python3 -c 'import json' >/dev/null 2>&1 && real_python=$(command -v python3)
 # shellcheck disable=SC2030,SC2031   # the subshell-local PATH is the point
 with_stub_json() { ( export PATH="$WORK/stub:$PATH"; "$@" ); }   # no parser at all
 # shellcheck disable=SC2030,SC2031
