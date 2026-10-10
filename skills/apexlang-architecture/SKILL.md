@@ -91,7 +91,7 @@ Three runnable slices (DDL + package + `.apx`) live in `examples/` — start at 
 
 ## Where each layer's authority comes from
 
-Three sources, three jobs: Oracle for whether `.apx` is valid (the compiler, then the 26.1 lint, then the inventory and policies — `framework/PRINCIPLES.md` P6); Oracle's UX Pattern Catalog app for what a pattern looks like; **this skill** for where the logic lives, what the data layer projects, and when to deviate — `references/official-standard.md`.
+Three sources, three jobs: Oracle for whether `.apx` is valid (the compiler, then the 26.1 lint, then the inventory, policies and templates — `framework/PRINCIPLES.md` P6); Oracle's UX Pattern Catalog app for what a pattern looks like; **this skill** for where the logic lives, what the data layer projects, and when to deviate — `references/official-standard.md`.
 
 ## Common mistakes (from agent baselines)
 

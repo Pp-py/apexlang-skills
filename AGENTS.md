@@ -34,8 +34,9 @@ record-sync → verify in the browser** (plus sync-check before any export).
 ## Gates, statuses, evidence
 
 - Every gate ends in `PASS`, `FAIL`, `CONFLICT` (sync only), `BLOCKED` or `UNKNOWN` — exit codes
-  0, 1, 1, 2, 3. **Exit 3 (UNKNOWN) authorizes nothing: re-run.** Only an orchestrator assigns
-  `NOT_RUN`. PASS ≠ NOT_RUN ≠ UNKNOWN ≠ "it seemed to work".
+  0, 1, 1, 2, 3. **Exit 3 (UNKNOWN) authorizes nothing: re-run.** `NOT_RUN` is never a verdict:
+  an orchestrator records it for a gate that did not run, a runtime check for a criterion it did
+  not exercise. PASS ≠ NOT_RUN ≠ UNKNOWN ≠ "it seemed to work".
 - Results are JSON (`framework/schemas/`): the guard writes `.git/apex-sync/<alias>/last-<op>.json`
   on every run, and with `--task <id>` a copy under the evidence dir (`.apex-evidence/` by default,
   never committed). Record runtime and architecture verdicts the same way

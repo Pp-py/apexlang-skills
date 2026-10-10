@@ -11,10 +11,10 @@ Verified against Oracle's skills at the revision in [`oracle-skills.lock.json`](
 | Capability | APEXlang 26.1 | APEXlang 26.2 | Proof |
 |---|---|---|---|
 | **Oracle** generation, policies, local lint (`apexlang-generation`) | yes | no — not shipped for 26.2 | upstream router ([citations](../tests/upstream/citations.md)) |
-| **Oracle** compile (`validate-apex-app.sh`) and deploy (`deploy-apex-app.sh`) | yes | yes | [citations](../tests/upstream/citations.md) |
+| **Oracle** compile (`validate-apex-app.sh`) and deploy (`deploy-apex-app.sh`) | yes | yes | [citations](../tests/upstream/citations.md) (both scripts, both versions) |
 | **Oracle** `apexctl runtime verify-ui` | opt-in, HTML fetch only | no | [citations](../tests/upstream/citations.md) |
 | Architecture: single write path, package boundaries, recipes | yes, with KC-1…KC-5 | not recorded | the skill; §Known conflicts |
-| Architecture: red-flag tokens exist in Oracle's inventory | yes | not recorded | [citations](../tests/upstream/citations.md) (3 auto-row-processing tokens) |
+| Architecture: red-flag tokens exist in Oracle's inventory | yes | yes | [citations](../tests/upstream/citations.md) (the 3 auto-row-processing process types, both versions) |
 | Examples under Oracle's local lint | yes — only the documented diagnostics | n/a | §Recorded runs; [expected-diagnostics](../tests/upstream/expected-diagnostics.txt) |
 | Examples under the compiler | no — KC-7 | no — UP-2 | §Recorded runs |
 | Sync gate: check-import / check-export / record-sync, markers, sync-result | yes (version-independent) | yes (version-independent) | [e2e](../tests/integration/sync-guard-e2e.sh) and [contract](../tests/contract/run.sh) in CI, SQLcl stubbed |
@@ -32,9 +32,9 @@ What CI does not run, recorded when it was run. Re-run after updating Oracle's s
 
 | Date | Command | Environment | Outcome |
 |---|---|---|---|
-| 2026-10-09 | `tests/upstream/verify-citations.sh` | oracle/skills `014cdb2` (the lock) | PASS — 29/29 anchors current |
-| 2026-10-09 | `tests/upstream/validate-examples.sh --lint` | `apexlang-generation` 26.1, release 2026.09.21, at `014cdb2` | PASS — only the four documented diagnostics |
-| 2026-10-09 | `SQLCL_BIN=… tests/upstream/validate-examples.sh --compiler` | SQLcl 26.2.0.181.2110 (Windows, from WSL), Oracle's 26.1 scaffold | FAIL — 9 compile errors (KC-7) |
+| 2026-10-10 | `tests/upstream/verify-citations.sh` | oracle/skills `014cdb2` (the lock) | PASS — 41/41 anchors current |
+| 2026-10-10 | `tests/upstream/validate-examples.sh --lint` | `apexlang-generation` 26.1, release 2026.09.21, at `014cdb2` | PASS — only the four documented diagnostics |
+| 2026-10-10 | `SQLCL_BIN=… tests/upstream/validate-examples.sh --compiler` | SQLcl 26.2.0.181.2110 (Windows, from WSL), Oracle's 26.1 scaffold | FAIL — 9 compile errors (KC-7) |
 
 ## Known conflicts
 
@@ -69,11 +69,12 @@ What no gate enforces. Listed so nothing here reads as more than it is.
 
 | ID | Gap | Consequence |
 |---|---|---|
-| GAP-1 | the hook sees only commands of Claude Code's `Bash`/`PowerShell` tools — not an import inside `sql @script.sql`, a wrapper under another name, an MCP tool; other agents have no hook | outside it, the check script is the whole protocol |
+| GAP-1 | the hook sees only commands of Claude Code's `Bash`/`PowerShell` tools, and only what their text shows — not an import inside `sql @script.sql`, a wrapper under another name, an MCP tool, a path held in a variable; other agents have no hook | outside it, the check script is the whole protocol |
 | GAP-2 | the hook refuses writes to markers and refs only in Claude Code; deleting a marker is allowed by design (it only withdraws) | an agent with a plain shell elsewhere can bypass the guard |
 | GAP-3 | nothing enforces Validation before an import on Oracle's deploy lane | the orchestrator must run it |
 | GAP-4 | no PL/SQL compile gate: a process can name a package procedure that does not exist and still validate | caught at runtime, or not at all |
 | GAP-5 | agent-produced results (architecture, runtime) can be false; hashes make them auditable, not true | review the raw evidence |
-| GAP-6 | environments per app (DEV / TEST / PROD of one app) are not modeled: one connection per app | Phase 3 |
+| GAP-6 | environments per app (DEV / TEST / PROD of one app) are not modeled: one connection per app. The hook refuses a SQLcl launcher named to another saved connection, but cannot compare a connect string — Oracle's deploy script takes one | Phase 3 |
 | GAP-7 | guard state lives under `.git/apex-sync/`, which assumes `.git` is a directory (not a worktree) | worktrees unsupported |
 | GAP-8 | nothing expires a result file; freshness beyond the marker's TTL is the consumer's job ([GATES.md](GATES.md) §Freshness) | a careless consumer can read a stale PASS |
+| GAP-9 | a check's marker is tied to a time, not to the LOCAL content it compared: undo a capture within the 10 minutes and the old PASS still authorizes the import | re-run `check-import` after any change to LOCAL; binding the marker to the source tree's hash is a Phase 3 candidate |

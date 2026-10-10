@@ -24,7 +24,7 @@ KC-4.)
 
 | Question | Authority |
 |---|---|
-| Is this valid `.apx`? Which properties, templates, slots exist? | Oracle — the SQLcl compiler (`apexlang-compile`) > the 26.1 lint > `apexlang-inventory` and the 26.1 policies (`framework/PRINCIPLES.md` P6) |
+| Is this valid `.apx`? Which properties, templates, slots exist? | Oracle — the SQLcl compiler (`apexlang-compile`) > the 26.1 lint > `apexlang-inventory`, the 26.1 policies and templates (`framework/PRINCIPLES.md` P6) |
 | What should this pattern look like, and when is it the right pattern? | Oracle's UX Pattern Catalog app (26.1.4) |
 | Where does the logic live, what must the data layer project, and when may we deviate? | **this skill** |
 

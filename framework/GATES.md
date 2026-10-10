@@ -15,7 +15,7 @@ establishes is how "validate passed" turns into "it works" (P5).
 | **PASS does NOT establish** | that anything compiles, renders or is synchronized | that the PL/SQL compiles or the packages it calls exist; anything at runtime; anything the 26.1 lint says | that the import's payload is right (it is reported, not judged); other apps; other environments; that the Builder stays untouched afterwards | criteria not exercised; other pages; security; performance |
 | **Evidence** | `architecture-result`: decisions with evidence, the red-flag scan's command | the script's command, exit code and output (`Validation successful`) | `sync-result`: the export, the comparison, changes, payload; the marker | `runtime-result`: per criterion, evidence files (sha256) and SQL |
 | **Statuses** | PASS · FAIL · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED | PASS · FAIL · CONFLICT · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED · UNKNOWN |
-| **Holds back** | building the change | the import | `apex import`/`export`, the deploy script, `apexctl` roundtrip | any "it works" claim |
+| **Holds back** | calling the build done — decided before it, passed on the built code | the import | `apex import`/`export`, the deploy script, `apexctl` roundtrip | any "it works" claim |
 | **Enforced by** | discipline | nothing on the deploy lane — Oracle's deploy script does not validate (GAP-3) | the `PreToolUse` hook (Claude Code); discipline elsewhere | discipline |
 
 ## Order
@@ -24,8 +24,11 @@ establishes is how "validate passed" turns into "it works" (P5).
 Architecture → build (.apx + package) → Validation → Sync → import → record-sync → Runtime
 ```
 
-Sync goes last before the import because it is the perishable one: its PASS lapses in 10
-minutes and is void the moment LOCAL changes again. `record-sync` right after the import
+Architecture is decided before the build and passed after it: the decisions are made first (a
+missing input BLOCKS right there), but the evidence they rest on and the red-flag scan need the
+built `.apx` and package, so its result is written once they exist. Sync goes last before the
+import because it is the perishable one: its PASS lapses in 10 minutes, and it speaks only for
+the LOCAL it compared. `record-sync` right after the import
 is part of the import, not an optional step — skipping it poisons the next comparison.
 Runtime comes after the import because it measures what the Builder now serves.
 
@@ -40,8 +43,10 @@ invalid.
 
 ## Freshness
 
-- A sync **marker** authorizes for 10 minutes, and is withdrawn when the next check of that
-  direction starts — a FAIL never leaves an earlier PASS standing.
+- A sync **marker** authorizes for 10 minutes, and is withdrawn whenever a check of that
+  direction does not PASS — even one stopped before it began — so a FAIL or a BLOCKED never
+  leaves an earlier PASS standing. It is tied to a time, not to the
+  LOCAL it checked (GAP-9): after any change to LOCAL, run the check again.
 - A **result** is fresh for the task named in its `context.task`, at the revision in its
   `context.repo`. Read for another task, or after the inputs it judged changed, it is stale:
   the consumer records `NOT_RUN`, not the old status.
@@ -55,7 +60,8 @@ may not do. It orchestrates the gates; it adds no rule of its own (P2, P6).
 - pass `--app <alias>` and `--task <id>` to every gate command, and read results only from
   that task's directory;
 - validate each result against its schema before reading it — an invalid result is `UNKNOWN`;
-- read a missing result as `BLOCKED` when the command exited 2, `UNKNOWN` otherwise;
+- read a missing result — or one whose `context.timestamp` predates the command it just ran,
+  left by an earlier run — as `BLOCKED` when the command exited 2, `UNKNOWN` otherwise;
 - write the manifest with the aggregation rule above, citing each result by path and sha256;
 - stop at the first required gate that is not `PASS`, and report it — the user decides what
   happens next (P9).
@@ -76,11 +82,13 @@ may not do. It orchestrates the gates; it adds no rule of its own (P2, P6).
 
 ## Adding a gate
 
-Phase 3 brings Security and UI/UX as gates. A new gate needs, and changes nothing else:
+Phase 3 brings Security and UI/UX as gates. A new gate needs the following — and changes none of
+the existing gates:
 
 1. an owning skill and a producer — a script where possible, the agent where not;
 2. a result schema in `schemas/` (experimental first), fixtures, and negatives that encode
    what its PASS requires;
 3. its column in the table above, including what its PASS does **not** establish;
 4. its place in the order, and whether it is required by default;
-5. its name in the `verification-manifest` gate enum.
+5. its name in the `verification-manifest` gate enum, and its result kind in that schema's
+   `results[].kind` enum.

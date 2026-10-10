@@ -21,12 +21,19 @@ verified revision (`framework/oracle-skills.lock.json`).
   without a basis (a fresh `check-import` PASS, an unchanged Builder, or LOCAL equal to the
   Builder) — `--force` is the user's override; a missing source dir for `check-export`.
 - With several apps in `apps[]`, every gate command needs `--app <alias>`.
+- A check that does not PASS withdraws the marker of its direction — also when it stops before
+  it begins (a bad option, no SQLcl, an invalid config; with `--app` missing, for every app).
+- `check-export` sees untracked files even under `status.showUntrackedFiles=no`.
 - A CONFLICT prints `CONFLICT:` instead of `FAIL:`.
 - **Hook:** it now also gates Oracle's `deploy-apex-app.sh`, `apexctl` validate-and-import, SQLcl's
   short forms (`apex imp -i …`, `apex exap -api …`) and any `apex import` with a SQLcl launcher in
   the command; it refuses `record-sync --force` and writes to the guard's markers, refs and state
   even with a fresh marker; any failure after it sees a relevant command blocks; with several apps
-  it requires the check of the app the command acts on. A mention without an option
+  it requires the check of the app each invocation acts on — one that names its app no longer
+  vouches for another in the same command. It refuses a command that reaches another onboarded
+  repo than the session's (a `cd` into it, a path into it: from a session outside any onboarded
+  repo these passed unchecked), a `cd` to a directory computed at run time, and a `sql -name`
+  that is not the connection the app was checked through. A mention without an option
   (`grep -i "apex import"`) still passes.
 
 **apex-sentinel**
@@ -57,11 +64,17 @@ verified revision (`framework/oracle-skills.lock.json`).
 - Several apps per repo (`apps[]` with top-level defaults); `apex-sync-check.sh apps` and
   `pw.sh apps` print what they resolved; one config reader shared by the check and the hook.
 - `references/` in each skill (progressive disclosure) and a Contract block atop each `SKILL.md`.
-- Tests: the contract tier (schemas, 63 negatives, every emitted result, the docs surface), the
-  config-parity test, Windows (Git Bash) in CI.
+- Tests: the contract tier (schemas; 65 negatives, each proven to be rejected by the one rule it
+  names; every emitted result; the docs surface), the config-parity test, the hook's python
+  lane, Windows (Git Bash) in CI.
 
 ### Fixed
 - A type error in `apex-sync.json` (a non-string `testUser`) was silently ignored.
+- A PASS whose marker could not be written still exited 0; it is UNKNOWN (exit 3) now.
+- Result redaction could rewrite a relative path holding the repo root's letters, and missed
+  the `C:/…` form of a Windows home; it now rewrites only where a path begins, in both forms.
+- Multi-app tracing compared the session's logical cwd with git's physical root, so it blocked
+  legitimate commands under a symlinked dir (macOS `/var`) or Git Bash (`/tmp` vs `C:/…`).
 - The upstream tier no longer reports a pass for a run that did not happen; the lint and the
   compiler are separate lanes, and the lint is advisory.
 - Docs no longer claim what was not true: "the official `apex` skill", "apex validate-green

@@ -1,10 +1,12 @@
 # The decision record
 
-Before the `.apx` and the package are written, record what was decided — an
+Decide before the `.apx` and the package are written; record the decisions as an
 `architecture-result` (`framework/schemas/architecture-result.schema.json`, experimental) at
-`<evidenceDir>/<task>/architecture.json`. It is the Architecture gate's verdict, and the
-record alone never PASSes: each decision rests on evidence, and the red-flag scan must have
-run.
+`<evidenceDir>/<task>/architecture.json` once they exist. It is the Architecture gate's verdict,
+passed on the built code, not on the intention: each decision rests on evidence pointing at the
+code that implements it, and the red-flag scan must have run on the source. If the evidence dir
+does not exist yet, create it with a `.gitignore` of `*` (`printf '*\n' > .apex-evidence/.gitignore`):
+evidence is never committed by accident.
 
 ## Inputs — or BLOCKED
 
@@ -12,7 +14,9 @@ A decision needs the **requirement** (what the screen or operation must do), the
 context** (which app, its existing packages and the entity each owns) and the **schema**
 (tables, constraints, foreign keys). An input that would change a decision and that nobody
 has given goes in `missingInputs`, and the result is BLOCKED until someone answers. Ask;
-never fill the gap with a plausible guess.
+never fill the gap with a plausible guess. Oracle's generation skill holds its own pipeline to the
+same rule: *"Selection is not authorization: if `generation_status` is `blocked`, report
+`missingInputs` and do not emit, validate, publish, or import."*
 
 ## One decision per rule and per operation
 

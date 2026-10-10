@@ -20,11 +20,13 @@ Precedence where they overlap: [PRINCIPLES.md](PRINCIPLES.md) P6.
 | `CONFLICT` | **Sync only**: the other replica holds work the operation would overwrite | 1 | apex-sync-guard |
 | `BLOCKED` | a precondition is missing; stopped **before** any effect (includes an unverified login) | 2 | a producer |
 | `UNKNOWN` | started, and the outcome cannot be determined — or an effect may have happened | 3 | a producer |
-| `NOT_RUN` | not invoked, not required (with a reason), or stale | — | **only a consumer** |
+| `NOT_RUN` | not invoked, not required (with a reason), or stale | — | **never a producer's verdict** — a consumer assigns it to a gate; inside a runtime-result, a criterion not exercised is NOT_RUN |
 
 The JSON result is the verdict; the exit code mirrors it. A run that stopped before it
-could write a result (no repo, no SQLcl, an invalid config, bad arguments) leaves none: a
-consumer reads exit 2 with no file as BLOCKED, any other exit with no file as UNKNOWN.
+could write a result (no repo, no SQLcl, an invalid config, bad arguments) leaves none — and a
+file left there by an *earlier* run of the same task is not this run's: a consumer that finds
+no result, or one whose `context.timestamp` is earlier than the moment it started the command,
+reads exit 2 as BLOCKED and any other exit as UNKNOWN.
 
 ## Oracle's signals, mapped
 
@@ -72,7 +74,8 @@ following prose.
 ## Where results land
 
 Paths are repo-relative. `<evidenceDir>` defaults to `.apex-evidence` (`apex-sync.json`
-`evidenceDir`); the first writer creates it with a `.gitignore` of `*`.
+`evidenceDir`), with a `.gitignore` of `*`: whoever writes there first creates it, and the guard
+puts it back whenever it is missing.
 
 | Result | Path | Written by |
 |---|---|---|

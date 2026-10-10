@@ -26,8 +26,8 @@ exist only in the 26.1 bundle (`26.1/apexlang-generation/`); 26.2 ships compile,
 26.1/apexlang-generation/references/policies/memory-bank/30-pages/apex.interactive-grid-page.md | unless invoking a dedicated API | apexlang-architecture SKILL.md, references/official-standard.md, recipes/editable-ig-to-package.md, recipes/form-page-to-package.md, recipes/master-detail-edit.md
 26.1/apexlang-generation/references/policies/memory-bank/30-pages/apex.interactive-grid-page.md | Enable automatic row processing | apexlang-architecture references/official-standard.md (non-negotiable rule 6)
 26.1/apexlang-generation/references/policies/memory-bank/10-global/apex.global.md | Prefer ARP for simple CRUD | apexlang-architecture references/official-standard.md (the deviation, stated)
-26.1/apexlang-generation/SKILL.md | Selection is not authorization | framework/PRINCIPLES.md (P9)
-SKILL.md | If the version is unknown, use 26.1. | framework/CONTRACTS.md (version routing)
+26.1/apexlang-generation/SKILL.md | Selection is not authorization | apexlang-architecture references/decision-record.md (missingInputs block)
+SKILL.md | If the version is unknown, use 26.1. | README.md (Requirements: the version Oracle's router defaults to)
 26.1/apexlang-generation/references/ops/runtime-gates.md | --import-intent validate-and-import | apex-sync-guard references/import-lanes.md, scripts/apex-sync-hook.sh
 26.1/apexlang-generation/tools/apexctl.mjs | readOption(args, "--runtime-action", "validate-only") | apex-sync-guard scripts/apex-sync-hook.sh (default intent; --runtime-action alias)
 26.1/apexlang-generation/references/ops/runtime-gates.md | Normalize every `.apx` source file from CRLF or CR to LF | apex-sync-guard references/model.md (the E status)
@@ -44,4 +44,16 @@ SKILL.md | If the version is unknown, use 26.1. | framework/CONTRACTS.md (versio
 26.2/apexlang-inventory/assets/app/page/process/plugin-variants/interactive-grid-auto-row-processing/interactive-grid-auto-row-processing.md | interactiveGridAutoRowProcessing:"Interactive Grid - Automatic Row Processing (DML)" | apexlang-architecture references/decision-record.md (red-flag scan)
 26.2/apexlang-inventory/assets/app/page/process/plugin-variants/form-auto-row-processing/form-auto-row-processing.md | formAutoRowProcessing:"Form - Automatic Row Processing (DML)" | apexlang-architecture references/decision-record.md (red-flag scan)
 26.2/apexlang-inventory/assets/app/page/process/plugin-variants/auto-row-processing/auto-row-processing.md | autoRowProcessing:"Automatic Row Processing (DML)" | apexlang-architecture references/decision-record.md (red-flag scan)
+26.1/apexlang-generation/references/policies/memory-bank/30-pages/apex.cards-page.md | project only `u-normal`, `u-hot`, `u-info`, `u-success`, `u-warning`, `u-danger`, or `NULL` | framework/CAPABILITIES.md (KC-1)
+26.1/apexlang-generation/references/policies/memory-bank/40-components/apex.region-contracts.md | connect drilldown through nearby report/card links rather than chart or metric actions | framework/CAPABILITIES.md (KC-2)
+26.1/apexlang-generation/references/policies/memory-bank/40-components/apex.region-interactions.md | Metric Card supports one row-level action position, `link`. Use a declarative behavior target | framework/CAPABILITIES.md (KC-2)
+26.1/apexlang-generation/references/policies/memory-bank/40-components/apex.region-interactions.md | Use declarative `behavior.target` for redirects | framework/CAPABILITIES.md (KC-3)
+26.1/apexlang-generation/references/policies/memory-bank/20-data/apex.sql.md | MUST: Use process type: invokeApi with invoke | framework/CAPABILITIES.md (KC-4)
+26.1/apexlang-generation/references/policies/memory-bank/20-data/apex.sql.md | MUST NOT: Use executeCode to call packages via plsqlCode | framework/CAPABILITIES.md (KC-4)
+26.1/apexlang-generation/references/policies/memory-bank/10-global/apex.global.md | MUST: Allow a thin page-level `executeCode` wrapper for packaged calls | framework/CAPABILITIES.md (KC-4)
+26.1/apexlang-compile/scripts/validate-apex-app.sh | grep -Fq "Validation successful" | framework/CONTRACTS.md (Validation signal, identical in 26.1)
+26.1/apexlang-compile/scripts/validate-apex-app.sh | report APEXLang validation errors while still returning status 0 | framework/CONTRACTS.md (identical in 26.1)
+26.1/apexlang-inventory/assets/app/page/process/plugin-variants/interactive-grid-auto-row-processing/interactive-grid-auto-row-processing.md | interactiveGridAutoRowProcessing:"Interactive Grid - Automatic Row Processing (DML)" | apexlang-architecture references/decision-record.md (identical in 26.1)
+26.1/apexlang-inventory/assets/app/page/process/plugin-variants/form-auto-row-processing/form-auto-row-processing.md | formAutoRowProcessing:"Form - Automatic Row Processing (DML)" | apexlang-architecture references/decision-record.md (identical in 26.1)
+26.1/apexlang-inventory/assets/app/page/process/plugin-variants/auto-row-processing/auto-row-processing.md | autoRowProcessing:"Automatic Row Processing (DML)" | apexlang-architecture references/decision-record.md (identical in 26.1)
 ```

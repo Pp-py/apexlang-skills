@@ -22,7 +22,8 @@ Prerequisites: `apex-sync.json` for the copy (`setup.md` §1), `apex-sync-check.
 3. Copy the page from the kept export into LOCAL, commit → `check-import` → PASS,
    `BUILDER_CHANGES_CAPTURED`; import; `record-sync` → PASS, `basis: fresh-check`.
 4. Dirty a file under the source dir → `check-export` → **FAIL**, `LOCAL_DIRTY`; commit;
-   `check-export` → PASS; export; `record-sync` → PASS, `basis: local-equals-builder`.
+   `check-export` → PASS; export; `record-sync` → PASS, `basis: local-equals-builder` (or
+   `fresh-check`, while step 3's `check-import` PASS is under 10 minutes old).
 5. Every result in `.apex-evidence/L1/` validates (`tests/contract/schemas.py --captured`
    pointed at a copy of it).
 

@@ -19,9 +19,11 @@ Record every one you were asked to verify:
 ```
 
 Save what the page told you **by redirection**, then hash the file — the hash is what makes
-the result auditable after the fact:
+the result auditable after the fact. If the evidence dir does not exist yet, create it with a
+`.gitignore` of `*` first: evidence is never committed by accident.
 
 ```bash
+[ -f .apex-evidence/.gitignore ] || { mkdir -p .apex-evidence && printf '*\n' > .apex-evidence/.gitignore; }
 R=.apex-evidence/T-42/raw/runtime-hr; mkdir -p "$R"
 scripts/pw.sh --app hr eval '() => document.querySelector("#t_Alert_Notification")?.innerText ?? null' > "$R/ig-duplicate.json"
 sha256sum "$R/ig-duplicate.json"          # macOS: shasum -a 256

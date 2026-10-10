@@ -39,16 +39,17 @@ count only when it is a clean number.
 
 Under `<evidenceDir>/<task>/` — default `.apex-evidence/`, set by `evidenceDir` in
 `apex-sync.json` — with raw artifacts in `raw/<gate>-<alias>/` (paths in
-[CONTRACTS.md](CONTRACTS.md) §Where results land). The first writer creates the directory with
-a `.gitignore` of `*`: **evidence is machine-local and never committed by accident.**
-Committing is an opt-in: edit that `.gitignore` to admit `*/manifest.json` and the result
-files it cites — never `raw/`.
+[CONTRACTS.md](CONTRACTS.md) §Where results land). The directory carries a `.gitignore` of `*` —
+created by whoever writes there first, put back by the guard whenever it is missing: **evidence
+is machine-local and never committed by accident.** Committing is an opt-in: *edit* that
+`.gitignore` (a deleted one comes back) to admit `*/manifest.json` and the result files it
+cites — never `raw/`.
 
 ## Redaction
 
 | Where | What |
 |---|---|
-| the sync writer, automatically | the repo root becomes `<repo>`, `$HOME/` becomes `~/`; the scratch dir in a recorded command becomes `<scratch>`; a SQL error text is never kept |
+| the sync writer, automatically | in messages and recorded commands, a path that begins with the repo root becomes `<repo>/…` and one under `$HOME` becomes `~/…` — in the shell's form and in the `C:/…` form native tools print; the scratch dir in a recorded command becomes `<scratch>`; a SQL error text is never kept |
 | `pw.sh`, automatically | the password reaches the browser through a mode-600 file deleted on exit, never argv or output; the `?session=` token is stripped from the URL it remembers; `close-all` deletes the session's snapshots |
 | the schemas, on every result | they reject an APEX session id (`session=…`, `f?p=…:…:<id>`), a password assignment, a `user/password@host` connect string, a connect string as a connection name, an absolute, `~` or `..` path |
 | the agent, by discipline | assert with `eval` on the value under test rather than full-page snapshots; keep page dumps under `raw/` only; record no customer data in `observed` |

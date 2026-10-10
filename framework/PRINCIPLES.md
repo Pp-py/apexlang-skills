@@ -37,8 +37,10 @@ PASS means a check ran to the end and something it executed proves the condition
 **PASS ≠ NOT_RUN ≠ UNKNOWN ≠ "the agent says it worked".** A green `validate` is not a
 rendered page; a successful import is not a working app.
 
-*Enforced by:* the schemas (a PASS without exit-0 evidence, or with a required criterion
-not PASS, is invalid) and `tests/contract/` (negatives that encode each way to fake one).
+*Enforced by:* the schemas — a sync PASS needs a command or query that exited 0; a runtime
+PASS needs every required criterion PASS, each on a saved file or an exit-0 command; an
+architecture PASS needs a red-flag scan that ran (exit 0 or 1) — and `tests/contract/`
+(negatives that encode each way to fake one).
 
 ## P5 — Separate stages, separate verdicts
 
@@ -52,8 +54,8 @@ establish.
 ## P6 — Delegate, with a precedence
 
 This repo never duplicates what Oracle's skills do. For grammar and components the
-authority is, in order: **SQLcl `apex validate` > Oracle's 26.1 lint > Oracle's prose
-(policies, templates) > this repo**. This repo owns what Oracle's skills do not cover:
+authority is, in order: **SQLcl `apex validate` > Oracle's 26.1 lint > Oracle's inventory,
+policies and templates > this repo**. This repo owns what Oracle's skills do not cover:
 the write path, ownership, the data contracts behind the UI, sync safety, runtime proof,
 the gates and the evidence. Where a recipe here disagrees with Oracle, the disagreement is
 recorded as a known conflict, not silently kept or silently dropped.

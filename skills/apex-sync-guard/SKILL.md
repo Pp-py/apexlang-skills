@@ -52,7 +52,7 @@ Updates the syncpoint (tree + timestamps). Skipping this poisons every future co
 
 ## Resolution when the Builder moved
 
-Per differing file: changed only in the Builder → copy it from the kept export into LOCAL and commit; changed on both sides → a per-file 3-way merge (`git merge-file` against the BASE version from the syncpoint ref). Re-run `check-import` until it PASSes, then validate, import, `record-sync`. **Never `record-sync` to clear a CONFLICT** — it launders the Builder-only work into BASE. Step by step: `references/resolution.md`.
+Per differing file: changed only in the Builder → copy it from the kept export into LOCAL and commit; changed on both sides → a per-file 3-way merge (`git merge-file` against the BASE version from the syncpoint ref). Re-run `check-import` until it PASSes; then validate, run `check-import` once more as the last step before the import (its PASS lapses in 10 minutes), import, `record-sync`. **Never `record-sync` to clear a CONFLICT** — it launders the Builder-only work into BASE. Step by step: `references/resolution.md`.
 
 ## When NOT to use
 

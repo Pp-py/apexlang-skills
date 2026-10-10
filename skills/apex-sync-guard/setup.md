@@ -22,7 +22,7 @@ Committed at the **project repo root**. Everything the guard needs to know about
 - `testUser` / `runtimeUrl` (optional) — read by **apex-sentinel**, not by the guard: the runtime app's test user and its URL, so a verification run doesn't rediscover them. Both are ordinary config; the password is **not** and never belongs in this file, which is committed (see `skills/apex-sentinel/setup.md` §2).
 - `evidenceDir` (optional, default `.apex-evidence`) — where a gate run given `--task <id>` also writes its JSON result (`<evidenceDir>/<id>/sync-<appAlias>-<operation>.json`). Created with a `.gitignore` of `*`, so evidence is never committed by accident; every run also leaves `.git/apex-sync/<appAlias>/last-<operation>.json`.
 
-**Several apps in one repo.** A workspace often holds more than one live app, and one repo can carry all of them. List them in `apps[]`; every top-level key except `appId`/`appAlias` is then a default that each app may override (`ignorePaths` is replaced, never merged):
+**Several apps in one repo.** A workspace often holds more than one live app, and one repo can carry all of them. List them in `apps[]`; the top-level `apexlangDir`, `sqlclConnection`, `ignorePaths`, `testUser` and `runtimeUrl` are then defaults that each app may override (`ignorePaths` is replaced, never merged), and `evidenceDir` stays repo-wide:
 
 ```json
 {
@@ -55,7 +55,11 @@ With no BASE yet, `check-import` cannot 3-way compare; it degrades to REMOTE-vs-
 ```
 
 - Zero diff → the replicas already agree; the script records the first syncpoint automatically.
-- Diff → reconcile manually once (decide side by side which replica wins per file), commit, import or export accordingly, then `record-sync`.
+- Diff (CONFLICT, `BOOTSTRAP_DIVERGED`) → reconcile once, file by file, deciding which replica wins — there is no BASE to tell which side moved:
+  - **where the Builder wins**, copy its file from the kept export into LOCAL and commit. Once LOCAL matches the Builder everywhere, `check-import` PASSes and records the first syncpoint.
+  - **where LOCAL must win**, the Builder holds nothing worth keeping — but only the user can declare that: they run `record-sync --force` in their own terminal, which records the current Builder as BASE. Then `check-import` PASSes, the import pushes LOCAL, and `record-sync` follows it.
+
+  `record-sync` without `--force` refuses here (`NO_FRESH_CHECK`), by design: an agent clearing a CONFLICT that way would erase exactly the Builder work the check was about.
 
 ## 3. Enforcement hook (Claude Code)
 
@@ -93,11 +97,17 @@ The hook reads the tool call JSON on stdin and gates these lanes; every other co
 - **Oracle's deploy script** `deploy-apex-app.sh` (26.1 and 26.2) — its `apex import` lives in a heredoc the hook never sees, so any command naming the script is an import unless every segment of it starts with a plain reader (`cat`, `grep`, `sed`, `less`, …).
 - **The 26.1 generation package's own lane** — `apexctl … runtime roundtrip`, or `--runtime-action`/`--import-intent validate-and-import`: `roundtrip` runs `apex import` inside a SQLcl subprocess.
 
-On a match without a fresh marker it exits 2 with the reason on stderr, which blocks the call and tells the agent to run `check-import` / `check-export` first. The marker is written only by a PASSing check, withdrawn as soon as the next check of that direction starts, and keyed to the app alias. Two refusals hold even with a fresh marker, because they are the user's call: `record-sync --force`, and any write to the guard's own markers, `refs/apex-sync/*` or `.git/apex-sync/` state. Once a command looks relevant, a failure of the hook itself (an unreadable config, git refusing the repo, a marker age it cannot compute) blocks rather than allows.
+On a match without a fresh marker it exits 2 with the reason on stderr, which blocks the call and tells the agent to run `check-import` / `check-export` first. The marker is written only by a PASSing check, keyed to the app alias, and withdrawn whenever a check of that direction does not PASS — even one stopped before it began (a bad option, no SQLcl, an invalid config). Refused even with a fresh marker:
+
+- `record-sync --force`, and any write to the guard's own markers, `refs/apex-sync/*` or `.git/apex-sync/` state — the user's call;
+- a command that reaches **another** onboarded repo than the session's — a `cd`/`pushd` into it, or a path pointing into it — since the markers checked are the session repo's (from a session outside any onboarded repo, it would be checked against none); a `cd` to a directory computed at run time blocks for the same reason;
+- a command whose SQLcl launcher connects through another saved connection than the one the app was checked through (`sql -name prod …` after a check through `dev`).
+
+Once a command looks relevant, a failure of the hook itself (an unreadable config, git refusing the repo, a marker age it cannot compute, a parser that reads nothing) blocks rather than allows.
 
 Known trade-off: the hook matches the command **text**. A command that only *mentions* an import or export together with one of its flags — `echo "apex export -applicationid 1"`, a commit message quoting `apex import -input …` — is gated like a real one; the bare phrase without a flag or launcher is not, so grepping for it or reading the guard's own source stays possible. Rephrase or run the corresponding check; erring on the blocking side is the point — a false positive costs one rephrase, a false negative overwrites a replica. Expect an agent meeting this for the first time to report it as a bug; it is not. (It also makes the hook cheap to test — see §4.)
 
-The opposite limit is a declared gap: an import the command text does not show — `sql @script.sql` whose script imports, a wrapper script under another name, an MCP tool — never reaches the pattern match. There the check script is the whole protocol.
+The opposite limit is a declared gap: an import the command text does not show — `sql @script.sql` whose script imports, a wrapper script under another name, an MCP tool, a path held in a variable — never reaches the pattern match. There the check script is the whole protocol.
 
 Other agents (Codex, opencode, …) don't get the hook — for them the wrapper script IS the protocol; `AGENTS.md` in this repo instructs loading the skill before any import/export.
 
@@ -130,7 +140,7 @@ Expected: **blocked**, exit 2, with the guard's reason on stderr. Four cases wor
 |---|---|---|---|
 | absent | `echo "apex export -applicationid 1"` | blocked | the hook is registered and fires |
 | fresh `check-ok.export` | the same | allowed | a PASSing check really unblocks |
-| `check-ok.export` aged with `touch -d '11 minutes ago'` | the same | blocked | the 10-min TTL is enforced, not just presence |
+| `check-ok.export` aged 11 minutes (`touch -d '11 minutes ago'`; on macOS `touch -t <CCYYMMDDhhmm>`) | the same | blocked | the 10-min TTL is enforced, not just presence |
 | fresh `check-ok.export` only | `echo "apex import -input x"` | blocked | direction-awareness — one check does not authorize the other |
 
 `tests/integration/sync-guard-e2e.sh` runs these four commands through the hook, so this table cannot drift from what the hook does.

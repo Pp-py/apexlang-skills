@@ -46,8 +46,9 @@ Engineering guardrails    single write path · fail-closed gates · evidence, no
 | | *future capabilities:* **Security** and **UI/UX** gates (Phase 3) |
 
 This repo never duplicates what Oracle's skills do. Where its guidance and Oracle's meet, the
-precedence is explicit — SQLcl `apex validate` > Oracle's 26.1 lint > Oracle's prose > this repo,
-for grammar and components — and every disagreement is recorded as a known conflict
+precedence is explicit — SQLcl `apex validate` > Oracle's 26.1 lint > Oracle's inventory, policies
+and templates > this repo, for grammar and components ([P6](framework/PRINCIPLES.md)) — and every
+disagreement is recorded as a known conflict
 ([`CAPABILITIES.md`](framework/CAPABILITIES.md)), not silently kept.
 
 ## The loop, as gates
@@ -58,8 +59,9 @@ Architecture → build (.apx + package) → Validation → Sync → import → r
 
 Each gate has one owner and states what its PASS does **not** establish
 ([`GATES.md`](framework/GATES.md)). Every verdict is one of `PASS · FAIL · CONFLICT (sync only) ·
-BLOCKED · UNKNOWN`, with exit codes 0 · 1 · 1 · 2 · 3 — and `NOT_RUN`, which only a consumer
-assigns. **PASS ≠ NOT_RUN ≠ UNKNOWN ≠ "the agent says it worked."** Results are JSON validated by
+BLOCKED · UNKNOWN`, with exit codes 0 · 1 · 1 · 2 · 3 — and `NOT_RUN`, which is never a
+producer's verdict: a consumer assigns it to a gate that did not run (a runtime check marks a
+criterion it did not exercise the same way). **PASS ≠ NOT_RUN ≠ UNKNOWN ≠ "the agent says it worked."** Results are JSON validated by
 [`framework/schemas/`](framework/schemas/) — `sync-result` is stable and written by the guard on
 every run; `runtime-result`, `architecture-result` and the task-level `verification-manifest` are
 experimental. A future `apexlang-delivery` orchestrates the gates by reading those files, under

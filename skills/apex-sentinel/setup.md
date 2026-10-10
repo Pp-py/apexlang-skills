@@ -31,7 +31,7 @@ Multi-step sequences (login, the IG add-row dance) go through `run-code` — one
   { "browser": { "contextOptions": { "ignoreHTTPSErrors": true } } }
   ```
 
-  `pw.sh` writes it once inside `$PW_WORKSPACE`. Set `PW_INSECURE_TLS=0` if the runtime has a valid cert and you want validation enforced.
+  `pw.sh` writes it inside `$PW_WORKSPACE`, and rewrites it whenever `PW_INSECURE_TLS` changes — refused while a browser launched with the old setting is still open (`pw.sh close-all` first). Set `PW_INSECURE_TLS=0` if the runtime has a valid cert and you want validation enforced.
 
 **Keep the workspace out of the project.** `$PW_WORKSPACE` defaults to `${TMPDIR:-/tmp}/apex-sentinel-<uid>/<repo>-<app>-<crc>` — private to you (mode 700, ownership checked), one per project and app, printed on every login — precisely so a verification run leaves nothing in the user's APEX repo — `.playwright/cli.config.json` has been accidentally *committed* to a consuming repo this way. If you deliberately point `$PW_WORKSPACE` at a repo (to reuse the login across sessions), add `.playwright/`, `.playwright-cli/` and `.playwright-mcp/` to that repo's `.gitignore` **first**.
 
@@ -93,8 +93,8 @@ The **username and the runtime URL are ordinary config** — two optional fields
 
 The **password never goes there** — that file is committed. It is read from, in order:
 
-1. `$APEX_TEST_PASSWORD`
-2. `APEX_TEST_PASSWORD=…` in the repo root's `.env` — **gitignore it first**
+1. `$APEX_TEST_PASSWORD_<ALIAS>`, then `APEX_TEST_PASSWORD_<ALIAS>=…` in the repo root's `.env` — when the app has an alias (`<ALIAS>`: upper-cased, any other character as `_`)
+2. `$APEX_TEST_PASSWORD`, then `APEX_TEST_PASSWORD=…` in that `.env` — **gitignore it first**
 3. `"password"` in `~/.apex-sentinel.json` (or `$APEX_TEST_FILE`)
 
 If a project keeps its env file somewhere other than the repo root, point `$APEX_TEST_ENV` at it. **Ask where it is — don't go hunting**, and don't assume a layout: the answer is different in every project, and a wrong guess reads secrets that were never meant for this.
