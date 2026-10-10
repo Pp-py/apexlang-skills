@@ -85,6 +85,11 @@ page 62 (
         }
         behavior {
             warnOnUnsavedChanges: doNotCheck
+            requiresConfirmation: true
+        }
+        confirmation {
+            message: Reject this absence request? The decision cannot be undone.
+            style: danger
         }
     )
 

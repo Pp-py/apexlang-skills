@@ -1,0 +1,33 @@
+# Common criteria — every page
+
+| ID | Criterion | Sev | By | Source |
+|---|---|---|---|---|
+| `UX-AXE-SERIOUS` | axe-core reports no violation of impact *serious* or *critical* under the tags `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa` — on the page as loaded and with each dialog open | FAIL | runtime | WCAG 2.2 A/AA (the automatable subset) |
+| `UX-AXE-MINOR` | axe-core violations of impact *moderate* or *minor* are listed | ADVISE | runtime | WCAG 2.2 A/AA |
+| `UX-AXE-REVIEW` | axe-core results it could not decide ("incomplete") are listed for a person to check; they are never evidence of a PASS | ADVISE | runtime + manual | WCAG 2.2 A/AA |
+| `UX-ITEM-NAME` | every visible item has an accessible name: a non-empty `label`, or a hidden label only where Universal Theme documents one, with an `aria-label`/`aria-labelledby` fallback; a placeholder never counts | FAIL | static + runtime | Oracle global; WCAG 1.3.1, 3.3.2, 4.1.2 |
+| `UX-CONTROL-NAME` | every button, link and action that shows only an icon has an accessible name (its label, visually hidden text with `u-VisuallyHidden`, or an `aria-label`); the icon is never the only label, and a `title` on an `aria-hidden` icon names nothing | FAIL | static + runtime | Oracle region-media; WCAG 1.1.1, 2.4.4, 4.1.2 |
+| `UX-DESTRUCTIVE-CONFIRM` | a button or action that deletes data, or cancels or rejects a record, asks for confirmation before it submits — a `confirmation` block with a message, or a dialog — including Cards and row-menu actions | FAIL | static | Oracle buttons, form; WCAG 3.3.4. The example catalog's item-detail-full shows a Delete link without one: do not copy it |
+| `UX-DESTRUCTIVE-STYLE` | that confirmation uses the `danger` style and says what is lost and that it cannot be undone; the destructive action is the last of its group, never the hot button | ADVISE | static | Oracle buttons |
+| `UX-NO-INLINE-STYLE` | the `.apx` carries no `style=` attribute and no literal colour (`#rgb`, `rgb(`, `hsl(`, a colour name) in any HTML expression, static content, template, page CSS or JavaScript; appearance comes from templates and template options | FAIL | static | Oracle governance, templates, global ("UT accessible palette"); WCAG 1.4.1, 1.4.3 |
+| `UX-NO-COMPOSED-CLASS` | no CSS class is built from pieces: no substitution inside a class name (`u-&X.`, `u-color-#X#-text`) and no class concatenated in SQL (`'u-color-' \|\| …`); a row-dependent class is a whole literal from a closed set | FAIL | static | repo `ui-contracts.md` §2; Oracle cards-page |
+| `UX-NO-INVENTED-CLASS` | every class is Universal Theme's, a template option, or the app's one scoped pattern class with its comment (`ui-contracts.md` §6) | ADVISE | static | Oracle governance, templates |
+| `UX-NO-COLOR-ONLY` | a state is never shown by colour alone: the badge, icon or row carries its text, or an icon with an accessible name | ADVISE | static + manual | Oracle global; WCAG 1.4.1 |
+| `UX-NO-INLINE-HANDLER` | no inline event handlers (`onclick=`, `onload=`) in the `.apx`; behaviour is a dynamic action | ADVISE | static | Oracle page |
+| `UX-DIALOG-FOCUS` | in every modal and drawer: focus moves into the dialog when it opens, Tab and Shift+Tab stay inside it, Esc closes it, and focus returns to the control that opened it | FAIL | runtime | Oracle global ("keyboard-operable"); WCAG 2.1.1, 2.1.2, 2.4.3 |
+| `UX-FOCUS-VISIBLE` | every Tab stop shows a visible focus indicator, and the focused control is not hidden under a sticky header, a drawer or a toolbar | ADVISE | runtime | Oracle global; WCAG 2.4.7, 2.4.11 |
+| `UX-TARGET-SIZE` | icon-only controls are at least 24×24 CSS px, or spaced so a 24 px circle around each does not overlap another | ADVISE | runtime | WCAG 2.5.8 |
+| `UX-REFLOW` | at 320 CSS px wide the page needs no horizontal scrolling except for data tables and grids, and nothing is cut off | ADVISE | runtime | Oracle form ("stacking on small screens"); WCAG 1.4.10 |
+| `UX-LINK-TEXT` | link text says where it goes ("Open request 1002", not "click here"); an icon link's accessible name does too | ADVISE | static + manual | WCAG 2.4.4 |
+| `UX-REGION-TITLE` | every content region has a meaningful title; a header is removed only through `t-Region--removeHeader js-removeLandmark`, or hidden with its heading kept for assistive technology | ADVISE | static | Oracle templates |
+| `UX-TITLEBAR-NAME` | the title-bar region is named after the page, never "Breadcrumb", "Title Bar" or "Page Header" | ADVISE | static | Oracle templates |
+| `UX-ONE-PRIMARY` | at most one hot button per region and one in the page header; secondary actions are plain, the rest go to an Actions menu | ADVISE | static | Oracle buttons ("single primary actions belong next to the title"); ex: CAT 26.1.6 dashboard-simple, browse-interactive-report |
+| `UX-ACTION-PLACEMENT` | page-level actions (create) are in the title bar; region toolbars hold only that region's actions; no extra button-container region | ADVISE | static | Oracle buttons, region-interactions |
+| `UX-EMPTY-STATE` | every report, cards, list and selection region declares `whenNoDataFound` saying what is missing and, where there is one, the next step | ADVISE | static | Oracle classic-report, interactive-report; ex: CAT 26.1.6 full-page-search, item-selection |
+| `UX-HELP-EDITABLE` | every visible editable or filter item carries help text; inline help is at most 60 characters and does not repeat the label | ADVISE | static | Oracle items, form, global |
+| `UX-PAGE-HELP` | a user-facing workflow page documents its purpose: page help, or page and region `comments` that say why the pattern was chosen; no placeholder comments | ADVISE | static | Oracle global, region-interactions; ex: CAT 26.1.6 reference ("Document Design Intent") |
+| `UX-NAV-ENTRY` | every non-modal page has a navigation entry and a breadcrumb entry in the right hierarchy; modal pages have neither | ADVISE | static | Oracle page |
+| `UX-FORMAT` | numbers, dates and money carry one format mask per column, respecting NLS; numeric columns and their headings are end-aligned, text start-aligned | ADVISE | static | Oracle global, sql, templates |
+| `UX-PAGINATION` | every report defines pagination, a row limit and an explicit order | ADVISE | static | Oracle global, sql |
+| `UX-MESSAGES` | errors appear next to the item they concern and in the notification, in plain words, with no `ORA-` prefix; success uses the declarative message | ADVISE | runtime | Oracle logic; WCAG 3.3.1, 3.3.3 |
+| `UX-MOTION` | no animation beyond Universal Theme's own, and `prefers-reduced-motion` is respected | ADVISE | manual | Oracle global; WCAG 2.3.3 |

@@ -1,12 +1,12 @@
 # Agent instructions — apexlang-skills
 
 This repository is an engineering framework for Oracle APEX applications written as APEXlang
-declarative source (`.apx`): three skills on top of Oracle's official APEXlang skills, plus the
+declarative source (`.apx`): four skills on top of Oracle's official APEXlang skills, plus the
 contracts that make them one system (`framework/`). If you are a coding agent (Claude Code,
 Codex, opencode, Cursor, aider, …) working on an APEXlang app, load the relevant skill file below
 **before** designing, changing, or verifying anything.
 
-## The three skills
+## The four skills
 
 1. **`skills/apexlang-architecture/SKILL.md`** — read it when deciding WHERE business logic,
    validation, or DML belongs. Core rule: every write goes through a PL/SQL package (single
@@ -27,6 +27,10 @@ Codex, opencode, Cursor, aider, …) working on an APEXlang app, load the releva
    claiming the change works. The running app in a real browser is the ONLY verification gate;
    it never degrades to "validate/import succeeded". Setup in `skills/apex-sentinel/setup.md`,
    per-archetype checklists in `skills/apex-sentinel/checks/`.
+
+4. **`skills/apex-ux/SKILL.md`** — read it when designing, changing or reviewing a page's UI.
+   Criteria with IDs (`criteria/`), FAIL or ADVISE, from WCAG 2.2 AA and Oracle's policies; a
+   UX pattern catalog is an example only. Scan and gate are not built yet (Phase 3).
 
 They form one loop: **architect → build (`.apx` + package) → validate → sync-check → import →
 record-sync → verify in the browser** (plus sync-check before any export).

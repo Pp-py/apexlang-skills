@@ -30,7 +30,24 @@ against both Oracle tools instead of being assumed.
 - The absences example renders its status as `t-Badge` plus a semantic class, so the sentinel
   walkthrough and `checks/workflow-state.md` read `td span.t-Badge`.
 
+**apex-ux (new skill)**
+- A fourth skill for UI quality and accessibility (Phase 3, UX-2): 71 criteria with IDs in
+  `skills/apex-ux/criteria/`. They cover every page (`UX-*`) plus the archetypes: dashboards,
+  browse and search, item details, data entry and workflow. Each criterion has a severity
+  (`FAIL` only for what a machine can establish), how it is verified (static, runtime, manual)
+  and its source: WCAG 2.2 AA, Oracle's 26.1 policies (anchored in `citations.md`), Universal
+  Theme.
+- Oracle's UX Pattern Catalog is cited as an example only; the skill never needs a catalog
+  instance. A UI PASS is never "WCAG compliant".
+- Measured against its own `FAIL` criteria, the repo had two defects. The icon-only report links in
+  the recipes and the absences example had no accessible name; they now carry visually hidden text
+  (`u-VisuallyHidden`). The absences example's Reject button had no confirmation; it now asks.
+- Not built yet: the static scan (UX-3), the runtime checks with a vendored axe-core (UX-4),
+  and the `ui-result` gate (UX-5).
+
 ### Tests
+- `tests/contract/surface.py` checks every apex-ux criterion row: a unique, prefixed ID, a
+  severity, a method (a FAIL is never manual) and a source.
 - `tests/upstream/probe-ui-rules.sh [--lint|--compiler]` runs probe pages through Oracle's lint
   and SQLcl. Probe 706 is a negative control the compiler must reject.
 - Under the compiler the examples go from 9 errors to 7 (KC-7: the scaffold's breadcrumb

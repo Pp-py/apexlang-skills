@@ -61,7 +61,7 @@ column WORK_ITEM_ID (
     source { dataType: NUMBER }
     link {
         target { page: 41  items { P41_WORK_ITEM_ID: #WORK_ITEM_ID# }  clearCache: 41 }
-        linkText: <span class="fa fa-pencil"></span>
+        linkText: <span aria-hidden="true" class="fa fa-pencil"></span><span class="u-VisuallyHidden">Edit item #WORK_ITEM_ID#</span>
     }
 )
 ```

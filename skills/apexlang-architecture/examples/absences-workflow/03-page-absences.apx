@@ -83,7 +83,7 @@ page 60 (
                     }
                     clearCache: 62
                 }
-                linkText: <span aria-hidden="true" class="fa fa-gavel" title="Resolve"></span>
+                linkText: <span aria-hidden="true" class="fa fa-gavel"></span><span class="u-VisuallyHidden">Resolve request #ABSENCE_ID#</span>
             }
         )
 

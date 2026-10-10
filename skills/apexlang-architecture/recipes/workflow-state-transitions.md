@@ -113,7 +113,7 @@ region requests (
         source { dataType: NUMBER }
         link {
             target { page: 62  items { P62_ABSENCE_ID: #ABSENCE_ID# }  clearCache: 62 }
-            linkText: <span class="fa fa-gavel"></span> } )
+            linkText: <span aria-hidden="true" class="fa fa-gavel"></span><span class="u-VisuallyHidden">Resolve request #ABSENCE_ID#</span> } )
 )
 ```
 
