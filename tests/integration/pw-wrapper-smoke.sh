@@ -265,13 +265,12 @@ rm -f "$WORK/proj/.gitignore"; rm -rf "$WORK/proj/ws"
 MSYS=winsymlinks:nativestrict CYGWIN=winsymlinks:nativestrict ln -s "$WORK_P/proj" "$WORK/link" 2>/dev/null || true
 if [[ -L "$WORK/link" ]]; then
   REAL_GIT=$(command -v git); mkdir -p "$WORK/gitform"
+  # The root, named through the link: pw.sh runs from the root here, so that is all of it.
+  # Not derived from the real git's answer — on Windows that is C:/…, which no shell path
+  # prefixes, and the case then tested a root nobody could enter.
   cat > "$WORK/gitform/git" <<EOF
 #!/usr/bin/env bash
-if [[ "\$*" == "rev-parse --show-toplevel" ]]; then
-  r=\$("$REAL_GIT" rev-parse --show-toplevel) || exit \$?
-  printf '%s\\n' "$WORK/link\${r#"$WORK_P/proj"}"
-  exit 0
-fi
+[[ "\$*" == "rev-parse --show-toplevel" ]] && { printf '%s\\n' "$WORK/link"; exit 0; }
 exec "$REAL_GIT" "\$@"
 EOF
   chmod +x "$WORK/gitform/git"
