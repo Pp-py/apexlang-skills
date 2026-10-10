@@ -24,7 +24,7 @@ Verified against Oracle's skills at the revision in [`oracle-skills.lock.json`](
 | Runtime gate: `pw.sh` (verified login, per-app workspaces, TLS, exit 3) | yes (version-independent) | yes (version-independent) | [smoke](../tests/integration/pw-wrapper-smoke.sh) in CI, Playwright CLI stubbed |
 | Runtime walkthroughs against a live app | not recorded | not recorded | — |
 | runtime-result / architecture-result / verification-manifest | experimental — fixtures and negatives only | same | [contract](../tests/contract/run.sh) |
-| Windows (Git Bash) | in CI (`windows-latest`) — not yet run for 0.6.0 | same | [ci.yml](../.github/workflows/ci.yml) |
+| Windows (Git Bash) | yes — integration on `windows-latest` in CI | same | [ci.yml](../.github/workflows/ci.yml); first green 0.6.0 run: [38059670802](https://github.com/Pp-py/apexlang-skills/actions/runs/38059670802) |
 
 ## Recorded runs
 
@@ -35,6 +35,7 @@ What CI does not run, recorded when it was run. Re-run after updating Oracle's s
 | 2026-10-10 | `tests/upstream/verify-citations.sh` | oracle/skills `014cdb2` (the lock) | PASS — 41/41 anchors current |
 | 2026-10-10 | `tests/upstream/validate-examples.sh --lint` | `apexlang-generation` 26.1, release 2026.09.21, at `014cdb2` | PASS — only the four documented diagnostics |
 | 2026-10-10 | `SQLCL_BIN=… tests/upstream/validate-examples.sh --compiler` | SQLcl 26.2.0.181.2110 (Windows, from WSL), Oracle's 26.1 scaffold | FAIL — 9 compile errors (KC-7) |
+| 2026-10-10 | the three `tests/integration/` suites | bash 3.2.57 — macOS's bash, not in CI (docker `bash:3.2` with git, jq, python3) | PASS — e2e 262, smoke 59, config-parity 44 |
 
 ## Known conflicts
 
