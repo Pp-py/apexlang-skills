@@ -76,7 +76,10 @@ done
 [[ $# -gt 0 ]] || die "no subcommand — try: $(basename "$0") open <url>"
 CMD=$1; shift
 
-PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || PROJECT_ROOT=""
+# In the shell's own physical form, like every path it is compared with: Git for Windows
+# reports C:/Users/… where the shell's `pwd -P` says /c/Users/…, and the two never
+# matched — a workspace inside the repo went unrefused on Windows.
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) && PROJECT_ROOT=$(cd "$PROJECT_ROOT" 2>/dev/null && pwd -P) || PROJECT_ROOT=""
 upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }      # bash 3.2 has no ${x^^}
 
 # ----------------------------------------------------------------------- apps

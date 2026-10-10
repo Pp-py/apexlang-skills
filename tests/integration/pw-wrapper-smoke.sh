@@ -239,11 +239,13 @@ ws_of() {  # $1 = dir to run from, PW_WORKSPACE unset -> the workspace the CLI r
   tail -1 "$PW_CWD_LOG"            # the eval itself (the launcher probe runs where pw.sh was called)
 }
 w1=$(ws_of "$WORK/proj"); w2=$(ws_of "$WORK/proj2")
-if [[ "$w1" == "$WORK/tmp/apex-sentinel-$(id -u)/proj-APP-"* ]]; then ok "workspace: per user, named after the project and its app"
+# Compared in the physical form pw.sh uses (on Git Bash /tmp is C:/Users/…/Temp).
+WORK_P=$(cd "$WORK" && pwd -P)
+if [[ "$w1" == "$WORK_P/tmp/apex-sentinel-$(id -u)/proj-APP-"* ]]; then ok "workspace: per user, named after the project and its app"
 else bad "workspace: unexpected default '$w1'"; fi
 if [[ -n "$w1" && -n "$w2" && "$w1" != "$w2" ]]; then ok "workspace: two projects get two workspaces"
 else bad "workspace: '$w1' vs '$w2'"; fi
-if [[ "$w1" != "$WORK/proj"* ]]; then ok "workspace: never inside the project"
+if [[ "$w1" != "$WORK_P/proj"* ]]; then ok "workspace: never inside the project"
 else bad "workspace: '$w1' is inside the project"; fi
 # An explicit PW_WORKSPACE inside the repo is refused unless the repo ignores it.
 RC=0; (cd "$WORK/proj" && PW_WORKSPACE="$WORK/proj/ws" "$PW" list) >/dev/null 2>"$WORK/err" || RC=$?
@@ -254,6 +256,29 @@ RC=0; (cd "$WORK/proj" && PW_WORKSPACE="$WORK/proj/ws" "$PW" list) >/dev/null 2>
 if [[ $RC -eq 0 ]]; then ok "workspace: inside the repo but ignored -> allowed"
 else bad "workspace: an ignored in-repo workspace was refused (exit $RC)" "$WORK/err"; fi
 rm -f "$WORK/proj/.gitignore"; rm -rf "$WORK/proj/ws"
+# git may name the repo root in another form than the shell does — Git for Windows says
+# C:/Users/… where `pwd -P` says /c/Users/…. Reproduced here with a git that reports the
+# root through a symlink: the in-repo refusal must hold whatever form git uses.
+ln -s "$WORK_P" "$WORK/link" 2>/dev/null || true
+if [[ -L "$WORK/link" ]]; then
+  REAL_GIT=$(command -v git); mkdir -p "$WORK/gitform"
+  cat > "$WORK/gitform/git" <<EOF
+#!/usr/bin/env bash
+if [[ "\$*" == "rev-parse --show-toplevel" ]]; then
+  r=\$("$REAL_GIT" rev-parse --show-toplevel) || exit \$?
+  printf '%s\\n' "$WORK/link\${r#"$WORK_P"}"
+  exit 0
+fi
+exec "$REAL_GIT" "\$@"
+EOF
+  chmod +x "$WORK/gitform/git"
+  RC=0; (cd "$WORK/proj" && PATH="$WORK/gitform:$PATH" PW_WORKSPACE="$WORK/proj/ws" "$PW" list) >/dev/null 2>"$WORK/err" || RC=$?
+  if [[ $RC -eq 2 ]] && grep -q 'inside the project repo' "$WORK/err"; then ok "workspace: refused inside the repo whatever form git names its root in"
+  else bad "workspace: an in-repo workspace was allowed when git named the root another way (exit $RC)" "$WORK/err"; fi
+  rm -rf "$WORK/proj/ws"
+else
+  echo "skip the root-form case: cannot create a symlink here"
+fi
 unset PW_CWD_LOG
 
 # --- the TLS setting is rewritten when it changes (it used to be written once, so
