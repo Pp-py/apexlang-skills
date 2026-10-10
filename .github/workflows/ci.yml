@@ -12,6 +12,7 @@ permissions:
 jobs:
   shellcheck:
     runs-on: ubuntu-24.04            # pinned: the ubuntu-latest label moves to a new release on its own schedule
+    timeout-minutes: 10              # the default is 6 hours: a hang must fail, not burn the day
     steps:
       - uses: actions/checkout@v5    # node24 runtime; v4 triggers the Node 20 deprecation notice
       - name: shellcheck every tracked shell script
@@ -19,6 +20,7 @@ jobs:
 
   contract:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: jsonschema (the version Ubuntu ships, as a user installing from apt gets it)
@@ -32,6 +34,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30              # Git Bash runs the e2e in minutes; a hang ran past 35 once
     defaults:
       run:
         shell: bash          # Git Bash on windows-latest — the only supported Windows shell
