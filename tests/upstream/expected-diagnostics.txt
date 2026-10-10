@@ -5,8 +5,11 @@
 #
 # The breadcrumb entries can only be satisfied by the consuming app's
 # shared-components/breadcrumbs.apx; the lov block is allowed by the grammar but not
-# by the lint's component table (both documented in the slice READMEs).
+# by the lint's component table (both documented in the slice READMEs). The IR column
+# `type: link` is the form SQLcl's compiler requires and the lint forbids — the compiler
+# wins (apexlang-architecture references/oracle-26.1-lint.md).
 p00030-sectors-catalog.apx BREADCRUMB_COVERAGE_ENTRY_REQUIRED_001
 p00030-sectors-catalog.apx DSL_RULE_BLOCK does not allow block 'lov'
 p00041-employee-form.apx BREADCRUMB_COVERAGE_ENTRY_REQUIRED_001
 p00060-absence-requests.apx BREADCRUMB_COVERAGE_ENTRY_REQUIRED_001
+p00060-absence-requests.apx INTERACTIVE_REPORT_LINK_COLUMN_TYPE_FORBIDDEN_001

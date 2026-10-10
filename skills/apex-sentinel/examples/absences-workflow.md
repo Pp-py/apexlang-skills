@@ -20,10 +20,10 @@ If neither is available, **stop and report**. Don't substitute validate/import a
    instead of snapshotting:
 
    ```js
-   () => [...document.querySelectorAll('span[class*="u-color-"] > b')].map(b => b.innerText.trim())
+   () => [...document.querySelectorAll('td span.t-Badge')].map(b => b.innerText.trim())
    ```
 
-   The page renders `<span class="#STATUS_CSS#"><b>#STATUS#</b></span>`, so the texts are the
+   The page renders `<span class="t-Badge #STATUS_CSS#">#STATUS#</span>`, so the texts are the
    raw upper-case statuses: expect a non-empty list containing `APPROVED` (seed row `1002`).
    An empty list means the selector does not match the page — never a pass. Take one
    snapshot only if you still need the resolve icon's ref (CLI: Grep the YAML for it).

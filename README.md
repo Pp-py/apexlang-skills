@@ -146,6 +146,7 @@ tests/integration/pw-wrapper-smoke.sh                # pw.sh, Playwright CLI stu
 tests/integration/config-parity.sh                   # apex-sync.json read alike by the guard and pw.sh
 tests/upstream/verify-citations.sh                   # quotes from Oracle's skills still say what we claim
 tests/upstream/validate-examples.sh [--compiler]     # the examples under Oracle's 26.1 lint, or SQLcl apex validate
+tests/upstream/probe-ui-rules.sh [--compiler]        # which UI rules the lint and the compiler each enforce
 ```
 
 What each tier establishes — and what it does not — is in [`tests/README.md`](tests/README.md).

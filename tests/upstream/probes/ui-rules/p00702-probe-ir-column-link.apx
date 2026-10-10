@@ -1,0 +1,64 @@
+page 702 (
+    name: Probe IR column link
+    alias: PROBE-IR-COLUMN-LINK
+    title: Probe IR column link
+    appearance {
+        pageTemplate: @/standard
+    }
+
+    region probe (
+        name: Probe
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                select object_id, object_name from user_objects
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/standard
+        }
+
+        column OBJECT_ID (
+            type: link
+            heading {
+                heading: Open
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: NUMBER
+            }
+            link {
+                target: {
+                    page: 701
+                    items: {
+                        P701_ID: #OBJECT_ID#
+                    }
+                    clearCache: 701
+                }
+                linkText: <span aria-hidden="true" class="fa fa-edit" title="Open"></span>
+            }
+        )
+
+        column OBJECT_NAME (
+            type: plainText
+            heading {
+                heading: Name
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: STRING
+            }
+        )
+    )
+)

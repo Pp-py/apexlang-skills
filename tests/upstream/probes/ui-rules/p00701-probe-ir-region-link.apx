@@ -1,0 +1,64 @@
+page 701 (
+    name: Probe IR region link
+    alias: PROBE-IR-REGION-LINK
+    title: Probe IR region link
+    appearance {
+        pageTemplate: @/standard
+    }
+
+    region probe (
+        name: Probe
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                select object_id, object_name from user_objects
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/standard
+        }
+        link {
+            linkColumn: customTarget
+            target: {
+                page: 702
+                items: {
+                    P702_ID: #OBJECT_ID#
+                }
+            }
+            linkIcon: fa-edit
+        }
+
+        column OBJECT_ID (
+            type: hidden
+            heading {
+                heading: Id
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column OBJECT_NAME (
+            type: plainText
+            heading {
+                heading: Name
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: STRING
+            }
+        )
+    )
+)

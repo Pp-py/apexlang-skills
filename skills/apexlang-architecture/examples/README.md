@@ -42,13 +42,13 @@ Two different checks, with two different results — `tests/upstream/validate-ex
 
 - **Oracle's 26.1 local lint** (`apexlang-generation`, release 2026.09.21; Oracle calls it advisory
   "syntax hygiene"): the five `.apx` pass with exactly the documented diagnostics — the app-level
-  breadcrumb entry and an Interactive Grid column `lov {}` block (listed in
+  breadcrumb entry, an Interactive Grid column `lov {}` block, and `type: link` on an Interactive
+  Report column, which the compiler requires and the lint forbids (listed in
   `tests/upstream/expected-diagnostics.txt` and in the slice that reports them).
 - **The compiler** (SQLcl `apex validate`, the contract of Oracle's `apexlang-compile`): with SQLcl
   26.2.0 on Oracle's 26.1 scaffold it currently **rejects** them — unresolved `@/breadcrumb`
-  template references and properties it does not accept (`templateOptions` after them,
-  `warnOnUnsavedChanges`, and the IR column link's `target`/`linkText`). Part of that is the
-  scaffold's theme rather than these pages (Oracle's own example pages fail the same way there);
+  template references and properties it does not accept (`templateOptions` after them, and
+  `warnOnUnsavedChanges`). Part of that is the scaffold's theme rather than these pages (Oracle's own example pages fail the same way there);
   the rest is unresolved. Tracked as a known conflict in the capability matrix — do not read
   "lint-clean" as "compiles".
 

@@ -17,7 +17,7 @@ region sectors-ir (
     type: interactiveReport
     source { sqlQuery: ```sql select sector_id, code, name, active_flag from hr_sectors order by code``` }
     column SECTOR_ID (
-        type: plainText
+        type: link
         heading { heading: Edit }
         layout { sequence: 10 }
         source { dataType: NUMBER }
@@ -29,7 +29,9 @@ region sectors-ir (
 )
 ```
 
-**The link goes on the column, never on the region.** A report-level `link { linkColumn / target / linkIcon }` is rejected by Oracle's 26.1 lint (`REPORT_REGION_LINK_BLOCK_UNSUPPORTED_001`), for Classic Reports as well as Interactive Reports — even though Oracle's own IR page-example and `interactive-report._common.md` template still show it at region scope. On an Interactive Report the linked column stays `type: plainText` and carries the `link {}` block, with the icon markup in `linkText`; `type: link` is Classic-Report-only. (The lint accepts this form; SQLcl 26.2.0's compiler rejected `target`/`linkText` on such a column — a known conflict in `framework/CAPABILITIES.md`, unresolved.)
+**The link goes on a column of `type: link`, never on the region.** The column carries the `link {}` block, with the icon markup in `linkText`, on Classic and Interactive Reports alike. That is the shape the compiler accepts: Oracle's inventory makes `link.target` valid on a report column only when its `type` is `link`, and SQLcl 26.2.0 rejects `target`/`linkText` on a `plainText` column.
+
+Oracle's 26.1 lint disagrees twice, and here the compiler wins (`framework/PRINCIPLES.md` P6). It forbids `type: link` on an Interactive Report column (`INTERACTIVE_REPORT_LINK_COLUMN_TYPE_FORBIDDEN_001`, an expected advisory diagnostic on the examples). It also rejects a report-level `link { linkColumn / target / linkIcon }` (`REPORT_REGION_LINK_BLOCK_UNSUPPORTED_001`). The compiler accepts that region-level form, and Oracle's own IR page example still shows it, but the lint says a live 26.1 import refuses it. Until an import proves otherwise, keep the link on the column.
 
 ## Modal page
 

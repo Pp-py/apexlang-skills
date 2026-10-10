@@ -9,8 +9,8 @@ belong to Oracle's APEXlang skills (`apexlang-inventory`, and the 26.1 policies 
 `apex.region-media.md`, `apex.region-interactions.md`, `30-pages/apex.*.md`). Read it there once;
 what follows is only the part no one else owns.
 
-**Contents:** 1 cards vs content row · 2 state tokens, never CSS classes · 3 drill-down URLs as a
-projected column · 4 where a derived column lives · 5 formatting and directives · 6 scoped custom
+**Contents:** 1 cards vs content row · 2 row-dependent styling from a closed set · 3 navigation is
+a declarative target · 4 where a derived column lives · 5 formatting and directives · 6 scoped custom
 CSS · 7 contextual detail actions · 8 selection state on a split view · 9 deviating from an
 official default · 10 item defaults in shared components.
 
@@ -44,54 +44,86 @@ Two traps worth naming:
   to a `cards` region — the official dashboard policy is explicit, and a KPI query that projects
   `metric_value`-shaped aliases into `cards` will be rejected in review.
 
-## 2. State columns project a token, never a CSS class
+## 2. Row-dependent styling comes from a closed set
 
-For status and badge use cases the semantic states are `success`, `danger`, `warning` and `info`:
-they carry colour *and* accessibility semantics, so they are states, not colour names. The rule:
+A status, a threshold or a category changes how a row looks. The value that drives it is projected
+by the data layer, and it always comes from a **closed set**, every member written as a literal: a
+`CASE` with an explicit `ELSE`, or a column whose `CHECK` constraint proves the set. The component
+maps that value as it is — it never builds a class out of pieces. Which set depends on who consumes
+it:
 
-```sql
--- the view/query projects the token
-case when r.due_date < trunc(sysdate) then 'danger'
-     when r.status = 'PENDING'        then 'warning'
-     else 'success'
-end as badge_state
-```
-
-```
-iconAndBadge { badgeColumn: STATUS_LABEL  badgeCssClasses: u-&BADGE_STATE. }
-```
-
-The class is composed **in the attribute**; the SQL stays free of presentation. Projecting
-`'u-success'` from the query — as the catalog's *Cards* primitive does, while its *Faceted Search –
-Cards* pattern does it right — puts theme class names in the data layer, where a theme upgrade cannot find
-them.
-
-Same rule, stronger: **never project HTML.** Oracle's 26.1 lint rejects it
-(`REPORT_SQL_HTML_LITERAL_FORBIDDEN_001`) and it is non-negotiable rule 1 of
-`apex.report-column-rendering.md`.
-
-For non-semantic classification (a rule type, a category color) project a short token too and
-compose around it: `<span class="u-color-#RULE_COLOR#-text">`.
-
-## 3. Drill-down URLs are a projected column
-
-The official cards policy requires `action.behavior.target: &EDIT_LINK` with the URL built in the
-SELECT list:
+| Consumer | Projected value | Mapped as |
+|---|---|---|
+| a template component's `state` — Badge `settings.state`, Metric Card `plugin-badge.state` | `success`, `warning`, `danger`, `info` | bare alias: `state: BADGE_STATE` |
+| a Cards region's `card.cssClasses` (and `iconAndBadge.badgeCssClasses`) | `u-normal`, `u-hot`, `u-info`, `u-success`, `u-warning`, `u-danger`, or `NULL` | `&STATE_CSS.` |
+| a report column's badge (`columnFormatting.htmlExpression`) | the same six classes | `<span class="t-Badge #STATE_CSS#">#STATUS#</span>` |
 
 ```sql
-apex_page.get_url(p_page => 41, p_items => 'P41_EMPLOYEE_ID', p_values => e.employee_id) as edit_link
+-- the view projects the state once, next to the status the package writes (§4)
+case when r.due_date < trunc(sysdate) then 'u-danger'
+     when r.status = 'PENDING'        then 'u-warning'
+     else 'u-success'
+end as state_css
 ```
 
-Architecturally that makes navigation **a derived column like any other** — same as the `LINK`
-column a `metricCard` strip already needs (`recipes/dashboard-kpis-charts.md`). So it follows §4:
-one page uses it, keep it inline; three pages link to the same detail screen, it belongs in the
-view.
+```
+card { primaryKeyColumn1: REQUEST_ID  cssClasses: &STATE_CSS. }
+iconAndBadge { badgeColumn: STATUS_LABEL }
+```
+
+The six `u-*` classes are Oracle's allowlist for Cards (`apex.cards-page.md`: *project only
+`u-normal`, `u-hot`, `u-info`, `u-success`, `u-warning`, `u-danger`, or `NULL`*). They are
+Universal Theme's semantic states rather than colour names, and because every value is a literal,
+both a review and a theme upgrade can find them with one grep. Keep the status text visible as
+well (the badge, a column): colour alone is not a state.
+
+Three things are out:
+
+- **Composing a class.** `badgeCssClasses: u-&BADGE_STATE.`, `'u-color-' || MOD(...)`,
+  `u-color-#RULE_COLOR#-text`: no single literal in the source says which classes can reach the
+  page, so the set is unprovable. Oracle rules this out on Cards (*"Do not concatenate arbitrary
+  CSS"*), and this skill applies the same rule to every component.
+- **A raw class column.** A column holding whatever class someone typed into a table is user input
+  reaching `class=""`.
+- **Markup.** The query never projects HTML. Oracle's `apex.report-column-rendering.md` makes it
+  non-negotiable rule 1 and the 26.1 lint rejects it (`REPORT_SQL_HTML_LITERAL_FORBIDDEN_001`).
+  SQLcl's compiler does not (§Report rules in `SKILL.md`), so it is a rule to keep, not one the
+  toolchain enforces.
+
+A **non-semantic classification**, such as a rule type or a category, follows the same rule: a
+`CASE` returns whole Universal Theme classes (`'u-color-11-text'`), and the column maps
+`#RULE_CSS#`. An avatar colour is not a classification at all. Comments and avatars colour
+themselves (`settings.applyThemeColors`), so leave it to the component.
+
+## 3. Navigation is a declarative target
+
+A link is a component property, not data: `behavior.target` (or a report column's `link.target`)
+names the page, the items and the cache to clear, and APEX builds the URL, including its checksum.
+The query projects only the **values** the target needs, which is almost always the row's key.
+
+| Component | Shape | Row value |
+|---|---|---|
+| Cards | `action open ( type: fullCard  behavior { type: redirectThisApp  target: { page: 41  items: { P41_EMPLOYEE_ID: &EMPLOYEE_ID. }  clearCache: 41 } } )` | `&COL.` |
+| Metric Card, Badge | `action open ( position: link  behavior { type: redirectThisApp  target: {…} } )` | `&COL.` |
+| Classic / Interactive Report | `column EMPLOYEE_ID ( type: link  link { target: {…}  linkText: … } )` | `#COL#` |
+
+Never project a URL for the UI: no `apex_page.get_url(...) as edit_link` mapped into a target,
+and no `f?p=` string. Oracle's contract is *"use declarative `behavior.target` for redirects"*
+(`apex.region-interactions.md`) and it rejects dynamic target substitutions on Cards
+(`apex.cards-page.md`). A projected URL hides the destination from review and moves the checksum
+into code you maintain. `apex_page.get_url` still belongs where no component exists to own the link:
+an e-mail body, a notification payload, PL/SQL-rendered output.
+
+If the destination differs from row to row, write one action per destination, each gated on the
+state column with a `serverSideCondition`. Every destination is then declared and reviewable.
 
 The catalog's `targetUrl: #` is demo scaffolding. It never ships.
 
-Note the division of labour the official contract draws: `metricCard` and `chart` regions do not
-own links or actions — drill-down hangs off a neighbouring card, report column, or button
-(`apex.region-interactions.md`).
+`chart` regions own no links, and Oracle routes drill-down from a KPI or a chart *"through nearby
+report/card links rather than chart or metric actions"* (`apex.region-contracts.md`). The narrow
+exception is a Metric Card whose cards all open **one** page, each with its own key (`P10_STATUS:
+&STATUS_CODE.`). It gets its `position: link` action. Cards that go to different pages get a
+header action instead (§7) — `recipes/dashboard-kpis-charts.md` has both.
 
 ## 4. Where a derived display column lives
 
@@ -99,13 +131,13 @@ own links or actions — drill-down hangs off a neighbouring card, report column
 |---|---|
 | Used by one region on one page | inline `source.sqlQuery` |
 | Reused across pages, or joins/aggregates | `v_*` view (`back-end-conventions.md` §5) |
-| State → token (§2) | **once**, next to the status the package writes |
-| Drill-down URL (§3) | inline for a page-local link, view when shared |
-| Initials, avatar colour, counts | wherever the row already comes from; never a second query per row |
+| State → closed-set value (§2) | **once**, next to the status the package writes |
+| A target's key values (§3) | wherever the row already comes from — usually the PK, already projected |
+| Initials, counts | wherever the row already comes from; never a second query per row |
 
-The state-token derivation is the one that must not be duplicated: a workflow's legal states live in
+The state derivation is the one that must not be duplicated: a workflow's legal states live in
 the package (`recipes/workflow-state-transitions.md`), so their presentation mapping lives once in
-the view that exposes them. Two pages disagreeing about which status is `danger` is a bug the UI
+the view that exposes them. Two pages disagreeing about which status is `u-danger` is a bug the UI
 cannot see.
 
 Avoid a scalar subquery per row for badges and counts; aggregate in the view instead. Dashboards are
@@ -148,7 +180,8 @@ instead of competing with the content:
   worse than no affordance.
 
 One action per region, and it links to a page that answers the question the region raises. This is
-also the escape hatch for `metricCard` and `chart` regions, which own no actions of their own (§3).
+also the drill-down for a `chart`, which owns no actions, and for a Metric Card strip whose cards
+lead to different pages (§3).
 
 ## 8. Selection state on a split-view page
 

@@ -1,0 +1,97 @@
+page 705 (
+    name: Probe metric card
+    alias: PROBE-METRIC-CARD
+    title: Probe metric card
+    appearance {
+        pageTemplate: @/standard
+    }
+
+    region kpis (
+        name: Indicators
+        type: themeTemplateComponent/metricCard
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                select 'VALID' as status_code, 'Valid objects' as title,
+                       to_char(count(*), 'FM999G999G990') as metric
+                  from user_objects where status = 'VALID'
+                union all
+                select 'INVALID', 'Invalid objects',
+                       to_char(count(*), 'FM999G999G990')
+                  from user_objects where status = 'INVALID'
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/blank-with-attributes
+        }
+        componentAppearance {
+            display: report
+        }
+        orderBy {
+            type: staticValue
+            orderByClause: STATUS_CODE asc
+        }
+        settings {
+            title: &TITLE.
+            metric: &METRIC.
+            layout: 2Columns
+        }
+        plugin-avatar {
+            displayAvatar: true
+            type: icon
+            icon: fa-check
+        }
+
+        action open-status (
+            position: link
+            layout {
+                sequence: 10
+            }
+            behavior {
+                type: redirectThisApp
+                target: {
+                    page: 702
+                    items: {
+                        P702_STATUS: &STATUS_CODE.
+                    }
+                    clearCache: 702
+                }
+            }
+        )
+
+        column STATUS_CODE (
+            layout {
+                sequence: 10
+            }
+            source {
+                databaseColumn: STATUS_CODE
+                dataType: varchar2
+                primaryKey: true
+            }
+        )
+        column TITLE (
+            layout {
+                sequence: 20
+            }
+            source {
+                databaseColumn: TITLE
+                dataType: varchar2
+            }
+        )
+        column METRIC (
+            layout {
+                sequence: 30
+            }
+            source {
+                databaseColumn: METRIC
+                dataType: varchar2
+            }
+        )
+    )
+)

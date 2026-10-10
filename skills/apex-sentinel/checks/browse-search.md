@@ -27,8 +27,8 @@
    (`messages.whenNoDataFound`), not a blank frame.
 7. **Drill-down:** `click` the row/card action and assert the detail page opened **with the right
    record** — `eval` the PK item's value or the detail title, and assert no checksum error region
-   (`argumentsMustHaveChecksum` plus a hand-built `f?p=` URL is a frequent break; a card action must
-   carry a `apex_page.get_url`-built link).
+   (`argumentsMustHaveChecksum` plus a hand-built `f?p=` URL is a frequent break; a declarative
+   `behavior.target` lets APEX add the checksum — `apexlang-architecture/ui-contracts.md` §3).
 8. **Dual view**, if the page declares a `regionDisplaySelector`: switch views and assert the other
    region is visible **and still filtered** — same row count as the active facet produced, not the
    unfiltered set.

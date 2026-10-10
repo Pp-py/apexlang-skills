@@ -131,8 +131,8 @@ may query another entity to enforce a rule — `pkg_employees` checks that the s
 writing an employee. What it may not do is *write* that other entity, or become the path a report
 reads through.
 
-Views and inline reads project **data and plain tokens** — a state token, a `apex_page.get_url` link,
-a count — never CSS class names or HTML. What each UI pattern needs projected, and where that
+Views and inline reads project **data**: keys, counts, and a state value from a closed set of
+literals. They never project HTML or a URL, and they never build a class out of pieces. What each UI pattern needs projected, and where that
 derivation belongs, is in `ui-contracts.md` §2–§4.
 
 ## 6. Recurring data patterns
