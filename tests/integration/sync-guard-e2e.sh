@@ -257,6 +257,8 @@ expect     "hook fails CLOSED without a JSON parser"               2 hook_no_jso
 "$CHK" check-import >/dev/null                       # restore the marker the hook section needs
 if [[ -n "$real_python" ]]; then     # the python fallback path never runs in CI, where jq exists
   expect "python fallback works when jq is broken"                 0 without_jq "$CHK" status
+else
+  echo "skip the python-fallback case: no python3"
 fi
 
 # --- deploy payload. A PASS says the import destroys nothing; it must also say what
@@ -292,6 +294,8 @@ printf '#!/usr/bin/env bash\ncommand %s "$@" | awk '"'"'{ printf "%%s\\r\\n", $0
 with_crlf_json() { ( export PATH="$WORK/crlf:$PATH"; "$@" ); }
 if [[ -n "$real_python" ]]; then
   expect "CRLF-emitting parser still honours ignorePaths"          0 with_crlf_json "$CHK" check-import
+else
+  echo "skip the CRLF-parser case: no python3"
 fi
 
 # --- apex-sync.json is validated as a whole before anything trusts it, with one
@@ -308,6 +312,8 @@ APPCFG='"appId": 100, "appAlias": "demo", "apexlangDir": "src", "sqlclConnection
 expect "ignorePaths as a string -> BLOCKED (jq)"              2 with_config "{ $APPCFG, \"ignorePaths\": \"apex-exports/\" }" "$CHK" check-import
 if [[ -n "$real_python" ]]; then
   expect "ignorePaths as a string -> BLOCKED (python)"        2 without_jq with_config "{ $APPCFG, \"ignorePaths\": \"apex-exports/\" }" "$CHK" check-import
+else
+  echo "skip the python config case: no python3"
 fi
 cp "$WORK/remote/demo/p30.apx" "$WORK/p30.saved"
 printf 'page 30 (\n  name: HiddenByAPrefix\n)\n' > "$WORK/remote/demo/p30.apx"
