@@ -276,6 +276,9 @@ page 41 (
             type: itemIsNotNull
             item: P41_EMPLOYEE_ID
         }
+        security {
+            authorizationScheme: @administration-rights
+        }
     )
 
     process load-employee (
@@ -384,6 +387,9 @@ page 41 (
         serverSideCondition {
             type: requestIsContainedInValue
             value: DELETE
+        }
+        security {
+            authorizationScheme: @administration-rights
         }
     )
 

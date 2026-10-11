@@ -1,0 +1,71 @@
+page 10 (
+    name: Orders
+    alias: ORDERS
+    title: Orders for &P10_CUSTOMER.
+    security {
+        authorizationScheme: mustNotBePublicUser
+        pageAccessProtection: argumentsMustHaveChecksum
+    }
+    region orders (
+        name: Orders
+        type: classicReport
+        column NAME (
+            type: plainText
+            security {
+                escapeSpecialChars: true
+            }
+        )
+        column LINK (
+            type: link
+            linkText: <span class="u-VisuallyHidden">&NAME!HTML.</span>
+        )
+    )
+    pageItem P10_ORDER_ID (
+        type: hidden
+        security {
+            sessionStateProtection: checksumRequiredSessionLevel
+        }
+    )
+    pageItem P10_FILTER (
+        type: hidden
+        // unrestricted: client-owned state, set by the same-page dynamic action "filter-changed"
+        security {
+            sessionStateProtection: unrestricted
+        }
+    )
+    pageItem P10_CUSTOMER_NAME (
+        type: textField
+        label {
+            label: Customer
+        }
+    )
+    button delete (
+        label: Delete
+        security {
+            authorizationScheme: @order-admin
+        }
+    )
+    button cancel (
+        label: Cancel
+    )
+    button remove-filter (
+        label: Remove filter
+        behavior {
+            action: redirectThisApp
+        }
+    )
+    process delete-order (
+        type: invokeApi
+        security {
+            authorizationScheme: @order-admin
+        }
+    )
+    dynamicAction open-help (
+        name: Open help
+        javaScriptCode:
+            ```javascript
+            // javascript: in a JS fence is code, not a link
+            apex.navigation.redirect("f?p=&APP_ID.:1:&SESSION.");
+            ```
+    )
+)

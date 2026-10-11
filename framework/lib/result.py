@@ -1,11 +1,12 @@
-"""ui_result — what ux-scan.py and ux-check.py share: the ui-result envelope
-(framework/schemas/ui-result.schema.json) and where it lands.
+"""result — what the tool-produced results share (apex-ux's ui-result, apex-security's
+security-result): the envelope's context, the app and its config, and where a result lands.
 
   scrub()     a passed-on message with the repo root and the home dir shortened
   context()   the run's context: task, repo commit and dirty flag, framework version, UTC time
-  target()    --app / --task → app alias and the task dir (<evidenceDir>/<task>/), or a Stop
+  target()    --app / --task → app alias, the task dir (<evidenceDir>/<task>/) and the app's
+              settings from apex-sync.json, or a Stop
   write()     the result on stdout and, with --task, in the task dir (and in
-              $UX_RESULT_CAPTURE_DIR, for the contract tier)
+              $RESULT_CAPTURE_DIR, for the contract tier)
 """
 import datetime
 import json
@@ -57,18 +58,20 @@ def scrub(text):
     return text
 
 
-def context(task):
+def context(task, skill):
     head = git("rev-parse", "HEAD")
     return {"task": task,
             "repo": {"commit": head if head and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head) else None,
                      "dirty": bool(git("status", "--porcelain"))},
             "frameworkVersion": FRAMEWORK_VERSION,
             "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "producer": {"skill": "apex-ux", "method": "tool"}}
+            "producer": {"skill": skill, "method": "tool"}}
 
 
 def target(app, task):
-    """(alias or None, task dir or None). The alias: --app, else apex-sync.json's one app."""
+    """(alias or None, task dir or None, settings). The alias: --app, else apex-sync.json's one
+    app. settings: the app's own keys over the top-level defaults, {} when there is no config;
+    None when the config lists several apps and none was named."""
     if task is not None and not RE_TASK.match(task):
         raise Stop("BLOCKED", "BAD_TASK", f"--task must match {RE_TASK.pattern}")
     if app is not None and not RE_ALIAS.match(app):
@@ -82,8 +85,9 @@ def target(app, task):
             raise Stop("BLOCKED", "BAD_CONFIG", f"apex-sync.json is unreadable: {e.__class__.__name__}")
         except ValueError as e:             # json's message: line and column, no path
             raise Stop("BLOCKED", "BAD_CONFIG", f"apex-sync.json is not valid JSON: {e}")
+    settings = app_settings(cfg, app)
     if task is None:
-        return app, None
+        return app, None, settings
     if app is None:
         if cfg.get("apps"):
             raise Stop("BLOCKED", "APP_REQUIRED", "apex-sync.json lists several apps: pass --app <alias>")
@@ -102,14 +106,34 @@ def target(app, task):
                 fh.write("*\n")
     except OSError as e:
         raise Stop("BLOCKED", "STATE_UNWRITABLE", f"cannot create the evidence dir {ev}: {e.__class__.__name__}")
-    return app, os.path.join(base, task)
+    return app, os.path.join(base, task), settings
+
+
+def app_settings(cfg, app):
+    """The settings apex-sync.json gives one app: its own entry over the top-level defaults
+    (the guard's reading, setup.md §1). A named app the file does not declare is a Stop."""
+    if not isinstance(cfg, dict) or not cfg:
+        return {}
+    apps = cfg.get("apps")
+    if not isinstance(apps, list):
+        if app is not None and cfg.get("appAlias") not in (None, app):
+            raise Stop("BLOCKED", "APP_UNKNOWN", f"apex-sync.json declares no app '{app}'")
+        return dict(cfg)
+    if app is None:
+        return None
+    own = [a for a in apps if isinstance(a, dict) and a.get("appAlias") == app]
+    if not own:
+        raise Stop("BLOCKED", "APP_UNKNOWN", f"apex-sync.json declares no app '{app}'")
+    merged = {k: v for k, v in cfg.items() if k != "apps"}
+    merged.update(own[0])
+    return merged
 
 
 def write(result, task_dir, name):
     """stdout always; the task dir and the capture dir when set. Returns the exit code."""
     doc = json.dumps(result, indent=2)
     print(doc)
-    for d in (task_dir, os.environ.get("UX_RESULT_CAPTURE_DIR")):
+    for d in (task_dir, os.environ.get("RESULT_CAPTURE_DIR")):
         if not d:
             continue
         f = os.path.join(d, name if d == task_dir else f"{os.getpid()}-{name}")
@@ -118,7 +142,7 @@ def write(result, task_dir, name):
                 fh.write(doc + "\n")
             os.replace(f + ".tmp", f)
         except OSError as e:
-            print(f"ui-result: could not write {f}: {e}", file=sys.stderr)
+            print(f"{result['kind']}: could not write {scrub(f)}: {e.__class__.__name__}", file=sys.stderr)
             if d == task_dir:
                 return 3                    # a gate whose result is not on disk has no verdict
     failed = [c["id"] for c in result["criteria"] if c["status"] == "FAIL"]

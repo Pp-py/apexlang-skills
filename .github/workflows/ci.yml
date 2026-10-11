@@ -50,3 +50,5 @@ jobs:
         run: bash tests/integration/ux-scan.sh
       - name: apex-ux runtime checks (stubbed Playwright CLI)
         run: bash tests/integration/ux-check.sh
+      - name: apex-security static scan (fixtures and the examples)
+        run: bash tests/integration/sec-scan.sh

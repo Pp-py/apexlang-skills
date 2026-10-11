@@ -196,8 +196,8 @@ def check_versions_and_lock():
     versions["CHANGELOG.md (latest entry)"] = m.group(1) if m else None
     fv = re.search(r'^FRAMEWORK_VERSION="([^"]+)"', read("skills/apex-sync-guard/scripts/apex-sync-check.sh"), re.M)
     versions["apex-sync-check.sh FRAMEWORK_VERSION"] = fv.group(1) if fv else None
-    uv = re.search(r'^FRAMEWORK_VERSION = "([^"]+)"', read("skills/apex-ux/scripts/ui_result.py"), re.M)
-    versions["ui_result.py FRAMEWORK_VERSION"] = uv.group(1) if uv else None
+    uv = re.search(r'^FRAMEWORK_VERSION = "([^"]+)"', read("framework/lib/result.py"), re.M)
+    versions["framework/lib/result.py FRAMEWORK_VERSION"] = uv.group(1) if uv else None
     if len(set(versions.values())) == 1:
         ok(f"one version everywhere: {plugin.get('version')} (manifests, CHANGELOG, the version results report)")
     else:
@@ -402,9 +402,10 @@ def check_interface():
     pw = read("skills/apex-sentinel/scripts/pw.sh")
     if "pw.sh [--app <alias>] <subcommand>" not in pw:
         missing.append("pw.sh usage: [--app <alias>] <subcommand>")
-    for script, args in (("ux-scan.py", "[--app <alias>] [--task <id>]"),
-                         ("ux-check.py", "[--app <alias>] [--task <id>] [--dialog <selector>]...")):
-        if args not in read(f"skills/apex-ux/scripts/{script}"):
+    for script, args in (("apex-ux/scripts/ux-scan.py", "[--app <alias>] [--task <id>]"),
+                         ("apex-ux/scripts/ux-check.py", "[--app <alias>] [--task <id>] [--dialog <selector>]..."),
+                         ("apex-security/scripts/sec-scan.py", "[--app <alias>] [--task <id>]")):
+        if args not in read(f"skills/{script}"):
             missing.append(f"{script} usage: {args}")
     hooks = json.loads(read("hooks/hooks.json"))
     cmds = [h.get("command", "") for e in hooks.get("hooks", {}).get("PreToolUse", []) for h in e.get("hooks", [])]

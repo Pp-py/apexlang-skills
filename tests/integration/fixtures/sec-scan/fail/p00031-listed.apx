@@ -1,0 +1,7 @@
+page 31 (
+    name: Listed
+    security {
+        authorizationScheme: mustNotBePublicUser
+        pageAccessProtection: argumentsMustHaveChecksum
+    }
+)

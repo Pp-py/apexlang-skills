@@ -52,6 +52,13 @@ Two different checks, with two different results — `tests/upstream/validate-ex
   the rest is unresolved. Tracked as a known conflict in the capability matrix — do not read
   "lint-clean" as "compiles".
 
+**Security.** Every page declares Oracle's baseline (`authorizationScheme: mustNotBePublicUser`,
+`pageAccessProtection: argumentsMustHaveChecksum`, checksums on hidden and key items), and the
+destructive actions — Delete employee, Reject absence — are under the role scheme
+`@administration-rights`, the one Oracle's 26.1 scaffold ships. **Your** app supplies that scheme
+in `shared-components/authorizations.apx`, or the examples' references are changed to the role
+that may delete or reject in your app. `skills/apex-security/scripts/sec-scan.py` checks all of it.
+
 Validate against **your** APEX version and SQLcl before `apex import`, and make sure the example page
 numbers (30, 41, 42, 60, 62) and aliases don't collide with pages already in your app.
 

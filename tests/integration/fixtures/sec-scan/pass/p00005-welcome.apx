@@ -1,0 +1,20 @@
+// public page review: a landing page with no data and no actions
+page 5 (
+    name: Welcome
+    alias: WELCOME
+    security {
+        authentication: public
+        pageAccessProtection: noArgumentsSupported
+    }
+    region intro (
+        name: Intro
+        type: staticContent
+        source {
+            html:
+                ```html
+                <h2>&APP_TITLE.</h2>
+                <a href="https://example.com/help">Help</a>
+                ```
+        }
+    )
+)

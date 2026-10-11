@@ -98,6 +98,9 @@ page 62 (
             message: Reject this absence request? The decision cannot be undone.
             style: danger
         }
+        security {
+            authorizationScheme: @administration-rights
+        }
     )
 
     validation VAL_REJECT_REASON (
@@ -165,6 +168,9 @@ page 62 (
         serverSideCondition {
             type: expression
             plsqlExpression: :REQUEST = 'REJECT'
+        }
+        security {
+            authorizationScheme: @administration-rights
         }
     )
 
