@@ -13,7 +13,8 @@ Verified against Oracle's skills at the revision in [`oracle-skills.lock.json`](
 | **Oracle** generation, policies, local lint (`apexlang-generation`) | yes | no — not shipped for 26.2 | upstream router ([citations](../tests/upstream/citations.md)) |
 | **Oracle** compile (`validate-apex-app.sh`) and deploy (`deploy-apex-app.sh`) | yes | yes | [citations](../tests/upstream/citations.md) (both scripts, both versions) |
 | **Oracle** `apexctl runtime verify-ui` | opt-in, HTML fetch only | no | [citations](../tests/upstream/citations.md) |
-| Architecture: single write path, package boundaries, recipes | yes, with KC-1…KC-5 | not recorded | the skill; §Known conflicts |
+| Architecture: single write path, package boundaries, recipes | yes, with KC-4, KC-5 | not recorded | the skill; §Known conflicts |
+| UI rules the recipes state (report links, markup in SQL, Cards classes, declarative targets) under Oracle's lint and the compiler | yes — measured on probe pages | not recorded | §Recorded runs; [probe-ui-rules](../tests/upstream/probe-ui-rules.sh) |
 | Architecture: red-flag tokens exist in Oracle's inventory | yes | yes | [citations](../tests/upstream/citations.md) (the 3 auto-row-processing process types, both versions) |
 | Examples under Oracle's local lint | yes — only the documented diagnostics | n/a | §Recorded runs; [expected-diagnostics](../tests/upstream/expected-diagnostics.txt) |
 | Examples under the compiler | no — KC-7 | no — UP-2 | §Recorded runs |
@@ -35,24 +36,34 @@ What CI does not run, recorded when it was run. Re-run after updating Oracle's s
 | 2026-10-10 | `tests/upstream/verify-citations.sh` | oracle/skills `014cdb2` (the lock) | PASS — 41/41 anchors current |
 | 2026-10-10 | `tests/upstream/validate-examples.sh --lint` | `apexlang-generation` 26.1, release 2026.09.21, at `014cdb2` | PASS — only the four documented diagnostics |
 | 2026-10-10 | `SQLCL_BIN=… tests/upstream/validate-examples.sh --compiler` | SQLcl 26.2.0.181.2110 (Windows, from WSL), Oracle's 26.1 scaffold | FAIL — 9 compile errors (KC-7) |
+| 2026-10-10 | `tests/upstream/verify-citations.sh`, after the UI conflicts were fixed | oracle/skills `014cdb2` (the lock) | PASS — 48/48 anchors current |
+| 2026-10-10 | `tests/upstream/validate-examples.sh --lint`, same | same | PASS — the five documented diagnostics (the IR column `type: link` added) |
+| 2026-10-10 | `SQLCL_BIN=… tests/upstream/validate-examples.sh --compiler`, same | SQLcl 26.2.0.181.2110 (Windows, from WSL), Oracle's 26.1 scaffold | FAIL — 7 compile errors (KC-7); the page-60 IR link errors are gone |
+| 2026-10-10 | `tests/upstream/probe-ui-rules.sh --lint` | `apexlang-generation` 26.1 at `014cdb2` | PASS — the lint rejects the region-level IR link, `type: link` on an IR column and HTML in report SQL |
+| 2026-10-10 | `SQLCL_BIN=… tests/upstream/probe-ui-rules.sh --compiler` | SQLcl 26.2.0.181.2110 (Windows, from WSL), Oracle's 26.1 scaffold | PASS — the compiler accepts all three and the Cards/Metric Card shapes, and rejects only the negative control (IR `plainText` column with `link {}`) |
 | 2026-10-10 | the three `tests/integration/` suites | bash 3.2.57 — macOS's bash, not in CI (docker `bash:3.2` with git, jq, python3) | PASS — e2e 262, smoke 59, config-parity 44 |
 
 ## Known conflicts
 
 Where this repo's guidance and Oracle's disagree — or this repo disagrees with itself.
-P6 decides which wins for grammar and components; the recipes are not rewritten yet, so
-each conflict is recorded instead of silently kept. Owner of the fixes: Phase 3
-(UI/UX), unless noted.
+P6 decides which wins for grammar and components; a conflict the recipes have not been
+rewritten for is recorded here instead of silently kept; once fixed, it moves to §Resolved
+conflicts and its ID is not reused. Owner of the open ones: Phase 3, as noted.
 
 | ID | Topic | Oracle (26.1, release 2026.09.21) | This repo | Until fixed |
 |---|---|---|---|---|
-| KC-1 | conditional card styling | `apex.cards-page.md`: project only `u-normal`, `u-hot`, `u-info`, `u-success`, `u-warning`, `u-danger` or `NULL`, mapped from a proven alias | recipes derive palette classes in SQL (`'u-color-' \|\| …` in `item-detail-page.md`, `u-color-#RULE_COLOR#-text` in `analytical-report.md`) | follow Oracle's set on Cards regions |
-| KC-2 | Metric Card drill-down | `apex.region-contracts.md`: drill down "through nearby report/card links rather than chart or metric actions"; `apex.region-interactions.md`: a Metric Card `link` uses a declarative behavior target | `dashboard-kpis-charts.md` projects the card's link with `apex_page.get_url` | prefer a nearby report/card link |
-| KC-3 | navigation targets | `apex.region-interactions.md`: "Use declarative `behavior.target` for redirects" | `ui-contracts.md` §3 projects drill-down links as data columns (`apex_page.get_url`) | declarative target where the region supports one |
 | KC-4 | calling a package from a page process | `apex.sql.md` requires `invokeApi` and forbids calling packages from `executeCode`; `apex.global.md` allows a thin `executeCode` wrapper with named notation — and says "Prefer ARP for simple CRUD" | recipes use thin `executeCode` wrappers; never ARP (P1) | interim rule: `invokeApi` and a logic-free `executeCode` wrapper both satisfy P1 (Oracle's own policies disagree) |
 | KC-5 | lost-update guard in the examples | — (internal) | `back-end-conventions.md` §7 requires a version token; the example packages update by primary key alone | copy the guard from §7, not from the examples (owner: apexlang-architecture) |
-| KC-6 | report rules (`REPORT_*`) | enforced by the 26.1 lint | `SKILL.md` §Report rules relies on them; whether the SQLcl compiler enforces them is unverified | treat as lint-level guidance |
-| KC-7 | examples vs the compiler | SQLcl 26.2.0 `apex validate`, Oracle's 26.1 scaffold: unresolved `@/breadcrumb` template references and `templateOptions` after them (pages 30, 41, 60), `warnOnUnsavedChanges` (page 42), the IR column link's `target` and `linkText` (page 60) | the same pages pass the 26.1 lint | the template errors also hit Oracle's own example pages on that scaffold (theme); the rest is unresolved — validate against your own app before importing (owner: apexlang-architecture) |
+| KC-7 | examples vs the compiler | SQLcl 26.2.0 `apex validate`, Oracle's 26.1 scaffold: unresolved `@/breadcrumb` template references and `templateOptions` after them (pages 30, 41, 60), `warnOnUnsavedChanges` (page 42) | the same pages pass the 26.1 lint, with the documented diagnostics | the template errors also hit Oracle's own example pages on that scaffold (theme); the rest is unresolved — validate against your own app before importing (owner: apexlang-architecture) |
+
+### Resolved conflicts
+
+| ID | Topic | Resolution | Where |
+|---|---|---|---|
+| KC-1 | conditional card styling | Oracle's rule, generalised. A row-dependent class comes from a closed set of literals and is mapped whole: the six `u-*` classes on Cards and on report badges, `success\|warning\|danger\|info` on template-component badges, never a composed class. Avatar colours come from `applyThemeColors`. | `ui-contracts.md` §2; recipes, the absences example (0.7.0, unreleased) |
+| KC-2 | Metric Card drill-down | Oracle's rule: the card's `position: link` action only when every card opens the same page with its own key; otherwise a header action or a nearby report | `recipes/dashboard-kpis-charts.md` (0.7.0, unreleased) |
+| KC-3 | navigation targets | Oracle's rule: a declarative `behavior.target` / `link.target`; the query projects the key, never a URL | `ui-contracts.md` §3 (0.7.0, unreleased) |
+| KC-6 | report rules (`REPORT_*`) | measured: SQLcl 26.2.0 enforces none of them. Data-only SQL and no region-level link stay this skill's own rules. Report links go on a `type: link` column, which the compiler requires even though the lint forbids it on an IR | `references/oracle-26.1-lint.md`; [probe-ui-rules](../tests/upstream/probe-ui-rules.sh) (0.7.0, unreleased) |
 
 ## Upstream issues
 

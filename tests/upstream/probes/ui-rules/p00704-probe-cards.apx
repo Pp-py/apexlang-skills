@@ -1,0 +1,68 @@
+page 704 (
+    name: Probe cards
+    alias: PROBE-CARDS
+    title: Probe cards
+    appearance {
+        pageTemplate: @/standard
+    }
+
+    region probe (
+        name: Probe
+        type: cards
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                select object_id,
+                       object_name,
+                       status,
+                       case status
+                            when 'VALID' then 'u-success'
+                            when 'INVALID' then 'u-danger'
+                            else null
+                       end as card_css
+                  from user_objects
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/cards-container
+        }
+        card {
+            primaryKeyColumn1: OBJECT_ID
+            cssClasses: &CARD_CSS.
+        }
+        title {
+            advancedFormatting: false
+            column: OBJECT_NAME
+        }
+        iconAndBadge {
+            badgeColumn: STATUS
+            badgeCssClasses: &CARD_CSS.
+        }
+        componentAppearance {
+            layout: grid
+        }
+
+        action open (
+            type: fullCard
+            layout {
+                sequence: 10
+            }
+            behavior {
+                type: redirectThisApp
+                target: {
+                    page: 702
+                    items: {
+                        P702_ID: &OBJECT_ID.
+                    }
+                    clearCache: 702
+                }
+            }
+        )
+    )
+)

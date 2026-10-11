@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+Phase 3, UX-1: the UI known conflicts with Oracle's 26.1 policies are resolved. The recipes,
+`ui-contracts.md` and the examples follow Oracle's rules, and the report rules were measured
+against both Oracle tools instead of being assumed.
+
+### Behavior changes — read before upgrading
+
+**apexlang-architecture**
+- **Row-dependent styling comes from a closed set** (`ui-contracts.md` §2, was KC-1). A Cards
+  region's `card.cssClasses` and a report badge take one of Oracle's six classes (`u-normal`,
+  `u-hot`, `u-info`, `u-success`, `u-warning`, `u-danger`) or `NULL`, returned whole by a `CASE`
+  with an `ELSE`. Template-component badges take `success|warning|danger|info`. A class is never
+  composed (`u-&STATE.`, `'u-color-' || …`, `u-color-#X#-text`). Avatar colours come from the
+  component (`applyThemeColors`).
+- **Navigation is a declarative target** (§3, was KC-3). `behavior.target` / `link.target` name
+  the page and the items; the query projects only the key. No `apex_page.get_url(...)` column
+  mapped into a target.
+- **Metric Card drill-down** (`recipes/dashboard-kpis-charts.md`, was KC-2). The card's own
+  `position: link` action applies only when every card opens the same page with its own key.
+  Otherwise the drill-down is a header action or a neighbouring report.
+- **Report links go on a column of `type: link`**, on Interactive Reports too (was KC-6). SQLcl's
+  compiler requires that form and rejects `plainText` + `link {}`, which the recipes used before.
+  Oracle's lint forbids it on an IR (`INTERACTIVE_REPORT_LINK_COLUMN_TYPE_FORBIDDEN_001`, now a
+  documented diagnostic), and the compiler wins (P6). The compiler enforces neither
+  `REPORT_SQL_HTML_LITERAL_FORBIDDEN_001` nor `REPORT_REGION_LINK_BLOCK_UNSUPPORTED_001`. This
+  skill keeps both as its own rules.
+- The absences example renders its status as `t-Badge` plus a semantic class, so the sentinel
+  walkthrough and `checks/workflow-state.md` read `td span.t-Badge`.
+
+### Tests
+- `tests/upstream/probe-ui-rules.sh [--lint|--compiler]` runs probe pages through Oracle's lint
+  and SQLcl. Probe 706 is a negative control the compiler must reject.
+- Under the compiler the examples go from 9 errors to 7 (KC-7: the scaffold's breadcrumb
+  template and `warnOnUnsavedChanges`).
+
 ## 0.6.0 — 2026-10-09
 
 The three skills become one system: an **engineering framework** (`framework/`) on top of

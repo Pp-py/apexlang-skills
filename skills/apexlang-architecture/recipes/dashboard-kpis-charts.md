@@ -26,30 +26,37 @@ region kpis (
     type: themeTemplateComponent/metricCard
     source { type: sqlQuery  sqlQuery: ```sql
         select 1 id, 'Active employees' title,
-               to_char((select count(*) from hr_employees where active_flag='Y')) metric,
-               'current headcount' meta, 'fa-users' icon,
-               apex_page.get_url(p_page => 10) link
+               to_char((select count(*) from hr_employees where active_flag='Y'),
+                       'FM999G999G990') metric,
+               'current headcount' meta, 'fa-users' icon
           from dual
         union all
         select 2, 'Present today',
                to_char((select count(distinct c.employee_id) from hr_clockings c
-                         where c.clocking_date = trunc(sysdate) and c.cancelled_at is null)),
-               'clocked in today', 'fa-check', apex_page.get_url(p_page => 70) from dual``` }
-    settings { title: &TITLE.  metric: &METRIC.  meta: &META.  link: &LINK.  layout: 3Columns }
-    plugin-avatar { displayAvatar: true  icon: &ICON. }
+                         where c.clocking_date = trunc(sysdate) and c.cancelled_at is null),
+                       'FM999G999G990'),
+               'clocked in today', 'fa-check' from dual``` }
+    appearance { template: @/blank-with-attributes }
+    componentAppearance { display: report }
+    settings { title: &TITLE.  metric: &METRIC.  meta: &META.  layout: 3Columns }
+    plugin-avatar { displayAvatar: true  type: icon  icon: &ICON. }
     column ID     ( source { databaseColumn: ID     dataType: number  primaryKey: true } )
     column TITLE  ( source { databaseColumn: TITLE  dataType: varchar2 } )
     column METRIC ( source { databaseColumn: METRIC dataType: varchar2 } )
     column META   ( source { databaseColumn: META   dataType: varchar2 } )
     column ICON   ( source { databaseColumn: ICON   dataType: varchar2 } )
-    column LINK   ( source { databaseColumn: LINK   dataType: varchar2 } )
 )
 ```
 
-Each KPI = one row; the number is `to_char()` of a scalar subquery bound into `&METRIC.`. `&LINK.`
-gives per-card drill-down. Emit a `column (...)` block for every projected field, and keep the
-thousands separator on the number — a KPI is read at a glance (`formatMask` on the metric, or
-`to_char(..., 'FM999G999G990')` in the query, decided once for the region).
+Each KPI = one row; the number is `to_char()` of a scalar subquery bound into `&METRIC.`. Emit a
+`column (...)` block for every projected field, and keep the thousands separator on the number — a
+KPI is read at a glance (`formatMask` on the metric, or `to_char(..., 'FM999G999G990')` in the
+query, decided once for the region). The icon column returns literals only, so every value is a
+proven Font APEX icon.
+
+These two cards lead to different pages, so they carry **no** link: a Metric Card action has one
+declarative target for every card in the region. Their drill-downs are the region's header action
+or the report next to them (§Drill-down below).
 
 ## A KPI badge is a semantic group
 
@@ -113,20 +120,54 @@ official line is to avoid custom behaviour where a standard attribute exists. If
 
 ## Drill-down and detail actions
 
-`metricCard` and `chart` regions **do not own links or actions** — that is an official contract, not
-a limitation to work around with JavaScript. Navigation hangs off:
+A Metric Card action is declarative, `position: link`, and its target is the same for every card
+in the region. A `chart` owns no actions. Oracle routes drill-down from both *"through nearby
+report/card links rather than chart or metric actions"* (`apex.region-contracts.md`), which leaves
+three options:
 
-- the metric card's own `&LINK.` column (`apex_page.get_url`, `ui-contracts.md` §3);
-- a region-level detail action in the header's `slot: edit` — a text link when the drill-down is a
-  common follow-up, an icon button when it is secondary, nothing when the region is purely
-  informational (`ui-contracts.md` §7);
-- a neighbouring report or card list for row-level navigation.
+- **A breakdown strip** — every card opens the **same** page, filtered by the card's own key —
+  is the one case for the card's own link:
+
+  ```
+  region requests-by-status (
+      type: themeTemplateComponent/metricCard
+      source { type: sqlQuery  sqlQuery: ```sql
+          select status status_code, initcap(status) title,
+                 to_char(count(*), 'FM999G999G990') metric
+            from hr_absences where cancelled_at is null
+           group by status``` }
+      appearance { template: @/blank-with-attributes }
+      componentAppearance { display: report }
+      orderBy { type: staticValue  orderByClause: STATUS_CODE asc }
+      settings { title: &TITLE.  metric: &METRIC. }
+      action open-status (
+          position: link
+          layout { sequence: 10 }
+          behavior { type: redirectThisApp
+                     target: { page: 60  items: { P60_STATUS: &STATUS_CODE. }  clearCache: 60 } } )
+      column STATUS_CODE ( source { databaseColumn: STATUS_CODE dataType: varchar2  primaryKey: true } )
+      column TITLE       ( source { databaseColumn: TITLE       dataType: varchar2 } )
+      column METRIC      ( source { databaseColumn: METRIC      dataType: varchar2 } )
+  )
+  ```
+
+  The target page reads `P60_STATUS` as a filter, and the query projects only the key, never a
+  URL (`ui-contracts.md` §3).
+- **A region-level detail action** in the header's `slot: edit` when the region as a whole has one
+  follow-up: a text link when the drill-down is common, an icon button when it is secondary, nothing
+  when the region is purely informational (`ui-contracts.md` §7).
+- **A neighbouring report or card list** for row-level navigation, with its own column or card
+  links. This is what Oracle's dashboard composition already puts below the KPIs.
+
+KPIs that lead to different pages are different questions. Use a header action per region, or split
+the strip, and never compute a destination per row.
 
 ## Conventions
 
 - Dashboard reads do **not** get a package — they're presentation aggregation over base tables/`v_*`
   views.
-- Keep KPI numbers + their drill-down link in one reviewable region.
+- Keep KPI numbers and their drill-down in one reviewable place: the card's declarative action, or
+  the region's header action.
 - One KPI styling system per page.
 - Local geometry fixes get a scoped class named after the pattern (`app-MetricCards`) with a one-line
   comment (`ui-contracts.md` §6) — not a new palette.

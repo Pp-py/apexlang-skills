@@ -150,10 +150,11 @@ else:
 
 - **Comments** (`themeTemplateComponent/comments`, `settings.style: chatSpeechBubbles`) is an
   append-only child table. The "Add comment" button submits to an `executeCode` process calling
-  `pkg_item_comments.add_comment(...)` — never an inline `INSERT`. The avatar is presentation derived
-  in SQL (`apex_string.get_initials(username)`, and a deterministic colour class such as
-  `'u-color-' || MOD(ORA_HASH(username), 10)`), which is exactly the derived-display-column rule
-  (`ui-contracts.md` §4).
+  `pkg_item_comments.add_comment(...)` — never an inline `INSERT`. The avatar's initials are derived in
+  SQL (`apex_string.get_initials(username)`, projected as their own column), which is exactly the
+  derived-display-column rule (`ui-contracts.md` §4). Its colour is not derived at all: the
+  component assigns theme colours itself (`settings.applyThemeColors`, on by default), so the
+  query composes no `u-color-*` class (`ui-contracts.md` §2).
 - **Child records** (`classicReport`) get their create/edit buttons in the **region's own toolbar**,
   not floating in the body grid, and the page refreshes them on `apexafterclosedialog` after the
   modal closes (`modal-crud-to-package.md`).

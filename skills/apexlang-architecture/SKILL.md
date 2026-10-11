@@ -105,9 +105,9 @@ Three sources, three jobs: Oracle for whether `.apx` is valid (the compiler, the
 | "The order is the centre of the business, so it all goes in `pkg_orders`" | That package now writes inventory, payments and customers — it is a flow package wearing an entity's name. One entity package per entity, one `_flow` to coordinate them (`package-boundaries.md` §God package). |
 | "Every operation should have a service layer" | A `_flow` wrapping a single entity, or an `_api` with no external system, is a layer with nothing to abstract. Two tables is not by itself a reason for a third package (`package-boundaries.md` §When NOT a package). |
 
-## Report rules Oracle's 26.1 lint enforces
+## Report rules
 
-A report's link belongs to the column, never to the region; `source.sqlQuery` projects data, never markup; page validations follow a fixed skeleton — `references/oracle-26.1-lint.md`. These are lint rules (advisory); the compiler is the authority, and on the examples the two disagree (`framework/CAPABILITIES.md` KC-6, KC-7).
+A report's link belongs to a column of `type: link`, never to the region. `source.sqlQuery` projects data, never markup. Page validations follow a fixed skeleton. Oracle's 26.1 lint enforces the first two, and SQLcl's compiler enforces neither (measured). This skill keeps both as its own rules. Where the lint contradicts the compiler, the compiler wins: the lint forbids `type: link` on an Interactive Report column, and that is the form the compiler requires. The measured table is in `references/oracle-26.1-lint.md`.
 
 ## Red flags — move the write and the rule into the table's package
 

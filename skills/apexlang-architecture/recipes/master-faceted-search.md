@@ -116,10 +116,11 @@ a preference to store, not a view to hide.)
 
 - The faceted region filters its target automatically via `filteredRegion` — no manual WHERE wiring.
 - Source from a `v_*` view when the listing joins many tables or reuses an aggregation; inline SQL
-  when it's page-local. The view is also where the badge state token and the detail URL come from
-  (`ui-contracts.md` §2–§3).
-- Link out with the PK: `items { P20_ID: #EMPLOYEE_ID# }  clearCache: 20` on a report column, or
-  `action.behavior.target: &EDIT_LINK` on a card.
+  when it's page-local. The view is also where the badge's state class comes from
+  (`ui-contracts.md` §2). It never supplies a URL: the link is declared on the component (§3).
+- Link out with the PK: `target: { page: 20  items: { P20_ID: #EMPLOYEE_ID# }  clearCache: 20 }` on
+  a `type: link` report column, or `target: { page: 20  items: { P20_ID: &EMPLOYEE_ID. }  clearCache: 20 }`
+  in a card's `fullCard` action.
 - One row = one entity. A facet over a query that already aggregates counts filters the aggregate,
   not the rows, and the numbers stop adding up.
 

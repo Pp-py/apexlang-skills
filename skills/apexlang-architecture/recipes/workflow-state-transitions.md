@@ -100,15 +100,15 @@ region requests (
     source { type: sqlQuery  sqlQuery: ```sql
         select absence_id, employee_no, absence_type, date_from, date_to, status,
                case status
-                    when 'APPROVED' then 'u-color-9-text'
-                    when 'REJECTED' then 'u-color-7-text'
-                    else 'u-color-15-text'
+                    when 'APPROVED' then 'u-success'
+                    when 'REJECTED' then 'u-danger'
+                    else 'u-warning'
                end as status_css
           from hr_absences where cancelled_at is null order by date_from desc``` }
     column STATUS ( type: plainText
-        columnFormatting { htmlExpression: <span class="#STATUS_CSS#">#STATUS#</span> } )
+        columnFormatting { htmlExpression: <span class="t-Badge #STATUS_CSS#">#STATUS#</span> } )
     column STATUS_CSS ( type: hidden  source { dataType: STRING } )
-    column ABSENCE_ID ( type: plainText
+    column ABSENCE_ID ( type: link
         heading { heading: Resolve }
         source { dataType: NUMBER }
         link {
@@ -117,10 +117,10 @@ region requests (
 )
 ```
 
-Two rules Oracle's 26.1 lint enforces here:
+Two report rules apply here:
 
-- **No markup in the query.** `source.sqlQuery` must be data-only (`REPORT_SQL_HTML_LITERAL_FORBIDDEN_001`): project the status and a plain CSS token, and let the column's `columnFormatting.htmlExpression` build the badge. The `case` above therefore yields `u-color-9-text`, not a `<span>`.
-- **The link belongs to a column**, never to the region — see `modal-crud-to-package.md` for the full note.
+- **No markup in the query.** `source.sqlQuery` is data-only (Oracle's `apex.report-column-rendering.md` rule 1; the 26.1 lint's `REPORT_SQL_HTML_LITERAL_FORBIDDEN_001`). Project the status plus one of the six semantic classes, and let the column's `columnFormatting.htmlExpression` build the badge. The `case` above therefore yields `u-success`, not a `<span>`, and its `ELSE` closes the set (`ui-contracts.md` §2). The status text stays inside the badge, so colour is never the only signal.
+- **The link belongs to a column** of `type: link`, never to the region. See `modal-crud-to-package.md` for the full note.
 
 ## `.apx` — resolve modal (approve / reject as distinct buttons)
 

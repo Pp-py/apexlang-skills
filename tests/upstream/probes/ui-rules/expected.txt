@@ -1,0 +1,18 @@
+# What each tool is EXPECTED to report on the UI-rule probes (tests/upstream/probe-ui-rules.sh).
+# One per line: <lane> <page file> <rule or message substring>. The run fails on any
+# diagnostic NOT listed here and on any listed one that no longer appears — either way an
+# Oracle tool changed its mind, and the docs that cite the probe must change with it
+# (apexlang-architecture references/oracle-26.1-lint.md, framework/CAPABILITIES.md).
+# The lint lane ignores BREADCRUMB_COVERAGE_*: probe pages carry no breadcrumb on purpose.
+#
+# 701 report-level IR link · 702 IR column type: link · 703 HTML literal in a Classic Report's SQL
+# 704 Cards: card.cssClasses + badgeCssClasses from the closed set, fullCard declarative target
+# 705 Metric Card: position: link declarative target, orderBy, icon avatar
+# 706 IR column type: plainText + link {} — the negative control: the compiler must reject it
+lint p00701-probe-ir-region-link.apx REPORT_REGION_LINK_BLOCK_UNSUPPORTED_001
+lint p00702-probe-ir-column-link.apx INTERACTIVE_REPORT_LINK_COLUMN_TYPE_FORBIDDEN_001
+lint p00703-probe-cr-html-sql.apx REPORT_SQL_HTML_LITERAL_FORBIDDEN_001
+lint p00703-probe-cr-html-sql.apx DSL_REPORT_SQL_HTML
+lint p00703-probe-cr-html-sql.apx CLASSIC_REPORT_DEFAULT_TEMPLATE_REQUIRED_001
+compiler p00706-probe-ir-plaintext-link.apx Invalid property: target
+compiler p00706-probe-ir-plaintext-link.apx Invalid property: linkText

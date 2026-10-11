@@ -1,0 +1,53 @@
+page 703 (
+    name: Probe CR html in SQL
+    alias: PROBE-CR-HTML-SQL
+    title: Probe CR html in SQL
+    appearance {
+        pageTemplate: @/standard
+    }
+
+    region probe (
+        name: Probe
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                select object_id,
+                       '<span class="u-success">' || object_name || '</span>' as object_html
+                  from user_objects
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/standard
+        }
+        componentAppearance {
+            template: @/standard
+        }
+
+        column OBJECT_ID (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            type: hidden
+            layout {
+                sequence: 10
+            }
+        )
+
+        column OBJECT_HTML (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Name
+            }
+            layout {
+                sequence: 20
+            }
+        )
+    )
+)

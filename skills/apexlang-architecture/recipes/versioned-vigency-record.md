@@ -67,7 +67,7 @@ region current-surcharges (
     source { type: sqlQuery  sqlQuery: ```sql
         select surcharge_id, code, percentage, valid_from, version_no
           from hr_surcharges where valid_to is null order by code``` }
-    column CODE ( type: plainText
+    column CODE ( type: link
         heading { heading: Code }
         source { dataType: STRING }
         link {
@@ -76,7 +76,7 @@ region current-surcharges (
 )
 ```
 
-The link is column-level: a report-level `link {}` is rejected by Oracle's 26.1 lint — see `modal-crud-to-package.md`.
+The link is column-level, on a `type: link` column. See `modal-crud-to-package.md` for why it is not on the region.
 
 ## `.apx` — modal new-vigency process
 

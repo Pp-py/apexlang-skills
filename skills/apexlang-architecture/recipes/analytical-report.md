@@ -32,7 +32,11 @@ The page never re-derives this; it selects from the view. Reuse across the repor
 
 ## `.apx` — conditional IR + badge
 
-The query projects a **label and a token**; the markup is built in the column. HTML in the SQL is
+The query projects a **label and a whole class from a closed set**; the markup is built in the
+column. Every class is a literal in a `CASE` with an `ELSE`, so the set reaching the page is
+provable, and nothing concatenates a class (`ui-contracts.md` §2): `RULE_CSS` is a category, so it
+returns Universal Theme colour classes, while `HOURS_CSS` is a state and returns one of the six
+semantic classes. HTML in the SQL is
 rejected by Oracle's 26.1 lint (`REPORT_SQL_HTML_LITERAL_FORBIDDEN_001`) and by non-negotiable rule 1
 of the official `apex.report-column-rendering.md`.
 
@@ -47,10 +51,10 @@ region ot-monthly (
                     else 'Clock hour'
                end as rule,
                case v.ot_rule_code
-                    when 'PRODUCTION' then '11'
-                    else '1'
-               end as rule_color,
-               case when v.ot_hours > 40 then 'danger' else 'info' end as hours_state
+                    when 'PRODUCTION' then 'u-color-11-text'
+                    else 'u-color-1-text'
+               end as rule_css,
+               case when v.ot_hours > 40 then 'u-danger' else 'u-info' end as hours_css
           from v_ot_monthly_employee v
           join hr_employees e on e.employee_id = v.employee_id
           join hr_sectors   s on s.sector_id  = e.sector_id
@@ -58,9 +62,12 @@ region ot-monthly (
 
     column RULE (
         heading { heading: Rule }
-        columnFormatting { htmlExpression: <span class="u-color-#RULE_COLOR#-text">#RULE#</span> } )
-    column RULE_COLOR  ( type: hidden  heading { heading: Rule colour } )
-    column HOURS_STATE ( type: hidden  heading { heading: Hours state } )
+        columnFormatting { htmlExpression: <span class="#RULE_CSS#">#RULE#</span> } )
+    column OT_HOURS (
+        heading { heading: Hours }
+        columnFormatting { htmlExpression: <span class="t-Badge #HOURS_CSS#">#OT_HOURS#</span> } )
+    column RULE_CSS  ( type: hidden  heading { heading: Rule CSS } )
+    column HOURS_CSS ( type: hidden  heading { heading: Hours CSS } )
 )
 ```
 

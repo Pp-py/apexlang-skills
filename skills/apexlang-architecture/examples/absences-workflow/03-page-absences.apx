@@ -37,7 +37,8 @@ page 60 (
                 ```sql
                 -- data only: no markup is projected here. The status badge is
                 -- rendered by the STATUS column's columnFormatting.htmlExpression,
-                -- which consumes STATUS_CSS as a plain token.
+                -- which maps STATUS_CSS verbatim: one of Universal Theme's six
+                -- semantic classes, every value a literal, the ELSE closing the set.
                 select absence_id,
                        employee_no,
                        absence_type,
@@ -45,9 +46,9 @@ page 60 (
                        to_char(date_to, 'DD/MM/YYYY') as date_to,
                        status,
                        case status
-                            when 'APPROVED' then 'u-color-9-text'
-                            when 'REJECTED' then 'u-color-7-text'
-                            else 'u-color-15-text'
+                            when 'APPROVED' then 'u-success'
+                            when 'REJECTED' then 'u-danger'
+                            else 'u-warning'
                        end as status_css
                   from hr_absences
                  where cancelled_at is null
@@ -64,7 +65,7 @@ page 60 (
         }
 
         column ABSENCE_ID (
-            type: plainText
+            type: link
             heading {
                 heading: Resolve
             }
@@ -150,7 +151,7 @@ page 60 (
                 dataType: STRING
             }
             columnFormatting {
-                htmlExpression: <span class="#STATUS_CSS#"><b>#STATUS#</b></span>
+                htmlExpression: <span class="t-Badge #STATUS_CSS#">#STATUS#</span>
             }
         )
 

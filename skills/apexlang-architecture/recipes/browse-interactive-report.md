@@ -56,7 +56,7 @@ Two consequences that are architecture, not styling:
 
 ```
 column WORK_ITEM_ID (
-    type: plainText
+    type: link
     heading { heading: Edit }
     source { dataType: NUMBER }
     link {
@@ -67,8 +67,8 @@ column WORK_ITEM_ID (
 ```
 
 Row values in `target.items` use `#COLUMN#`; `&ITEM.` is for page, app and session substitutions.
-A region-level `link {}` is rejected by the compiler (`REPORT_REGION_LINK_BLOCK_UNSUPPORTED_001`), and
-`type: link` is Classic-Report-only — see `modal-crud-to-package.md`, which has the full note.
+The linked column is `type: link`; a region-level `link {}` is out. `modal-crud-to-package.md`
+has the full note, including where Oracle's lint and the compiler disagree.
 
 When the target is modal, the parent page carries the `apexafterclosedialog` dynamic action that
 refreshes this region. Without it the user saves, the drawer closes, and the row still shows the old

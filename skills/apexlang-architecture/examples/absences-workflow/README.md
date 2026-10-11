@@ -34,17 +34,20 @@ apex validate -input <apexlang-src-dir>                   # copy both .apx into 
 apex import   -input <apexlang-src-dir>
 ```
 
-> Oracle's 26.1 lint (release 2026.09.21): page 62 is clean; page 60 reports only
+> Oracle's 26.1 lint (release 2026.09.21): page 62 is clean; page 60 reports
 > `BREADCRUMB_COVERAGE_ENTRY_REQUIRED_001`, which is satisfied by adding a `pageNumber: 60`
-> entry to **your** app's `shared-components/breadcrumbs.apx` — a page file cannot carry it.
+> entry to **your** app's `shared-components/breadcrumbs.apx` — a page file cannot carry it —
+> and `INTERACTIVE_REPORT_LINK_COLUMN_TYPE_FORBIDDEN_001` on the `type: link` column, the form
+> the compiler requires (`../../references/oracle-26.1-lint.md`).
 > The SQLcl compiler currently rejects page 60 (see `../README.md` §Grammar status). Validate
 > against your own APEX version before importing, and mind that page numbers
 > (60/62) and aliases must not collide with your app's.
 
 ## Notes
 
-- **Badges** use Universal Theme text-color classes (`u-color-*-text`) so they render
-  without custom CSS. Swap for your own pill classes if you have them.
+- **Badges** are `t-Badge` plus one of Universal Theme's six semantic classes (`u-success`,
+  `u-danger`, `u-warning` here), returned whole by a `CASE` with an `ELSE`. No custom CSS,
+  and the status text stays in the badge (`../../ui-contracts.md` §2).
 - **Close-on-success:** page 62 ships a `closeDialog` process (last sequence, gated by
   `:REQUEST in ('APPROVE','REJECT')`) and page 60 an `apexafterclosedialog` → refresh
   dynamic action — a successful transition closes the modal and the master refreshes;

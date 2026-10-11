@@ -6,7 +6,8 @@
   "commitDate": "2026-10-09T11:27:22Z",
   "verifiedAt": "2026-10-10",
   "verifiedWith": [
-    "tests/upstream/verify-citations.sh: 41/41 anchors",
-    "tests/upstream/validate-examples.sh --lint: PASS (4 documented diagnostics)"
+    "tests/upstream/verify-citations.sh: 48/48 anchors",
+    "tests/upstream/validate-examples.sh --lint: PASS (5 documented diagnostics)",
+    "tests/upstream/probe-ui-rules.sh --lint: PASS"
   ]
 }
