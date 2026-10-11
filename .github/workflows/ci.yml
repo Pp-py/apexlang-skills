@@ -46,3 +46,5 @@ jobs:
         run: bash tests/integration/pw-wrapper-smoke.sh
       - name: apex-sync.json read alike by the guard and by pw.sh
         run: bash tests/integration/config-parity.sh
+      - name: apex-ux static scan (fixtures and the examples)
+        run: bash tests/integration/ux-scan.sh

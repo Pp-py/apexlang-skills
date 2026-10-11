@@ -26,7 +26,8 @@ Verified against Oracle's skills at the revision in [`oracle-skills.lock.json`](
 | Runtime walkthroughs against a live app | not recorded | not recorded | — |
 | runtime-result / architecture-result / verification-manifest | experimental — fixtures and negatives only | same | [contract](../tests/contract/run.sh) |
 | UX criteria catalog (`apex-ux`): IDs, severity, method, source | yes — version-independent; Oracle sources cited at 26.1 | same | [contract](../tests/contract/run.sh) (format), [citations](../tests/upstream/citations.md) (Oracle anchors) |
-| UI scan, runtime UI checks, UI gate | not built (Phase 3, UX-3…UX-5) | same | — |
+| UI static scan (`ux-scan.py`): the five static FAIL criteria | yes (version-independent) | same | [ux-scan](../tests/integration/ux-scan.sh) in CI, over fixtures and the examples |
+| Runtime UI checks, UI gate | not built (Phase 3, UX-4, UX-5) | same | — |
 | Windows (Git Bash) | yes — integration on `windows-latest` in CI | same | [ci.yml](../.github/workflows/ci.yml); first green 0.6.0 run: [38059670802](https://github.com/Pp-py/apexlang-skills/actions/runs/38059670802) |
 
 ## Recorded runs

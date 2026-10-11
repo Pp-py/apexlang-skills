@@ -43,7 +43,7 @@ Engineering guardrails    single write path · fail-closed gates · evidence, no
 | generation with policies and a local lint (26.1) | **whether an import/export is safe now** — [`apex-sync-guard`](skills/apex-sync-guard/SKILL.md): Builder↔git divergence against a recorded syncpoint, both directions, several apps per repo; a wrapper script and a blocking `PreToolUse` hook |
 | compilation (`apex validate` through SQLcl) | **whether the change works** — [`apex-sentinel`](skills/apex-sentinel/SKILL.md): the running page in a real browser, as a verified test user, criterion by criterion, with the data read back through SQLcl |
 | import / deploy and export | **the gates, their statuses and their evidence** — [`framework/`](framework/README.md) |
-| Universal Theme, and a UX Pattern Catalog app as an example | **whether the UI is usable and accessible** — [`apex-ux`](skills/apex-ux/SKILL.md): criteria with IDs from WCAG 2.2 AA and Oracle's policies, per archetype; the static scan and the UI gate come later in Phase 3 |
+| Universal Theme, and a UX Pattern Catalog app as an example | **whether the UI is usable and accessible** — [`apex-ux`](skills/apex-ux/SKILL.md): criteria with IDs from WCAG 2.2 AA and Oracle's policies, per archetype; a static scan of the `.apx` for the FAIL criteria; the runtime checks and the UI gate come later in Phase 3 |
 | | *future capabilities:* the **Security** gate, and the UI gate's scan and runtime checks (Phase 3) |
 
 This repo never duplicates what Oracle's skills do. Where its guidance and Oracle's meet, the

@@ -82,13 +82,13 @@ an Interactive Report **every** column emits a `heading` — hidden ones include
 ```
 column IS_APPROVED (
     columnFormatting { htmlExpression: |
-        {if IS_APPROVED/}<span class="fa fa-check" aria-hidden="true" title="Yes"></span>
-        {else/}<span class="fa fa-circle-o" aria-hidden="true" title="No"></span>
+        {if IS_APPROVED/}<span class="fa fa-check" aria-hidden="true"></span><span class="u-VisuallyHidden">Yes</span>
+        {else/}<span class="fa fa-circle-o" aria-hidden="true"></span><span class="u-VisuallyHidden">No</span>
         {endif/} } )
 ```
 
-The directive lives in the column, the icon carries `title` for the accessible name and
-`aria-hidden` on the glyph. Do not build this string in the query.
+The directive lives in the column. The glyph is `aria-hidden` and the visually hidden text names the
+value; a `title` on a hidden glyph names nothing (`apex-ux` `UX-NO-COLOR-ONLY`). Do not build this string in the query.
 
 ## Which columns the user sees
 

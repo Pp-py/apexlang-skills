@@ -90,9 +90,8 @@ bound to a form region; here the `load` process below fills them and the `save` 
 The trade is explicit: you write two short processes instead of inheriting a column mapping.
 
 Foreign keys are select lists over dynamic SQL — filtered by `active_flag = 'Y'`, so an inactive
-sector cannot be picked for a new row even though history keeps it. Help text on editable items is
-an official default, not a nicety: keep `inlineHelpText` under ~60 characters and put the "why it
-matters" in `helpText`.
+sector cannot be picked for a new row even though history keeps it. Help text on editable items:
+`apex-ux` `UX-HELP-EDITABLE`.
 
 ## `.apx` — the write
 
@@ -153,8 +152,8 @@ process update-employee (
 )
 ```
 
-`DELETE` follows the same shape — official button contract (`requiresConfirmation: true` plus a
-`confirmation {}` block, shown only when the PK is present), process gated on `DELETE`, calling
+`DELETE` follows the same shape — shown only when the PK is present and confirmed
+(`apex-ux` `UX-DESTRUCTIVE-CONFIRM`), process gated on `DELETE`, calling
 `pkg_employees.delete_row`, which for a catalog-style table *inactivates* rather than deletes
 (`back-end-conventions.md` §6) and refuses while the row is still referenced.
 
