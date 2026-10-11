@@ -13,18 +13,31 @@ description: Use when an APEXlang page is designed, changed or reviewed for UI q
 - **Output:** per criterion `PASS` · `FAIL` · `NOT_RUN`, plus advisories that never change the verdict. As a gate result (`ui-result`): Phase 3, UX-5 — not built yet.
 - **Evidence:** per criterion, the `.apx` lines it rests on, or the saved browser and axe-core output with its sha256 under the task's evidence dir (`framework/EVIDENCE.md`).
 - **Gate:** UI — opt-in per app until 1.0.0; when enabled, a non-PASS blocks. Not in `framework/GATES.md` yet (UX-5).
-- **Interface:** today, the criteria in `criteria/`. The static scan (UX-3) and the runtime checks through `apex-sentinel`'s `pw.sh` with a vendored axe-core (UX-4) are not built yet.
+- **Interface:** the criteria in `criteria/`; `python3 scripts/ux-scan.py <file-or-dir>…` for the static FAIL criteria. The runtime checks through `apex-sentinel`'s `pw.sh` with a vendored axe-core (UX-4) are not built yet.
 
 ## Status — what exists
 
 | Piece | State |
 |---|---|
 | Criteria catalog with IDs (`criteria/`) | **built** (UX-2) |
-| Static scan over `.apx` | not built (UX-3) — apply the `static` criteria by reading the source |
+| Static scan over `.apx` | **built** (UX-3) for the five static `FAIL` criteria — see §Static scan; the static `ADVISE` ones are still read by hand |
 | Runtime checks: axe-core, keyboard and dialog focus, viewport | not built (UX-4) — apply the `runtime` criteria by hand through `pw.sh` |
 | `ui-result` schema, gate, manifest enums | not built (UX-5) |
 
 Until the scripts exist, a review cites the criterion IDs it checked and says which it did not. A criterion nobody exercised is `NOT_RUN`, never PASS.
+
+## Static scan
+
+`python3 scripts/ux-scan.py <file-or-dir>…` (python3 only; without it the scan is BLOCKED). It checks
+`UX-ITEM-NAME`, `UX-CONTROL-NAME`, `UX-DESTRUCTIVE-CONFIRM`, `UX-NO-INLINE-STYLE` and
+`UX-NO-COMPOSED-CLASS`, and prints JSON per criterion with the file and line of each finding
+(provisional format until `ui-result`, UX-5). Exit 0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN — a
+file it could not parse got no item or button checks, so re-read it by hand; never treat 3 as PASS.
+
+What it does not establish: the runtime half of `UX-ITEM-NAME` and `UX-CONTROL-NAME` (the name
+the browser actually computes), confirmation done by a dynamic action instead of a
+`confirmation` block (reported as FAIL — check it, do not delete the finding), and every
+`ADVISE` criterion.
 
 ## A PASS is not "WCAG compliant"
 
@@ -57,7 +70,7 @@ A recipe in `apexlang-architecture` says how a page is built; the archetype file
 ## How to use it now
 
 1. Pick the archetype file for the page (`criteria/README.md` §Archetypes) and always `criteria/common.md`.
-2. For each `static` criterion, read the page's `.apx`; for each `runtime` one, drive the page through `apex-sentinel`'s `pw.sh`; for each `manual` one, look, and say what you looked at.
+2. Run the static scan; for each other `static` criterion, read the page's `.apx`; for each `runtime` one, drive the page through `apex-sentinel`'s `pw.sh`; for each `manual` one, look, and say what you looked at.
 3. Report per criterion ID: PASS, FAIL with what was seen, or NOT_RUN with why. Advisories go in a separate list.
 
 ## Red flags — stop

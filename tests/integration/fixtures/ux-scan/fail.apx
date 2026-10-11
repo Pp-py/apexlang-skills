@@ -1,0 +1,82 @@
+// One violation per marked line; fail.expected lists them as `<criterion> <line>`.
+page 71 (
+    name: Scan fail
+
+    region list (
+        name: Orders
+        type: classicReport
+        source {
+            sqlQuery:
+                ```sql
+                select 'u-color-' || mod(order_id, 15) || '-text' as css,
+                       '#ff0000' as colour
+                  from orders
+                ```
+        }
+
+        column STATUS (
+            columnFormatting {
+                htmlExpression: <span class="u-color-#CSS#-text" style="font-weight:bold">#STATUS#</span>
+            }
+        )
+
+        column ORDER_ID (
+            type: link
+            link {
+                linkText: <span aria-hidden="true" class="fa fa-pencil"></span>
+            }
+        )
+
+        column NOTE (
+            columnFormatting {
+                htmlExpression: <a href="#"><span class="fa fa-file" title="Note"></span></a>
+            }
+        )
+    )
+
+    region chart (
+        name: Chart
+        type: staticContent
+        appearance {
+            cssClasses: u-color-&COLOR.
+        }
+        source {
+            htmlCode:
+                ```html
+                <div class="legend">rgb(10, 20, 30)</div>
+                <p style-free>see legend</p>
+                ```
+        }
+    )
+
+    pageItem P71_NAME (
+        type: textField
+    )
+
+    pageItem P71_CODE (
+        type: textField
+        label {
+            label:
+        }
+    )
+
+    button reject (
+        buttonName: REJECT
+        label: Reject
+    )
+
+    button cancel-order (
+        buttonName: CANCEL_ORDER
+        label: Cancel order
+        behavior {
+            requiresConfirmation: true
+        }
+    )
+
+    button icon-only (
+        buttonName: SEARCH
+        layout {
+            slot: next
+        }
+    )
+)

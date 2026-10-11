@@ -1,0 +1,92 @@
+// Every construct here is legal under the five static FAIL criteria; several look close to a violation.
+page 70 (
+    name: Scan pass
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: [
+            #DEFAULT#
+            t-ContentBlock--h2
+        ]
+    }
+
+    region list (
+        name: Orders
+        type: classicReport
+        source {
+            sqlQuery:
+                ```sql
+                -- whole classes from a closed set; a date mask concatenated is not a class
+                select order_id,
+                       to_char(sysdate, 'YYYY-') || 'Q1' as period,
+                       case status when 'OK' then 'u-success' else 'u-warning' end as status_css
+                  from orders
+                ```
+        }
+
+        column STATUS (
+            columnFormatting {
+                htmlExpression: <span class="t-Badge #STATUS_CSS#">#STATUS#</span>
+            }
+        )
+
+        column ORDER_ID (
+            type: link
+            link {
+                linkText: <span aria-hidden="true" class="fa fa-pencil"></span><span class="u-VisuallyHidden">Edit order #ORDER_ID#</span>
+            }
+        )
+
+        column NOTE (
+            columnFormatting {
+                htmlExpression: <a href="#" aria-label="Open note &#39;#ORDER_ID#&#39;"><span class="fa fa-file"></span></a>
+            }
+        )
+    )
+
+    pageItem P70_ID (
+        type: hidden
+    )
+
+    pageItem P70_NAME (
+        type: textField
+        label {
+            label: Name
+        }
+    )
+
+    button delete (
+        buttonName: DELETE
+        label: Delete
+        behavior {
+            requiresConfirmation: true
+        }
+        confirmation {
+            message: Delete this order? It cannot be undone.
+            style: danger
+        }
+    )
+
+    button remove-redirect (
+        buttonName: REMOVE
+        label: Remove
+        behavior {
+            action: redirectThisApp
+        }
+    )
+
+    button cancel (
+        buttonName: CANCEL
+        label: Cancel
+        layout {
+            slot: close
+        }
+    )
+
+    dynamicAction delete-row (
+        name: Refresh after delete
+
+        action delete-refresh (
+            action: refresh
+        )
+    )
+)

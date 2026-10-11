@@ -31,6 +31,10 @@ against both Oracle tools instead of being assumed.
   walkthrough and `checks/workflow-state.md` read `td span.t-Badge`.
 
 **apex-ux (new skill)**
+- Static scan (Phase 3, UX-3): `skills/apex-ux/scripts/ux-scan.py`, python3 stdlib only. It checks
+  the five static `FAIL` criteria over `.apx` files and prints JSON per criterion with file and line
+  (provisional format until UX-5); exit 0/1/2/3. A file it cannot parse is UNKNOWN, never PASS.
+  Covered by `tests/integration/ux-scan.sh` in CI (fixtures plus the examples, which pass).
 - A fourth skill for UI quality and accessibility (Phase 3, UX-2): 71 criteria with IDs in
   `skills/apex-ux/criteria/`. They cover every page (`UX-*`) plus the archetypes: dashboards,
   browse and search, item details, data entry and workflow. Each criterion has a severity

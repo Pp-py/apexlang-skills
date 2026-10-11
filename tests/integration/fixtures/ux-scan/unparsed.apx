@@ -1,0 +1,4 @@
+// Recipe shorthand, not canonical source: the parser must refuse it (UNKNOWN), never pass it.
+page 72 (
+    button approve ( buttonName: APPROVE  label: Approve )
+)
