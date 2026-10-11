@@ -23,13 +23,13 @@ region sectors-ir (
         source { dataType: NUMBER }
         link {
             target { page: 81  items { P81_SECTOR_ID: #SECTOR_ID# }  clearCache: 81 }
-            linkText: <span class="fa fa-pencil"></span>
+            linkText: <span aria-hidden="true" class="fa fa-pencil"></span><span class="u-VisuallyHidden">Edit sector #CODE#</span>
         }
     )
 )
 ```
 
-**The link goes on a column of `type: link`, never on the region.** The column carries the `link {}` block, with the icon markup in `linkText`, on Classic and Interactive Reports alike. That is the shape the compiler accepts: Oracle's inventory makes `link.target` valid on a report column only when its `type` is `link`, and SQLcl 26.2.0 rejects `target`/`linkText` on a `plainText` column.
+**The link goes on a column of `type: link`, never on the region.** The column carries the `link {}` block, with the icon markup in `linkText`, on Classic and Interactive Reports alike. An icon alone has no accessible name: hide it from assistive technology and give the link visually hidden text that names the row (`apex-ux` `UX-CONTROL-NAME`). That is the shape the compiler accepts: Oracle's inventory makes `link.target` valid on a report column only when its `type` is `link`, and SQLcl 26.2.0 rejects `target`/`linkText` on a `plainText` column.
 
 Oracle's 26.1 lint disagrees twice, and here the compiler wins (`framework/PRINCIPLES.md` P6). It forbids `type: link` on an Interactive Report column (`INTERACTIVE_REPORT_LINK_COLUMN_TYPE_FORBIDDEN_001`, an expected advisory diagnostic on the examples). It also rejects a report-level `link { linkColumn / target / linkIcon }` (`REPORT_REGION_LINK_BLOCK_UNSUPPORTED_001`). The compiler accepts that region-level form, and Oracle's own IR page example still shows it, but the lint says a live 26.1 import refuses it. Until an import proves otherwise, keep the link on the column.
 

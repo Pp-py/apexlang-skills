@@ -72,7 +72,7 @@ region current-surcharges (
         source { dataType: STRING }
         link {
             target { page: 101  items { P101_CODE: #CODE# }  clearCache: 101 }
-            linkText: <span class="fa fa-plus"></span> } )
+            linkText: <span aria-hidden="true" class="fa fa-plus"></span><span class="u-VisuallyHidden">New version of #CODE#</span> } )
 )
 ```
 

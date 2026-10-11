@@ -48,6 +48,9 @@ apex import   -input <apexlang-src-dir>
 - **Badges** are `t-Badge` plus one of Universal Theme's six semantic classes (`u-success`,
   `u-danger`, `u-warning` here), returned whole by a `CASE` with an `ELSE`. No custom CSS,
   and the status text stays in the badge (`../../ui-contracts.md` §2).
+- **Reject is confirmed** (`requiresConfirmation` with a `danger` message): it ends the request
+  and cannot be undone. Approve is not destructive and submits directly. The master's resolve
+  icon carries visually hidden text naming the request, so the link has an accessible name.
 - **Close-on-success:** page 62 ships a `closeDialog` process (last sequence, gated by
   `:REQUEST in ('APPROVE','REJECT')`) and page 60 an `apexafterclosedialog` → refresh
   dynamic action — a successful transition closes the modal and the master refreshes;

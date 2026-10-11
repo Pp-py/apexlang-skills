@@ -11,6 +11,8 @@ Static checks, no network, no database:
     identical (alias and connection-name patterns, the marker TTL, json_flatten);
   * every runtime pass criterion has a unique ID with its check's prefix, and every ID
     a walkthrough cites exists;
+  * every apex-ux criterion row is well-formed: a unique ID with its file's prefix, a
+    severity, how it is verified (a FAIL never manual) and a source;
   * every KC-/UP-/GAP- reference names a row of framework/CAPABILITIES.md;
   * the frozen interface (framework/CONTRACTS.md) is what the scripts actually take.
 
@@ -312,6 +314,56 @@ def check_criterion_ids():
         ok(f"{len(defined)} criterion IDs: one per pass criterion, unique, prefixed; walkthroughs cite existing ones")
 
 
+UX_PREFIX = {"common": "UX", "dashboards": "UXDASH", "browse-search": "UXBRW", "item-details": "UXDET",
+             "data-entry": "UXENT", "workflow": "UXWF"}
+
+
+def check_ux_criteria():
+    """The apex-ux catalog is what the UI scan and the ui-result will key on: one table
+    per file, every row ID | Criterion | Sev | By | Source, IDs unique and prefixed."""
+    defined, problems = {}, []
+    files = [f for f in tracked("skills/apex-ux/criteria/*.md") if not f.endswith("/README.md")]
+    for rel in files:
+        name = os.path.basename(rel)[:-3]
+        prefix = UX_PREFIX.get(name)
+        if not prefix:
+            problems.append(f"{rel}: no criterion prefix registered for this file")
+            continue
+        rows = 0
+        for line in read(rel).splitlines():
+            if not line.startswith("| `"):
+                continue
+            cells = [c.strip() for c in re.split(r"(?<!\\)\|", line.strip())[1:-1]]
+            if len(cells) != 5:
+                problems.append(f"{rel}: a row without exactly 5 cells: {line[:70]}")
+                continue
+            rows += 1
+            cid, text, sev, by, source = cells
+            cid = cid.strip("`")
+            if not re.fullmatch(ID_PATTERN, cid) or not cid.startswith(prefix + "-"):
+                problems.append(f"{rel}: {cid} is not {prefix}-<SLUG>")
+            if cid in defined:
+                problems.append(f"{rel}: {cid} already defined in {defined[cid]}")
+            defined[cid] = rel
+            if sev not in ("FAIL", "ADVISE"):
+                problems.append(f"{rel}: {cid} severity '{sev}' is not FAIL or ADVISE")
+            methods = [m.strip() for m in by.split("+")]
+            if not methods or any(m not in ("static", "runtime", "manual") for m in methods):
+                problems.append(f"{rel}: {cid} 'By' '{by}' is not static/runtime/manual joined with +")
+            if sev == "FAIL" and "manual" in methods:
+                problems.append(f"{rel}: {cid} is FAIL but verified manually — a FAIL must be machine-checkable")
+            if not text or not source:
+                problems.append(f"{rel}: {cid} has an empty criterion or source")
+        if not rows:
+            problems.append(f"{rel}: no criterion rows — is its table gone?")
+    if not files:
+        problems.append("no criteria files under skills/apex-ux/criteria/")
+    if problems:
+        bad("apex-ux criteria", problems)
+    else:
+        ok(f"{len(defined)} apex-ux criteria: unique, prefixed, with severity, method and source")
+
+
 def check_capability_refs():
     rows = set(re.findall(r"^\| (KC-\d+|UP-\d+|GAP-\d+) \|", read("framework/CAPABILITIES.md"), re.M))
     missing = []
@@ -362,6 +414,7 @@ def main():
     check_versions_and_lock()
     check_duplicates()
     check_criterion_ids()
+    check_ux_criteria()
     check_capability_refs()
     check_interface()
     print()

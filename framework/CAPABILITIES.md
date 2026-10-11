@@ -25,6 +25,8 @@ Verified against Oracle's skills at the revision in [`oracle-skills.lock.json`](
 | Runtime gate: `pw.sh` (verified login, per-app workspaces, TLS, exit 3) | yes (version-independent) | yes (version-independent) | [smoke](../tests/integration/pw-wrapper-smoke.sh) in CI, Playwright CLI stubbed |
 | Runtime walkthroughs against a live app | not recorded | not recorded | — |
 | runtime-result / architecture-result / verification-manifest | experimental — fixtures and negatives only | same | [contract](../tests/contract/run.sh) |
+| UX criteria catalog (`apex-ux`): IDs, severity, method, source | yes — version-independent; Oracle sources cited at 26.1 | same | [contract](../tests/contract/run.sh) (format), [citations](../tests/upstream/citations.md) (Oracle anchors) |
+| UI scan, runtime UI checks, UI gate | not built (Phase 3, UX-3…UX-5) | same | — |
 | Windows (Git Bash) | yes — integration on `windows-latest` in CI | same | [ci.yml](../.github/workflows/ci.yml); first green 0.6.0 run: [38059670802](https://github.com/Pp-py/apexlang-skills/actions/runs/38059670802) |
 
 ## Recorded runs
@@ -41,6 +43,7 @@ What CI does not run, recorded when it was run. Re-run after updating Oracle's s
 | 2026-10-10 | `SQLCL_BIN=… tests/upstream/validate-examples.sh --compiler`, same | SQLcl 26.2.0.181.2110 (Windows, from WSL), Oracle's 26.1 scaffold | FAIL — 7 compile errors (KC-7); the page-60 IR link errors are gone |
 | 2026-10-10 | `tests/upstream/probe-ui-rules.sh --lint` | `apexlang-generation` 26.1 at `014cdb2` | PASS — the lint rejects the region-level IR link, `type: link` on an IR column and HTML in report SQL |
 | 2026-10-10 | `SQLCL_BIN=… tests/upstream/probe-ui-rules.sh --compiler` | SQLcl 26.2.0.181.2110 (Windows, from WSL), Oracle's 26.1 scaffold | PASS — the compiler accepts all three and the Cards/Metric Card shapes, and rejects only the negative control (IR `plainText` column with `link {}`) |
+| 2026-10-10 | `tests/upstream/verify-citations.sh`, with the apex-ux criteria's anchors | oracle/skills `014cdb2` (the lock) | PASS — 75/75 anchors current |
 | 2026-10-10 | the three `tests/integration/` suites | bash 3.2.57 — macOS's bash, not in CI (docker `bash:3.2` with git, jq, python3) | PASS — e2e 262, smoke 59, config-parity 44 |
 
 ## Known conflicts
