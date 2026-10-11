@@ -8,6 +8,7 @@
 #   * axe-core is verified against its lock before anything runs (BLOCKED otherwise);
 #   * a dead session (pw.sh exit 3) or output with no verdict is UNKNOWN, never PASS;
 #   * stdout never carries a node's HTML or a session id; --raw keeps both, with its sha256;
+#   * --task writes the ui-result and the raw output into the evidence dir;
 #   * the snippet the CLI receives carries the pinned axe, and is deleted afterwards.
 # The real-browser smoke (fixtures/ux-check/page.html, a live app) is manual: tests/README.md.
 set -euo pipefail
@@ -54,7 +55,7 @@ check() {  # $1 = label, $2 = fixture, $3 = expected exit, $4 = python assertion
 d = json.load(open(sys.argv[1]))
 c = {x['id']: x['status'] for x in d['criteria']}
 adv = sorted({a['id'] for a in d['advisories']})
-assert $assert, (c, adv, d['status'], d['reason'])" "$WORK/out.json" 2>"$WORK/assert.err"; then
+assert $assert, (c, adv, d['status'], d['reasons'])" "$WORK/out.json" 2>"$WORK/assert.err"; then
     bad "$label: $(tail -1 "$WORK/assert.err")"; return 0
   fi
   ok "$label (exit $rc)"
@@ -87,11 +88,34 @@ echo "$OPEN" > "$PW_STATE"
 PW_FAKE_OUT="$FIX/item-name.json" "$PY" "$CHECK" --raw "$WORK/raw.json" > "$WORK/out.json" 2>/dev/null || true
 if grep -q '1234567890\|PII-Maria' "$WORK/out.json"; then bad "stdout leaks a session id or node HTML"
 else ok "stdout carries neither the session id nor node HTML"; fi
-if grep -q 'PII-Maria' "$WORK/raw.json" && "$PY" -c "import hashlib,json,sys
-d = json.load(open(sys.argv[1]))
-assert d['raw']['sha256'] == hashlib.sha256(open(sys.argv[2], 'rb').read()).hexdigest()" \
-  "$WORK/out.json" "$WORK/raw.json"; then ok "--raw keeps the full output, its sha256 in the result"
-else bad "--raw file missing, or its sha256 does not match"; fi
+if grep -q 'PII-Maria' "$WORK/raw.json" && "$PY" -c "import json,sys
+assert 'evidence' not in json.load(open(sys.argv[1]))" "$WORK/out.json"; then
+  ok "--raw outside the repo keeps the full output, uncited"
+else bad "--raw file missing, or cited from outside the repo"; fi
+
+# --task: the result and the raw output land in the project's evidence dir, the raw
+# one cited by its sha256; the dir is ignored by git from its first write.
+P="$WORK/proj"; mkdir -p "$P"; git -C "$P" init -q
+printf '{ "appId": 100, "appAlias": "demo", "evidenceDir": "ev" }\n' > "$P/apex-sync.json"
+rc=0; (cd "$P" && PW_FAKE_OUT="$FIX/item-name.json" "$PY" "$CHECK" --task T-1 > "$WORK/out.json" 2>/dev/null) || rc=$?
+if [[ $rc -eq 1 ]] && cmp -s "$WORK/out.json" "$P/ev/T-1/ui-demo-runtime-orders.json" \
+   && [[ "$(cat "$P/ev/.gitignore")" == "*" ]] && "$PY" -c "import hashlib,json,sys
+d = json.load(open(sys.argv[1])); e = d['evidence'][0]
+assert d['app'] == {'appAlias': 'demo'} and d['context']['task'] == 'T-1', d
+assert e['path'] == 'ev/T-1/raw/ui-demo/axe-orders.json', e
+assert e['sha256'] == hashlib.sha256(open(sys.argv[2] + '/' + e['path'], 'rb').read()).hexdigest()
+assert d['context']['target']['runtimeUrl'] == 'https://apex.example/ords/r/ws/app/orders', d['context']" \
+  "$WORK/out.json" "$P"; then ok "--task writes ui-demo-runtime-orders.json and cites the raw output"
+else bad "--task: exit $rc, or the result/raw output is not where it belongs"; fi
+# pw.sh's refusal names local paths: passed on as <repo>/… and ~/…, never verbatim.
+rc=0; (cd "$P" && HOME="$WORK" PW_WORKSPACE="$P/.pw" PW_FAKE_OUT="$FIX/clean.json" "$PY" "$CHECK" > "$WORK/out.json" 2>/dev/null) || rc=$?
+if [[ $rc -eq 2 ]] && grep -q 'pw.sh refused' "$WORK/out.json" && ! grep -q "$WORK" "$WORK/out.json"; then
+  ok "pw.sh refused → BLOCKED, its message without local paths"
+else bad "pw.sh refused: exit $rc, or its message carries a local path"; fi
+printf '{ "apps": [ { "appId": 1, "appAlias": "a" }, { "appId": 2, "appAlias": "b" } ] }\n' > "$P/apex-sync.json"
+rc=0; (cd "$P" && PW_FAKE_OUT="$FIX/clean.json" "$PY" "$CHECK" --task T-1 >/dev/null 2>&1) || rc=$?
+if [[ $rc -eq 2 ]]; then ok "--task with several apps and no --app → BLOCKED (exit 2)"
+else bad "--task with several apps and no --app: exit $rc, expected 2"; fi
 
 # The snippet: the pinned engine and the dialogs went in; nothing is left behind.
 PW_FAKE_OUT="$FIX/clean.json" "$PY" "$CHECK" --dialog '#open' >/dev/null 2>&1 || true
@@ -106,7 +130,7 @@ mkdir -p "$WORK/vendor/axe-core"
 cp "$REPO/skills/apex-ux/vendor/axe-core.lock.json" "$WORK/vendor/"
 printf '/* tampered */\n' > "$WORK/vendor/axe-core/axe.min.js"
 UX_AXE_DIR="$WORK/vendor" check "axe-core not matching its lock → BLOCKED" clean 2 \
-  "d['status'] == 'BLOCKED' and 'sha256' in d['reason']"
+  "d['status'] == 'BLOCKED' and 'sha256' in d['reasons'][0]['message']"
 UX_AXE_DIR="$WORK/nowhere" check "axe-core missing → BLOCKED" clean 2 "d['status'] == 'BLOCKED'"
 if "$PY" -c "import hashlib,json,sys
 lock = json.load(open(sys.argv[1] + '/axe-core.lock.json'))

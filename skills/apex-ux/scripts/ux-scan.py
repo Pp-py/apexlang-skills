@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """ux-scan — the static half of apex-ux's FAIL criteria, over APEXlang `.apx` source.
 
-Usage: python3 ux-scan.py <file-or-dir>...   (directories are searched for *.apx)
+Usage: python3 ux-scan.py [--app <alias>] [--task <id>] <file-or-dir>...
+       (directories are searched for *.apx)
 
 Checks (criteria/common.md):
   UX-ITEM-NAME            every visible pageItem has a non-empty label
@@ -12,16 +13,18 @@ Checks (criteria/common.md):
   UX-NO-COMPOSED-CLASS    no class built from pieces (substitution glued into a class,
                           or 'prefix-' || ... in SQL)
 
-Output: one JSON document on stdout (provisional until the ui-result schema, UX-5);
-a one-line summary on stderr.
-Exit:   0 PASS · 1 FAIL · 2 BLOCKED (nothing to scan, unreadable) · 3 UNKNOWN (a file
+Output: a ui-result (framework/schemas/ui-result.schema.json, scope static) on stdout,
+and with --task in <evidenceDir>/<task>/ui-<alias>-static.json; a one-line summary on stderr.
+Exit:   0 PASS · 1 FAIL · 2 BLOCKED (nothing to scan, unreadable, outside the repo) · 3 UNKNOWN (a file
         the parser could not follow — no verdict on it; never read as PASS).
-Runtime halves (axe-core, focus, rendered names) are UX-4: this scan never covers them.
+Runtime halves (axe-core, focus, rendered names) are ux-check.py's: this scan never covers them.
 """
-import json
+import argparse
 import os
 import re
 import sys
+
+from ui_result import Stop, context, rel, target, write
 
 CRITERIA = ["UX-ITEM-NAME", "UX-CONTROL-NAME", "UX-DESTRUCTIVE-CONFIRM",
             "UX-NO-INLINE-STYLE", "UX-NO-COMPOSED-CLASS"]
@@ -197,57 +200,72 @@ def collect(paths):
         elif os.path.isfile(p):
             files.append(p)
         else:
-            raise OSError(f"no such file or directory: {p}")
+            raise OSError(f"no such file or directory: {rel(p) or os.path.basename(p)}")   # never a home path
     return sorted(set(files))
 
 
 def main(argv):
-    result = {"tool": "ux-scan", "format": "provisional-1", "scope": "static",
-              "status": "BLOCKED", "files": [], "criteria": [], "unparsed": [], "reason": ""}
+    ap = argparse.ArgumentParser(description="apex-ux static scan over .apx files")
+    ap.add_argument("--app")
+    ap.add_argument("--task")
+    ap.add_argument("paths", nargs="*")
+    a = ap.parse_args(argv)
+    result = {"kind": "ui-result", "schemaVersion": 1, "status": "UNKNOWN", "reasons": [],
+              "context": context(a.task), "scope": "static", "files": [], "unparsed": [],
+              "criteria": [], "advisories": []}
+    task_dir = None
     try:
-        files = collect(argv)
+        alias, task_dir = target(a.app, a.task)
+        if alias:
+            result["app"] = {"appAlias": alias}
+        result.update(scan(a.paths))
+    except Stop as s:
+        result["status"], result["reasons"] = s.status, [{"code": s.code, "message": s.message}]
+    return write(result, task_dir, f"ui-{result.get('app', {}).get('appAlias', 'app')}-static.json")
+
+
+def scan(paths):
+    try:
+        files = collect(paths)
     except OSError as e:
-        files, result["reason"] = [], str(e)
-    if not argv or not files:
-        result["reason"] = result["reason"] or "no .apx file to scan"
-        return emit(result, 2)
-    findings = {k: [] for k in CRITERIA}
+        raise Stop("BLOCKED", "NOTHING_TO_SCAN", str(e))
+    if not files:
+        raise Stop("BLOCKED", "NOTHING_TO_SCAN", "no .apx file to scan")
+    out = {"files": [], "unparsed": []}
     for f in files:
+        r = rel(f)
+        if r is None:
+            raise Stop("BLOCKED", "OUTSIDE_REPO", f"{os.path.basename(f)} is outside the repository: scan the repo's own .apx")
+        out["files"].append(r)
+    findings = {k: [] for k in CRITERIA}
+    for f, r in zip(files, out["files"]):
         try:
             with open(f, encoding="utf-8") as fh:
                 lines = fh.read().splitlines()
         except (OSError, UnicodeDecodeError) as e:
-            result["reason"] = f"{f}: {e}"
-            return emit(result, 2)
-        result["files"].append(f)
+            raise Stop("BLOCKED", "UNREADABLE", f"{r}: {e.__class__.__name__}")
 
-        def add(cid, line, detail, f=f):
-            findings[cid].append({"file": f, "line": line, "detail": detail})
+        def add(cid, line, detail, r=r):
+            findings[cid].append({"path": r, "line": line, "detail": detail})
         try:
             scan_tree(parse(lines), add)
         except ParseError as e:
-            result["unparsed"].append({"file": f, "detail": str(e)})
+            out["unparsed"].append({"path": r, "detail": str(e)})
         scan_text(lines, add)
-    for cid in CRITERIA:
-        result["criteria"].append({"id": cid, "status": "FAIL" if findings[cid] else "PASS",
-                                   "findings": findings[cid]})
+    out["criteria"] = [{"id": cid, "status": "FAIL" if findings[cid] else "PASS", "findings": findings[cid]}
+                       for cid in CRITERIA]
+    n = len(out["files"])
     if any(findings.values()):
-        result["status"], rc = "FAIL", 1
-    elif result["unparsed"]:
-        result["status"], rc = "UNKNOWN", 3
-        result["reason"] = "a file could not be parsed: its item/button checks did not run"
+        failed = [c for c in CRITERIA if findings[c]]
+        out["status"], out["reasons"] = "FAIL", [{"code": "UI_CRITERIA_FAILED",
+                                                  "message": f"{n} file(s) scanned; findings in {len(failed)} criteria"}]
+    elif out["unparsed"]:
+        out["status"], out["reasons"] = "UNKNOWN", [{"code": "UNPARSED",
+            "message": "a file could not be parsed: its item and button checks did not run - read it by hand"}]
     else:
-        result["status"], rc = "PASS", 0
-    return emit(result, rc)
-
-
-def emit(result, rc):
-    print(json.dumps(result, indent=2))
-    failed = [c["id"] for c in result["criteria"] if c["status"] == "FAIL"]
-    print(f"ux-scan: {result['status']} - {len(result['files'])} file(s)"
-          + (f"; FAIL {', '.join(failed)}" if failed else "")
-          + (f"; {result['reason']}" if result["reason"] else ""), file=sys.stderr)
-    return rc
+        out["status"], out["reasons"] = "PASS", [{"code": "UI_CRITERIA_HELD",
+            "message": f"{n} file(s); the five static FAIL criteria held"}]
+    return out
 
 
 if __name__ == "__main__":

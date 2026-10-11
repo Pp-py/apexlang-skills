@@ -43,8 +43,8 @@ Engineering guardrails    single write path · fail-closed gates · evidence, no
 | generation with policies and a local lint (26.1) | **whether an import/export is safe now** — [`apex-sync-guard`](skills/apex-sync-guard/SKILL.md): Builder↔git divergence against a recorded syncpoint, both directions, several apps per repo; a wrapper script and a blocking `PreToolUse` hook |
 | compilation (`apex validate` through SQLcl) | **whether the change works** — [`apex-sentinel`](skills/apex-sentinel/SKILL.md): the running page in a real browser, as a verified test user, criterion by criterion, with the data read back through SQLcl |
 | import / deploy and export | **the gates, their statuses and their evidence** — [`framework/`](framework/README.md) |
-| Universal Theme, and a UX Pattern Catalog app as an example | **whether the UI is usable and accessible** — [`apex-ux`](skills/apex-ux/SKILL.md): criteria with IDs from WCAG 2.2 AA and Oracle's policies, per archetype; a static scan of the `.apx` and runtime checks in the browser (axe-core, dialog focus) for the FAIL criteria; the UI gate comes later in Phase 3 |
-| | *future capabilities:* the **Security** gate, and the UI gate's scan and runtime checks (Phase 3) |
+| Universal Theme, and a UX Pattern Catalog app as an example | **whether the UI is usable and accessible** — [`apex-ux`](skills/apex-ux/SKILL.md): criteria with IDs from WCAG 2.2 AA and Oracle's policies, per archetype; a static scan of the `.apx` and runtime checks in the browser (axe-core, dialog focus) for the FAIL criteria, as the UI gate (opt-in per app, `uiGate`) |
+| | *future capabilities:* the **Security** gate (Phase 3) |
 
 This repo never duplicates what Oracle's skills do. Where its guidance and Oracle's meet, the
 precedence is explicit — SQLcl `apex validate` > Oracle's 26.1 lint > Oracle's inventory, policies
@@ -55,7 +55,7 @@ disagreement is recorded as a known conflict
 ## The loop, as gates
 
 ```text
-Architecture → build (.apx + package) → Validation → Sync → import → record-sync → Runtime
+Architecture → build (.apx + package) → Validation → Sync → import → record-sync → Runtime → UI
 ```
 
 Each gate has one owner and states what its PASS does **not** establish
@@ -64,8 +64,8 @@ BLOCKED · UNKNOWN`, with exit codes 0 · 1 · 1 · 2 · 3 — and `NOT_RUN`, wh
 producer's verdict: a consumer assigns it to a gate that did not run (a runtime check marks a
 criterion it did not exercise the same way). **PASS ≠ NOT_RUN ≠ UNKNOWN ≠ "the agent says it worked."** Results are JSON validated by
 [`framework/schemas/`](framework/schemas/) — `sync-result` is stable and written by the guard on
-every run; `runtime-result`, `architecture-result` and the task-level `verification-manifest` are
-experimental. A future `apexlang-delivery` orchestrates the gates by reading those files, under
+every run; `runtime-result`, `architecture-result`, `ui-result` and the task-level
+`verification-manifest` are experimental. The UI gate is opt-in per app (`uiGate`) until 1.0.0. A future `apexlang-delivery` orchestrates the gates by reading those files, under
 a contract that lets it add no rule of its own ([`GATES.md` §The orchestration contract](framework/GATES.md#the-orchestration-contract)).
 
 ## Install

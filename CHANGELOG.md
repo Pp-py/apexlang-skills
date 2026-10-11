@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+Phase 3, UX-5: the UI gate. apex-ux's two scripts now write a `ui-result`, and the gate takes its
+place after Runtime, opt-in per app.
+
+### Behavior changes — read before upgrading
+
+**apex-ux**
+- `ux-scan.py` and `ux-check.py` print a **`ui-result`** (`framework/schemas/ui-result.schema.json`,
+  experimental) instead of the provisional JSON. `reason` is now `reasons[{code, message}]`;
+  findings cite `path` (repo-relative) instead of `file`; `--raw` is cited in `evidence[]` with its
+  sha256 instead of `raw`. The exit codes are unchanged.
+- Both take `--app <alias>` and `--task <id>`. With `--task` the result lands in
+  `<evidenceDir>/<task>/ui-<alias>-static.json` or `ui-<alias>-runtime-<page>.json`, and axe's raw
+  output in `raw/ui-<alias>/`. `--task` with several apps and no `--app` is BLOCKED.
+- `ux-scan.py` on a file outside the repository is BLOCKED: a result cites repo-relative paths only.
+- `ux-check.py` drops the session from the page URL instead of masking it, so the URL validates as
+  `runtimeUrl`. An opener not found while another criterion FAILs is reported as FAIL with both.
+  A message passed on from `pw.sh` has the repo root shortened to `<repo>` and the home dir to `~`.
+
+**framework**
+- **The UI gate** (`GATES.md`): owner apex-ux, after Runtime. It passes on the static result PASS
+  and a runtime result PASS for each page the change touched. It is required for an app whose
+  `apex-sync.json` sets `"uiGate": true` (top-level default or per app), opt-in until 1.0.0.
+- `verification-manifest`: gate `ui` and result kind `ui-result`; a `ui` PASS cites at least two
+  `ui-result` files.
+- `apex-sync.json` takes `uiGate` (a boolean; anything else is BLOCKED). The guard and `pw.sh`
+  accept it per app; neither acts on it.
+
+### Tests
+- Contract: the `ui-result` schema, two fixtures and twelve negatives. It also runs `ux-scan.sh` and
+  `ux-check.sh` with `UX_RESULT_CAPTURE_DIR` and validates every `ui-result` they make the scripts
+  emit; that check caught a home path in a BLOCKED message, now fixed.
+- `surface.py`: the keys an app takes are the same in the guard and in `pw.sh`; `ui_result.py`
+  reports the release's version; the frozen interface lists the apex-ux scripts.
+- `ux-scan.sh` (+2) and `ux-check.sh` (+3) cover `--task` and path scrubbing; the e2e covers
+  `uiGate` (+3). A real-browser run with `--task` is recorded in `CAPABILITIES.md`.
+
 ## 0.6.1 — 2026-10-11
 
 Phase 3, UI/UX points 1 to 4. The UI known conflicts with Oracle's 26.1 policies are resolved:

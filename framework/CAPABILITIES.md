@@ -28,7 +28,7 @@ Verified against Oracle's skills at the revision in [`oracle-skills.lock.json`](
 | UX criteria catalog (`apex-ux`): IDs, severity, method, source | yes — version-independent; Oracle sources cited at 26.1 | same | [contract](../tests/contract/run.sh) (format), [citations](../tests/upstream/citations.md) (Oracle anchors) |
 | UI static scan (`ux-scan.py`): the five static FAIL criteria | yes (version-independent) | same | [ux-scan](../tests/integration/ux-scan.sh) in CI, over fixtures and the examples |
 | UI runtime checks (`ux-check.py`): axe-core 4.13.0 pinned, dialog focus | yes (version-independent) | same | [ux-check](../tests/integration/ux-check.sh) in CI, Playwright CLI stubbed; real browser: §Recorded runs |
-| UI gate (`ui-result`) | not built (Phase 3, UX-5) | same | — |
+| UI gate (`ui-result`, `uiGate` opt-in) | yes (version-independent) | same | schema, fixtures and negatives in the [contract tier](../tests/contract/run.sh); every `ui-result` the ux suites emit validated there |
 | Windows (Git Bash) | yes — integration on `windows-latest` in CI | same | [ci.yml](../.github/workflows/ci.yml); first green 0.6.0 run: [38059670802](https://github.com/Pp-py/apexlang-skills/actions/runs/38059670802) |
 
 ## Recorded runs
@@ -49,6 +49,7 @@ What CI does not run, recorded when it was run. Re-run after updating Oracle's s
 | 2026-10-10 | the three `tests/integration/` suites | bash 3.2.57 — macOS's bash, not in CI (docker `bash:3.2` with git, jq, python3) | PASS — e2e 262, smoke 59, config-parity 44 |
 | 2026-10-11 | `ux-check.py --dialog '#open-good' --dialog '#open-bad'` on `tests/integration/fixtures/ux-check/page.html`, served on 127.0.0.1 | `@playwright/cli` 0.1.17, bundled Chromium (`PLAYWRIGHT_MCP_BROWSER=chromium`, WSL), axe-core 4.13.0 | FAIL as built — `label` and `button-name` (critical) on the page; the good dialog holds focus, the bad one fails all five steps |
 | 2026-10-11 | `ux-check.py` on Oracle's UX Pattern Catalog (an example app, public, read only): home, dashboards, browse-search, item-details, data-entry-simple-form; data-entry with `--dialog 'text=Data Entry - Drawer Form'` | same, the catalog 26.1.6 on the user's lab instance | PASS on every page and the drawer, three runs alike. A first version reported the drawer's focus as escaping: it compared against the last `role=dialog` node, which APEX adds more of while tabbing — fixed by marking the dialog that opened |
+| 2026-10-11 | `ux-check.py --task T-smoke` on the catalog's data-entry-simple-form, from a scratch repo with `apex-sync.json` (one app) | `@playwright/cli` 0.1.17, bundled Chromium (WSL), axe-core 4.13.0 | PASS — `ui-catalog-runtime-data-entry-simple-form.json` and the raw axe output (cited by sha256) in the task dir, `.gitignore` created; the URL without its session; the result validates against `ui-result` |
 
 ## Known conflicts
 

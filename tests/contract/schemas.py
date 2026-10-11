@@ -212,7 +212,7 @@ def check_captured(directory):
             continue
         errs = errors(kind_schema(kind), doc)
         if errs:
-            bad(f"emitted {name} ({doc.get('operation')} {doc.get('status')}) validates",
+            bad(f"emitted {name} ({doc.get('operation') or doc.get('scope')} {doc.get('status')}) validates",
                 "\n".join(f"{list(e.absolute_path)}: {e.message}" for e in errs[:5]))
             continue
         if home and home != "/" and home + "/" in raw:
@@ -221,7 +221,7 @@ def check_captured(directory):
         if re.search(r"session=[0-9]", raw):
             bad(f"emitted {name} carries an APEX session id")
             continue
-        key = f"{kind} {doc.get('operation', '')} {doc.get('status')}"
+        key = f"{kind} {doc.get('operation') or doc.get('scope', '')} {doc.get('status')}"
         counts[key] = counts.get(key, 0) + 1
     if failed == before:
         ok(f"{len(files)} emitted result(s) validate: " + ", ".join(f"{k} ×{n}" for k, n in sorted(counts.items())))

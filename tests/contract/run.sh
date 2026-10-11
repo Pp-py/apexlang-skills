@@ -3,8 +3,9 @@
 # themselves, for the fixtures and negatives here, and for every result the tools
 # actually emit — and the surface a reader relies on has not drifted (surface.py).
 # The emitted results come from running the integration e2e with
-# SYNC_RESULT_CAPTURE_DIR set, so a script change that writes an invalid result
-# fails here even when every exit code in the e2e is still right.
+# SYNC_RESULT_CAPTURE_DIR set, and apex-ux's two suites with UX_RESULT_CAPTURE_DIR, so a
+# script change that writes an invalid result fails here even when every exit code in
+# those suites is still right.
 #
 # Exit: 0 PASS · 1 FAIL · 2 BLOCKED (python3 or jsonschema missing — never a pass).
 set -euo pipefail
@@ -28,6 +29,16 @@ if ! SYNC_RESULT_CAPTURE_DIR="$CAP/results" bash "$REPO/tests/integration/sync-g
   exit 1
 fi
 tail -1 "$CAP/e2e.log"
+
+echo "== apex-ux suites, capturing every ui-result they make the scripts emit"
+for t in ux-scan ux-check; do
+  if ! UX_RESULT_CAPTURE_DIR="$CAP/results" bash "$REPO/tests/integration/$t.sh" > "$CAP/$t.log" 2>&1; then
+    tail -30 "$CAP/$t.log"
+    echo "contract: FAIL — $t itself failed, so its results prove nothing"
+    exit 1
+  fi
+  tail -1 "$CAP/$t.log"
+done
 
 echo "== schemas, fixtures, negatives, emitted results"
 rc=0

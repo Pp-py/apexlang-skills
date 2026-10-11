@@ -1,0 +1,76 @@
+{
+  "kind": "ui-result",
+  "schemaVersion": 1,
+  "status": "FAIL",
+  "reasons": [
+    {
+      "code": "UI_CRITERIA_FAILED",
+      "message": "2 axe run(s), 1 dialog(s)"
+    }
+  ],
+  "app": {
+    "appAlias": "hr"
+  },
+  "context": {
+    "task": "T-42",
+    "repo": {
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "dirty": false
+    },
+    "frameworkVersion": "0.6.1",
+    "timestamp": "2026-10-11T12:40:00Z",
+    "producer": {
+      "skill": "apex-ux",
+      "method": "tool"
+    },
+    "target": {
+      "runtimeUrl": "https://apex.example/ords/r/ws/app/orders"
+    }
+  },
+  "scope": "runtime",
+  "engine": {
+    "name": "axe-core",
+    "version": "4.13.0",
+    "sha256": "c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1"
+  },
+  "criteria": [
+    {
+      "id": "UX-AXE-SERIOUS",
+      "status": "PASS",
+      "findings": []
+    },
+    {
+      "id": "UX-ITEM-NAME",
+      "status": "PASS",
+      "findings": []
+    },
+    {
+      "id": "UX-CONTROL-NAME",
+      "status": "PASS",
+      "findings": []
+    },
+    {
+      "id": "UX-DIALOG-FOCUS",
+      "status": "FAIL",
+      "findings": [
+        {
+          "selector": "#open",
+          "failed": [
+            "tabStays",
+            "focusReturns"
+          ]
+        }
+      ]
+    }
+  ],
+  "advisories": [],
+  "errors": [],
+  "evidence": [
+    {
+      "kind": "file",
+      "path": ".apex-evidence/T-42/raw/ui-hr/axe-orders.json",
+      "sha256": "6f188ef52ebee81d7285b6d90f605e1a2184b1c611ee512a55a3ba30f0525d4f",
+      "description": "axe-core's full output, node HTML included - never share it"
+    }
+  ]
+}
