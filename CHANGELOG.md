@@ -44,6 +44,12 @@ against both Oracle tools instead of being assumed.
   path.
 
 **apex-ux (new skill)**
+- Runtime checks (Phase 3, UX-4): `skills/apex-ux/scripts/ux-check.py` runs on the page `pw.sh`
+  holds. It uses axe-core 4.13.0, vendored unchanged under MPL-2.0 in `skills/apex-ux/vendor/` and
+  pinned by sha256 in `axe-core.lock.json`; a missing or altered engine is BLOCKED. Covers
+  `UX-AXE-SERIOUS`, the runtime half of `UX-ITEM-NAME` and `UX-CONTROL-NAME`, and `UX-DIALOG-FOCUS`
+  per `--dialog` opener. Stdout never carries node HTML or a session id. Covered by
+  `tests/integration/ux-check.sh` in CI.
 - Static scan (Phase 3, UX-3): `skills/apex-ux/scripts/ux-scan.py`, python3 stdlib only. It checks
   the five static `FAIL` criteria over `.apx` files and prints JSON per criterion with file and line
   (provisional format until UX-5); exit 0/1/2/3. A file it cannot parse is UNKNOWN, never PASS.

@@ -31,7 +31,7 @@ Codex, opencode, Cursor, aider, …) working on an APEXlang app, load the releva
 4. **`skills/apex-ux/SKILL.md`** — read it when designing, changing or reviewing a page's UI.
    Criteria with IDs (`criteria/`), FAIL or ADVISE, from WCAG 2.2 AA and Oracle's policies; a
    UX pattern catalog is an example only. Static scan: `skills/apex-ux/scripts/ux-scan.py`;
-   runtime checks and gate are not built yet (Phase 3).
+   runtime checks: `ux-check.py` through sentinel's `pw.sh`; the gate is not built yet (Phase 3).
 
 They form one loop: **architect → build (`.apx` + package) → validate → sync-check → import →
 record-sync → verify in the browser** (plus sync-check before any export).

@@ -13,7 +13,7 @@ description: Use when an APEXlang page is designed, changed or reviewed for UI q
 - **Output:** per criterion `PASS` · `FAIL` · `NOT_RUN`, plus advisories that never change the verdict. As a gate result (`ui-result`): Phase 3, UX-5 — not built yet.
 - **Evidence:** per criterion, the `.apx` lines it rests on, or the saved browser and axe-core output with its sha256 under the task's evidence dir (`framework/EVIDENCE.md`).
 - **Gate:** UI — opt-in per app until 1.0.0; when enabled, a non-PASS blocks. Not in `framework/GATES.md` yet (UX-5).
-- **Interface:** the criteria in `criteria/`; `python3 scripts/ux-scan.py <file-or-dir>…` for the static FAIL criteria. The runtime checks through `apex-sentinel`'s `pw.sh` with a vendored axe-core (UX-4) are not built yet.
+- **Interface:** the criteria in `criteria/`; `python3 scripts/ux-scan.py <file-or-dir>…` for the static FAIL criteria. `python3 scripts/ux-check.py [--app X] [--dialog <selector>]…` for the runtime ones, through `apex-sentinel`'s `pw.sh` with a vendored axe-core.
 
 ## Status — what exists
 
@@ -21,7 +21,8 @@ description: Use when an APEXlang page is designed, changed or reviewed for UI q
 |---|---|
 | Criteria catalog with IDs (`criteria/`) | **built** (UX-2) |
 | Static scan over `.apx` | **built** (UX-3) for the five static `FAIL` criteria — see §Static scan; the static `ADVISE` ones are still read by hand |
-| Runtime checks: axe-core, keyboard and dialog focus, viewport | not built (UX-4) — apply the `runtime` criteria by hand through `pw.sh` |
+| Runtime checks: axe-core, dialog focus | **built** (UX-4) for the runtime `FAIL` criteria — see §Runtime checks |
+| Runtime `ADVISE` checks: reflow, focus visible, target size | not built — apply them by hand through `pw.sh` |
 | `ui-result` schema, gate, manifest enums | not built (UX-5) |
 
 Until the scripts exist, a review cites the criterion IDs it checked and says which it did not. A criterion nobody exercised is `NOT_RUN`, never PASS.
@@ -38,6 +39,28 @@ What it does not establish: the runtime half of `UX-ITEM-NAME` and `UX-CONTROL-N
 the browser actually computes), confirmation done by a dynamic action instead of a
 `confirmation` block (reported as FAIL — check it, do not delete the finding), and every
 `ADVISE` criterion.
+
+## Runtime checks
+
+After `pw.sh [--app X] login` and `pw.sh goto <page>`, run
+`python3 scripts/ux-check.py [--app X] [--dialog <selector>]… [--raw <evidence-dir>/raw/ux-<alias>/axe.json]`
+on the page the session holds. It runs axe-core (`vendor/`, pinned in `vendor/axe-core.lock.json`)
+in every frame, on the page and with each dialog open, for `UX-AXE-SERIOUS`, `UX-ITEM-NAME` and
+`UX-CONTROL-NAME`. For each `--dialog` opener (a selector pw.sh can click: `#id`, `text=Edit`) it
+checks `UX-DIALOG-FOCUS`: focus moves in, Tab and Shift+Tab stay in, Esc closes, focus returns.
+No `--dialog` leaves that criterion `NOT_RUN`. Minor violations and axe's "incomplete" are
+advisories. JSON on stdout (provisional until `ui-result`), never a node's HTML or a session id;
+`--raw` keeps axe's full output with its sha256. Exit 0 PASS · 1 FAIL · 2 BLOCKED (axe missing or
+not matching its lock, opener not found, a login page) · 3 UNKNOWN (dead session, no verdict).
+
+What it does not establish: anything on a page or dialog it was not pointed at, a dialog's
+behaviour after the keyboard has moved through it (axe runs as it opens), and every `ADVISE`
+runtime criterion except the axe advisories.
+
+Updating axe-core: take a release at least two weeks old, check the npm tarball against its
+`integrity`, copy `axe.min.js` and its licences into `vendor/axe-core/` unchanged, and update
+version, tarball, integrity and sha256 in the lock. `tests/integration/ux-check.sh` checks the
+file against the lock.
 
 ## A PASS is not "WCAG compliant"
 
@@ -70,7 +93,7 @@ Where `apexlang-architecture` states a data-side rule (the closed set of classes
 ## How to use it now
 
 1. Pick the archetype file for the page (`criteria/README.md` §Archetypes) and always `criteria/common.md`.
-2. Run the static scan; for each other `static` criterion, read the page's `.apx`; for each `runtime` one, drive the page through `apex-sentinel`'s `pw.sh`; for each `manual` one, look, and say what you looked at.
+2. Run the static scan and the runtime checks; for each other `static` criterion, read the page's `.apx`; for each other `runtime` one, drive the page through `apex-sentinel`'s `pw.sh`; for each `manual` one, look, and say what you looked at.
 3. Report per criterion ID: PASS, FAIL with what was seen, or NOT_RUN with why. Advisories go in a separate list.
 
 ## Red flags — stop
