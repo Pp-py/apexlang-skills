@@ -30,6 +30,19 @@ against both Oracle tools instead of being assumed.
 - The absences example renders its status as `t-Badge` plus a semantic class, so the sentinel
   walkthrough and `checks/workflow-state.md` read `td span.t-Badge`.
 
+**Boundary between apexlang-architecture and apex-ux**
+- `apexlang-architecture` states what the data layer projects, the write path and the link's form;
+  `apex-ux` judges the UI and cites those rules instead of restating them. Presentation moved to
+  `apex-ux`: `ui-contracts.md` §6 (custom CSS) and §7 (contextual detail actions) are now pointers
+  (numbering kept), and the formatting, colour-alone, help-text and delete-confirmation prose in the
+  recipes points to the criterion IDs.
+- The UX Pattern Catalog is an example, not an authority, in `SKILL.md` and
+  `references/official-standard.md` too (version aligned to 26.1.6).
+- `recipes/analytical-report.md`: the boolean icons are named by visually hidden text; the old text
+  claimed a `title` on an `aria-hidden` glyph names it, which it does not.
+- `UXBRW-LINK-COLUMN` keeps only the link text; `UXDET-READ-ONLY-RAIL` no longer restates the write
+  path.
+
 **apex-ux (new skill)**
 - Static scan (Phase 3, UX-3): `skills/apex-ux/scripts/ux-scan.py`, python3 stdlib only. It checks
   the five static `FAIL` criteria over `.apx` files and prints JSON per criterion with file and line

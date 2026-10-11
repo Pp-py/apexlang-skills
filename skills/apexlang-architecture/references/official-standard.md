@@ -25,9 +25,9 @@ KC-4.)
 | Question | Authority |
 |---|---|
 | Is this valid `.apx`? Which properties, templates, slots exist? | Oracle — the SQLcl compiler (`apexlang-compile`) > the 26.1 lint > `apexlang-inventory`, the 26.1 policies and templates (`framework/PRINCIPLES.md` P6) |
-| What should this pattern look like, and when is it the right pattern? | Oracle's UX Pattern Catalog app (26.1.4) |
+| Is the UI usable and accessible? | `apex-ux` — WCAG 2.2 AA, Oracle's 26.1 policies, Universal Theme. Oracle's UX Pattern Catalog app (26.1.6) is an example only |
 | Where does the logic live, what must the data layer project, and when may we deviate? | **this skill** |
 
 ## The UX Pattern Catalog
 
-The read-side recipes were built against that catalog. It is an Oracle sample app, not part of this skill, so recipes name its **patterns** (*Item Detail – Full*, *Faceted Search – Cards*) and never its page numbers, which are version-specific; a recipe cites it only where the citation carries an argument — usually a place where this skill deliberately does something else. Where the catalog and the official page standards disagree — and they do, on the faceted-search results region, on hidden region headers, on projecting theme classes from SQL — the disagreement is resolved in `ui-contracts.md`, and any deviation must carry its reason in the region's `comments` block.
+The read-side recipes were built against that catalog. It is an Oracle sample app, not part of this skill, and it illustrates — it never decides; so recipes name its **patterns** (*Item Detail – Full*, *Faceted Search – Cards*) and never its page numbers, which are version-specific; a recipe cites it only where the citation carries an argument — usually a place where this skill deliberately does something else. Where the catalog and the official page standards disagree — and they do, on the faceted-search results region, on hidden region headers, on projecting theme classes from SQL — the disagreement is resolved in `ui-contracts.md`, and any deviation must carry its reason in the region's `comments` block.

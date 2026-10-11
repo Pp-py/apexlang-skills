@@ -49,9 +49,8 @@ region kpis (
 ```
 
 Each KPI = one row; the number is `to_char()` of a scalar subquery bound into `&METRIC.`. Emit a
-`column (...)` block for every projected field, and keep the thousands separator on the number — a
-KPI is read at a glance (`formatMask` on the metric, or `to_char(..., 'FM999G999G990')` in the
-query, decided once for the region). The icon column returns literals only, so every value is a
+`column (...)` block for every projected field. The metric is projected as text, so the query
+formats it once (`to_char(..., 'FM999G999G990')`); how it must read is `apex-ux` `UXDASH-KPI-CONTEXT`. The icon column returns literals only, so every value is a
 proven Font APEX icon.
 
 These two cards lead to different pages, so they carry **no** link: a Metric Card action has one
@@ -153,9 +152,8 @@ three options:
 
   The target page reads `P60_STATUS` as a filter, and the query projects only the key, never a
   URL (`ui-contracts.md` §3).
-- **A region-level detail action** in the header's `slot: edit` when the region as a whole has one
-  follow-up: a text link when the drill-down is common, an icon button when it is secondary, nothing
-  when the region is purely informational (`ui-contracts.md` §7).
+- **A region-level detail action** in the header when the region as a whole has one follow-up
+  (its form and place: `apex-ux` `UXDASH-DRILLDOWN`).
 - **A neighbouring report or card list** for row-level navigation, with its own column or card
   links. This is what Oracle's dashboard composition already puts below the KPIs.
 
@@ -169,8 +167,7 @@ the strip, and never compute a destination per row.
 - Keep KPI numbers and their drill-down in one reviewable place: the card's declarative action, or
   the region's header action.
 - One KPI styling system per page.
-- Local geometry fixes get a scoped class named after the pattern (`app-MetricCards`) with a one-line
-  comment (`ui-contracts.md` §6) — not a new palette.
+- Local geometry fixes: `apex-ux` `UX-NO-INVENTED-CLASS` — not a new palette.
 - An alternative chart kept in the source but not rendered belongs behind
   `config { buildOption: @<option> }`, not commented out.
 

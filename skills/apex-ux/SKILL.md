@@ -65,7 +65,7 @@ Oracle's **UX Pattern Catalog** application shows what the patterns look like. W
 | `apex-sentinel` | that the page works; it owns the browser driver `pw.sh` |
 | **`apex-ux`** | whether the UI is usable and accessible — the criteria, the static scan, the runtime UI checks (through `pw.sh`, never a copy of it) |
 
-A recipe in `apexlang-architecture` says how a page is built; the archetype file here says how its UI is judged. The mapping is in `criteria/README.md`.
+Where `apexlang-architecture` states a data-side rule (the closed set of classes, the link's form), a criterion here cites it and checks it — it never restates it. A recipe in `apexlang-architecture` says how a page is built; the archetype file here says how its UI is judged. The mapping is in `criteria/README.md`.
 
 ## How to use it now
 

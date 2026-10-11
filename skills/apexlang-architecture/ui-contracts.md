@@ -7,11 +7,13 @@ and where does that derivation live?*
 It is deliberately not a component reference. Region types, valid properties, templates and slots
 belong to Oracle's APEXlang skills (`apexlang-inventory`, and the 26.1 policies `40-components/apex.region-contracts.md`,
 `apex.region-media.md`, `apex.region-interactions.md`, `30-pages/apex.*.md`). Read it there once;
-what follows is only the part no one else owns.
+what follows is only the part no one else owns. How the page looks and whether it is usable —
+placement, formatting, CSS, accessibility — is judged by `apex-ux` (`../apex-ux/criteria/`); this
+file says what the data layer projects so that it can be.
 
 **Contents:** 1 cards vs content row · 2 row-dependent styling from a closed set · 3 navigation is
-a declarative target · 4 where a derived column lives · 5 formatting and directives · 6 scoped custom
-CSS · 7 contextual detail actions · 8 selection state on a split view · 9 deviating from an
+a declarative target · 4 where a derived column lives · 5 formatting and directives · 6 custom CSS
+(`apex-ux`) · 7 contextual detail actions (`apex-ux`) · 8 selection state on a split view · 9 deviating from an
 official default · 10 item defaults in shared components.
 
 ## 1. Cards or Content Row
@@ -74,15 +76,16 @@ iconAndBadge { badgeColumn: STATUS_LABEL }
 The six `u-*` classes are Oracle's allowlist for Cards (`apex.cards-page.md`: *project only
 `u-normal`, `u-hot`, `u-info`, `u-success`, `u-warning`, `u-danger`, or `NULL`*). They are
 Universal Theme's semantic states rather than colour names, and because every value is a literal,
-both a review and a theme upgrade can find them with one grep. Keep the status text visible as
-well (the badge, a column): colour alone is not a state.
+both a review and a theme upgrade can find them with one grep. Project the status text as
+well, next to the class: the UI shows both (`apex-ux` `UX-NO-COLOR-ONLY`).
 
 Three things are out:
 
 - **Composing a class.** `badgeCssClasses: u-&BADGE_STATE.`, `'u-color-' || MOD(...)`,
   `u-color-#RULE_COLOR#-text`: no single literal in the source says which classes can reach the
   page, so the set is unprovable. Oracle rules this out on Cards (*"Do not concatenate arbitrary
-  CSS"*), and this skill applies the same rule to every component.
+  CSS"*), and this skill applies the same rule to every component. This skill states the rule;
+  `apex-ux`'s static scan checks it (`UX-NO-COMPOSED-CLASS`).
 - **A raw class column.** A column holding whatever class someone typed into a table is user input
   reaching `class=""`.
 - **Markup.** The query never projects HTML. Oracle's `apex.report-column-rendering.md` makes it
@@ -123,7 +126,7 @@ The catalog's `targetUrl: #` is demo scaffolding. It never ships.
 report/card links rather than chart or metric actions"* (`apex.region-contracts.md`). The narrow
 exception is a Metric Card whose cards all open **one** page, each with its own key (`P10_STATUS:
 &STATUS_CODE.`). It gets its `position: link` action. Cards that go to different pages get a
-header action instead (§7) — `recipes/dashboard-kpis-charts.md` has both.
+header action instead (`apex-ux` `UXDASH-DRILLDOWN`) — `recipes/dashboard-kpis-charts.md` has both.
 
 ## 4. Where a derived display column lives
 
@@ -153,35 +156,17 @@ on cards/content-row text blocks. The query projects values; the component decid
 (and `&COLUMN!HTML.` for text that could contain markup). Two official rules in two different files,
 and the wrong one fails silently by rendering the literal token.
 
-Numbers meant for scanning carry a thousands separator, and dates, percentages and durations keep
-one format per region — a `formatMask` or `to_char()`, decided once for the region, not per row.
+How numbers, dates and durations must read is `apex-ux`'s (`UX-FORMAT`, `UXDASH-KPI-CONTEXT`).
 
-## 6. Custom CSS is scoped to the pattern
+## 6. Custom CSS — `apex-ux`
 
-The official dashboard standard puts it flatly: "do not invent CSS classes". The honest reading is
-that the theme owns appearance, and a page may still need a local geometry fix. When it does:
+Presentation, not a data contract: `UX-NO-INVENTED-CLASS` (one scoped pattern class) and
+`UX-NO-INLINE-STYLE` in `../apex-ux/criteria/common.md`.
 
-- one class on the region, named after the pattern (`app-MetricCards`), never after the tweak;
-- every selector prefixed with it, so no other Universal Theme component is touched;
-- a one-line comment saying what it fixes.
+## 7. Contextual detail actions — `apex-ux`
 
-Anything larger than a geometry fix (a palette, a new component look) is not a CSS problem — pick a
-different template or template option.
-
-## 7. Contextual detail actions
-
-A summary region — a chart, a compact list, a KPI strip — often needs one way through to the data
-behind it. It goes in the region header's **`slot: edit`**, where it stays attached to the region
-instead of competing with the content:
-
-- a text link or text button when the detail path is a common follow-up;
-- an icon button when it should be available but is not the point;
-- nothing at all when the region is purely informational — a drill-down that leads nowhere useful is
-  worse than no affordance.
-
-One action per region, and it links to a page that answers the question the region raises. This is
-also the drill-down for a `chart`, which owns no actions, and for a Metric Card strip whose cards
-lead to different pages (§3).
+Where a summary region's way through to its data sits, and in which form, is `UXDASH-DRILLDOWN`
+and `UX-ACTION-PLACEMENT`. The link itself is a declarative target (§3).
 
 ## 8. Selection state on a split-view page
 
