@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 — 2026-10-11
 
-Phase 3, UX-1: the UI known conflicts with Oracle's 26.1 policies are resolved. The recipes,
-`ui-contracts.md` and the examples follow Oracle's rules, and the report rules were measured
-against both Oracle tools instead of being assumed.
+Phase 3, UI/UX points 1 to 4. The UI known conflicts with Oracle's 26.1 policies are resolved:
+the recipes, `ui-contracts.md` and the examples follow Oracle's rules, and the report rules were
+measured against both Oracle tools instead of being assumed. A fourth skill, `apex-ux`, judges a
+page's UI against criteria with IDs, with a static scan over `.apx` and runtime checks in the
+browser. The UI gate (`ui-result`, UX-5) is not in this release.
 
 ### Behavior changes — read before upgrading
 
@@ -65,8 +67,8 @@ against both Oracle tools instead of being assumed.
 - Measured against its own `FAIL` criteria, the repo had two defects. The icon-only report links in
   the recipes and the absences example had no accessible name; they now carry visually hidden text
   (`u-VisuallyHidden`). The absences example's Reject button had no confirmation; it now asks.
-- Not built yet: the static scan (UX-3), the runtime checks with a vendored axe-core (UX-4),
-  and the `ui-result` gate (UX-5).
+- Not built yet: the `ui-result` gate (UX-5). Until then the scripts' JSON is a provisional
+  format, and no gate or manifest reads it.
 
 ### Tests
 - `tests/contract/surface.py` checks every apex-ux criterion row: a unique, prefixed ID, a
@@ -75,6 +77,11 @@ against both Oracle tools instead of being assumed.
   and SQLcl. Probe 706 is a negative control the compiler must reject.
 - Under the compiler the examples go from 9 errors to 7 (KC-7: the scaffold's breadcrumb
   template and `warnOnUnsavedChanges`).
+
+### Rollback
+Reinstall 0.6.0 (`3e77cbf`) or disable the plugin. Nothing in `apex-sync.json`, the syncpoints,
+the markers or the result schemas changed; the frozen interface (`framework/CONTRACTS.md`) is
+untouched. Rolling back drops `apex-ux` and the recipe changes above, nothing else.
 
 ## 0.6.0 — 2026-10-09
 
