@@ -6,3 +6,7 @@
 # The config fixtures are compared byte for byte — a .apps file is the exact output a
 # reader must produce — and a CRLF checkout puts a \r inside every expected line.
 tests/integration/fixtures/** text eol=lf
+
+# Vendored third-party code is pinned by sha256 (skills/apex-ux/vendor/axe-core.lock.json):
+# any line-ending conversion would break the hash, so it is checked out byte for byte.
+skills/apex-ux/vendor/** -text

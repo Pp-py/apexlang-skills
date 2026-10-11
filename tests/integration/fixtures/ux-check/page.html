@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- Manual smoke for ux-check.py in a real browser (never in CI): every defect below is
+     known, so a run must FAIL on UX-ITEM-NAME, UX-CONTROL-NAME and UX-DIALOG-FOCUS.
+     pw.sh open file://<abs path>/page.html, then ux-check.py --dialog '#open-good' --dialog '#open-bad' -->
+<html lang="en">
+<head><meta charset="utf-8"><title>ux-check smoke</title>
+<style>.dlg{position:fixed;top:20%;left:20%;background:#fff;border:1px solid;padding:1em}</style></head>
+<body>
+<main>
+  <h1>ux-check smoke</h1>
+  <input id="nameless" type="text">                                   <!-- UX-ITEM-NAME -->
+  <button id="icon-only"><span class="fa fa-trash"></span></button>   <!-- UX-CONTROL-NAME -->
+  <button id="open-good" type="button">Open good dialog</button>
+  <button id="open-bad" type="button">Open bad dialog</button>
+</main>
+
+<!-- Keeps focus inside, closes on Esc and gives focus back: UX-DIALOG-FOCUS holds. -->
+<div id="good" class="dlg" role="dialog" aria-modal="true" aria-labelledby="good-t" hidden>
+  <h2 id="good-t">Good</h2><label>Note <input id="g1"></label><button id="g2" type="button">Close</button>
+</div>
+<!-- Never moves focus in and ignores Esc: UX-DIALOG-FOCUS fails. -->
+<div id="bad" class="dlg" role="dialog" aria-modal="true" aria-labelledby="bad-t" hidden>
+  <h2 id="bad-t">Bad</h2><button type="button">Nothing</button>
+</div>
+
+<script>
+  let opener = null;
+  const good = document.getElementById('good'), bad = document.getElementById('bad');
+  const close = () => { good.hidden = true; if (opener) opener.focus(); };
+  document.getElementById('open-good').onclick = (e) => {
+    opener = e.currentTarget; good.hidden = false; document.getElementById('g1').focus();
+  };
+  document.getElementById('open-bad').onclick = () => { bad.hidden = false; };
+  document.getElementById('g2').onclick = close;
+  good.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') return close();
+    if (e.key !== 'Tab') return;
+    const f = [...good.querySelectorAll('input, button')], first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+</script>
+</body>
+</html>
