@@ -31,10 +31,11 @@ Codex, opencode, Cursor, aider, …) working on an APEXlang app, load the releva
 4. **`skills/apex-ux/SKILL.md`** — read it when designing, changing or reviewing a page's UI.
    Criteria with IDs (`criteria/`), FAIL or ADVISE, from WCAG 2.2 AA and Oracle's policies; a
    UX pattern catalog is an example only. Static scan: `skills/apex-ux/scripts/ux-scan.py`;
-   runtime checks: `ux-check.py` through sentinel's `pw.sh`; the gate is not built yet (Phase 3).
+   runtime checks: `ux-check.py` through sentinel's `pw.sh`. Both write a `ui-result`; the UI gate
+   runs after Runtime, required for an app with `"uiGate": true` in `apex-sync.json`.
 
 They form one loop: **architect → build (`.apx` + package) → validate → sync-check → import →
-record-sync → verify in the browser** (plus sync-check before any export).
+record-sync → verify in the browser → UI checks** (plus sync-check before any export).
 
 ## Gates, statuses, evidence
 
@@ -44,8 +45,9 @@ record-sync → verify in the browser** (plus sync-check before any export).
   not exercise. PASS ≠ NOT_RUN ≠ UNKNOWN ≠ "it seemed to work".
 - Results are JSON (`framework/schemas/`): the guard writes `.git/apex-sync/<alias>/last-<op>.json`
   on every run, and with `--task <id>` a copy under the evidence dir (`.apex-evidence/` by default,
-  never committed). Record runtime and architecture verdicts the same way
-  (`references/runtime-result.md`, `references/decision-record.md` in those skills).
+  never committed); apex-ux's two scripts do the same with `--task` (`ui-result`). Record runtime
+  and architecture verdicts the same way (`references/runtime-result.md`,
+  `references/decision-record.md` in those skills).
 - Never write a marker, a ref under `refs/apex-sync/` or a result by hand, and never run
   `record-sync --force`: those are the user's calls.
 - What each gate establishes and what it does not, and how an orchestrator may use them:

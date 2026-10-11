@@ -6,6 +6,8 @@
 #   unparsed.apx  shorthand the parser refuses → UNKNOWN, exit 3 (never a PASS)
 #   no input      → BLOCKED, exit 2
 #   examples/     the runnable examples hold every static FAIL criterion → exit 0
+#   --task        the ui-result lands in the project's evidence dir; a file outside the
+#                 repo is BLOCKED (a result cites repo-relative paths only)
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
@@ -40,6 +42,19 @@ for c in json.load(sys.stdin)["criteria"]:
 want=$(tr -d '\r' < "$FIX/fail.expected" | sort)
 if [[ "$got" == "$want" ]]; then ok "fail.apx findings match fail.expected"
 else bad "fail.apx findings differ from fail.expected"; diff <(echo "$want") <(echo "$got") || true; fi
+
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/ux-scan-XXXXXX")
+trap 'rm -rf "$WORK"' EXIT
+P="$WORK/proj"; mkdir -p "$P/src"; git -C "$P" init -q
+cp "$FIX/pass.apx" "$P/src/"
+printf '{ "appId": 100, "appAlias": "demo" }\n' > "$P/apex-sync.json"
+rc=0; (cd "$P" && "$PY" "$SCAN" --task T-1 src > "$WORK/out.json" 2>/dev/null) || rc=$?
+if [[ $rc -eq 0 ]] && cmp -s "$WORK/out.json" "$P/.apex-evidence/T-1/ui-demo-static.json" && "$PY" -c "import json,sys
+d = json.load(open(sys.argv[1]))
+assert d['files'] == ['src/pass.apx'] and d['app'] == {'appAlias': 'demo'}, d" "$WORK/out.json"
+then ok "--task writes .apex-evidence/T-1/ui-demo-static.json, paths repo-relative"
+else bad "--task: exit $rc, or the result is not where it belongs"; fi
+expect_rc "a file outside the repo is BLOCKED" 2 "$P/src/pass.apx"
 
 echo "ux-scan: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

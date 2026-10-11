@@ -196,6 +196,8 @@ def check_versions_and_lock():
     versions["CHANGELOG.md (latest entry)"] = m.group(1) if m else None
     fv = re.search(r'^FRAMEWORK_VERSION="([^"]+)"', read("skills/apex-sync-guard/scripts/apex-sync-check.sh"), re.M)
     versions["apex-sync-check.sh FRAMEWORK_VERSION"] = fv.group(1) if fv else None
+    uv = re.search(r'^FRAMEWORK_VERSION = "([^"]+)"', read("skills/apex-ux/scripts/ui_result.py"), re.M)
+    versions["ui_result.py FRAMEWORK_VERSION"] = uv.group(1) if uv else None
     if len(set(versions.values())) == 1:
         ok(f"one version everywhere: {plugin.get('version')} (manifests, CHANGELOG, the version results report)")
     else:
@@ -262,6 +264,13 @@ def check_duplicates():
     def body(rel, fn):
         m = re.search(rf"^{fn}\(\) \{{.*?^\}}$", read(rel), re.M | re.S)
         return m.group(0) if m else None
+    keys = {rel: shell_var(rel, "APP_KEYS") for rel in (lib, pw)}
+    if len(set(keys.values())) == 1 and None not in keys.values():
+        ok(f"the keys an app takes are the same in the guard's lib and in pw.sh: {keys[lib]}")
+    else:
+        bad("APP_KEYS differs between the guard's lib and pw.sh (an app key one accepts, the other rejects)",
+            [f"{k}: {v}" for k, v in keys.items()])
+
     a, b = body(lib, "json_flatten"), body(pw, "json_flatten")
     if a and a == b:
         ok("json_flatten is the same function in the guard's lib and in pw.sh")
@@ -389,6 +398,10 @@ def check_interface():
     pw = read("skills/apex-sentinel/scripts/pw.sh")
     if "pw.sh [--app <alias>] <subcommand>" not in pw:
         missing.append("pw.sh usage: [--app <alias>] <subcommand>")
+    for script, args in (("ux-scan.py", "[--app <alias>] [--task <id>]"),
+                         ("ux-check.py", "[--app <alias>] [--task <id>] [--dialog <selector>]...")):
+        if args not in read(f"skills/apex-ux/scripts/{script}"):
+            missing.append(f"{script} usage: {args}")
     hooks = json.loads(read("hooks/hooks.json"))
     cmds = [h.get("command", "") for e in hooks.get("hooks", {}).get("PreToolUse", []) for h in e.get("hooks", [])]
     matchers = [e.get("matcher") for e in hooks.get("hooks", {}).get("PreToolUse", [])]

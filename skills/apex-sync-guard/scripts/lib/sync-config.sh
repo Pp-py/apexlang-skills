@@ -21,7 +21,7 @@
 RE_APP_ID='^[1-9][0-9]{0,9}$'
 RE_APP_ALIAS='^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
 RE_CONNECTION='^[^/@[:space:]\"'"'"']{1,128}$'   # a saved-connection NAME: never user/password@host
-APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl'
+APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl|uiGate'
 
 CFG_FLAT=""
 CFG_P=(); CFG_T=(); CFG_V=()     # CFG_FLAT indexed: the path, type and value of each row
@@ -190,6 +190,9 @@ cfg_app() {  # $1 = JSON path of the app object; appends one app or records erro
   cfg_string "$at" runtimeUrl "$label"; url=$CS
   [[ "$url" != *session=* ]] || cfg_err "$label: runtimeUrl must not carry a session token (session=…): the file is committed"
   cfg_string "$at" testUser "$label"; user=$CS
+  # uiGate: read by the orchestrator, not by the guard (framework/GATES.md); only its type is checked
+  cfg_get "$at.uiGate"
+  [[ -z "$CT" || "$CT" == boolean ]] || cfg_err "$label: uiGate must be true or false (got a $CT)"
   APPS_ID+=("$id"); APPS_ALIAS+=("$alias"); APPS_DIR+=("$dir"); APPS_CONN+=("$conn"); APPS_IGNORE+=("$ign")
   APPS_USER+=("$user"); APPS_URL+=("$url")
 }
@@ -265,6 +268,10 @@ cfg_load() {
       done
       cfg_app "\$.apps.$i"
     done
+  fi
+  if [[ "$t" == array ]]; then          # the top-level default under apps[]; one app's own is checked above
+    cfg_get '$.uiGate'
+    [[ -z "$CT" || "$CT" == boolean ]] || cfg_err "apex-sync.json: uiGate must be true or false (got a $CT)"
   fi
   cfg_get '$.evidenceDir'
   if [[ -n "$CT" ]]; then

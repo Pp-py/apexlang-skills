@@ -20,9 +20,10 @@ Committed at the **project repo root**. Everything the guard needs to know about
 - `sqlclConnection` — SQLcl saved connection name (`sql -name <conn>`); the schema must be able to read `APEX_APPLICATION_PAGES` for the app.
 - `ignorePaths` (optional) — paths relative to the app dir that exist only on one side by design (repo-only artifacts living inside the app dir, e.g. an `apex-exports/` folder with legacy SQL exports). Excluded from all comparisons.
 - `testUser` / `runtimeUrl` (optional) — read by **apex-sentinel**, not by the guard: the runtime app's test user and its URL, so a verification run doesn't rediscover them. Both are ordinary config; the password is **not** and never belongs in this file, which is committed (see `skills/apex-sentinel/setup.md` §2).
+- `uiGate` (optional, `true`/`false`, default `false`) — read by the orchestrator, not by the guard: makes **apex-ux**'s UI gate required for the app (`framework/GATES.md`). Opt-in until 1.0.0. The guard checks only that it is a boolean.
 - `evidenceDir` (optional, default `.apex-evidence`) — where a gate run given `--task <id>` also writes its JSON result (`<evidenceDir>/<id>/sync-<appAlias>-<operation>.json`). Created with a `.gitignore` of `*`, so evidence is never committed by accident; every run also leaves `.git/apex-sync/<appAlias>/last-<operation>.json`.
 
-**Several apps in one repo.** A workspace often holds more than one live app, and one repo can carry all of them. List them in `apps[]`; the top-level `apexlangDir`, `sqlclConnection`, `ignorePaths`, `testUser` and `runtimeUrl` are then defaults that each app may override (`ignorePaths` is replaced, never merged), and `evidenceDir` stays repo-wide:
+**Several apps in one repo.** A workspace often holds more than one live app, and one repo can carry all of them. List them in `apps[]`; the top-level `apexlangDir`, `sqlclConnection`, `ignorePaths`, `testUser`, `runtimeUrl` and `uiGate` are then defaults that each app may override (`ignorePaths` is replaced, never merged), and `evidenceDir` stays repo-wide:
 
 ```json
 {

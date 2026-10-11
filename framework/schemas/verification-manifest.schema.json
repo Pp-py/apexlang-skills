@@ -27,7 +27,7 @@
       "additionalProperties": false,
       "required": ["gate", "required", "status"],
       "properties": {
-        "gate": { "description": "Phase 3 adds its gates here (security, ui-ux).", "enum": ["architecture", "validation", "sync", "runtime"] },
+        "gate": { "description": "Phase 3 adds its gates here (security next).", "enum": ["architecture", "validation", "sync", "runtime", "ui"] },
         "app": { "$ref": "common.schema.json#/$defs/appAlias" },
         "required": { "type": "boolean" },
         "status": { "$ref": "common.schema.json#/$defs/gateStatus" },
@@ -38,7 +38,7 @@
             "additionalProperties": false,
             "required": ["kind", "path", "sha256"],
             "properties": {
-              "kind": { "enum": ["architecture-result", "sync-result", "runtime-result"] },
+              "kind": { "enum": ["architecture-result", "sync-result", "runtime-result", "ui-result"] },
               "path": { "$ref": "common.schema.json#/$defs/relPath" },
               "sha256": { "$ref": "common.schema.json#/$defs/sha256" }
             }
@@ -60,7 +60,7 @@
         },
         {
           "description": "a gate with its own producer PASSes on that producer's result file",
-          "if": { "properties": { "gate": { "enum": ["architecture", "sync", "runtime"] }, "status": { "const": "PASS" } } },
+          "if": { "properties": { "gate": { "enum": ["architecture", "sync", "runtime", "ui"] }, "status": { "const": "PASS" } } },
           "then": { "required": ["results"], "properties": { "results": { "minItems": 1 } } }
         },
         {
@@ -74,6 +74,11 @@
               "properties": { "kind": { "const": "command" }, "exitCode": { "const": 0 }, "output": { "pattern": "Validation successful" } }
             } } }
           }
+        },
+        {
+          "description": "the UI gate PASSes on two scopes: the static scan and at least one page at runtime",
+          "if": { "properties": { "gate": { "const": "ui" }, "status": { "const": "PASS" } } },
+          "then": { "properties": { "results": { "minItems": 2, "items": { "properties": { "kind": { "const": "ui-result" } } } } } }
         }
       ]
     },

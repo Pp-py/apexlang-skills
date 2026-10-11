@@ -7,6 +7,7 @@
 | the APEXlang language, its grammar and component inventory (`apexlang-inventory`) | **where logic goes**: the single write path, package ownership, the data contracts behind cards, badges and links (`apexlang-architecture`) |
 | generation with policies and a local lint — 26.1 only (`apexlang-generation`) | **whether an import/export is safe now**: Builder↔git divergence against a syncpoint (`apex-sync-guard`) |
 | compilation: `apex validate` through SQLcl (`apexlang-compile`) | **whether the change works**: the running page in a real browser, with a verified test user (`apex-sentinel`) |
+| a UX pattern catalog (an example, never an authority) | **whether the UI holds**: criteria with IDs, a static scan and runtime checks (`apex-ux`) |
 | import / deploy (`apexlang-deploy`) and export (SQLcl) | the gates, their statuses and the evidence they leave (this directory) |
 
 Precedence where they overlap: [PRINCIPLES.md](PRINCIPLES.md) P6.
@@ -20,7 +21,7 @@ Precedence where they overlap: [PRINCIPLES.md](PRINCIPLES.md) P6.
 | `CONFLICT` | **Sync only**: the other replica holds work the operation would overwrite | 1 | apex-sync-guard |
 | `BLOCKED` | a precondition is missing; stopped **before** any effect (includes an unverified login) | 2 | a producer |
 | `UNKNOWN` | started, and the outcome cannot be determined — or an effect may have happened | 3 | a producer |
-| `NOT_RUN` | not invoked, not required (with a reason), or stale | — | **never a producer's verdict** — a consumer assigns it to a gate; inside a runtime-result, a criterion not exercised is NOT_RUN |
+| `NOT_RUN` | not invoked, not required (with a reason), or stale | — | **never a producer's verdict** — a consumer assigns it to a gate; inside a runtime-result or a ui-result, a criterion not exercised is NOT_RUN |
 
 The JSON result is the verdict; the exit code mirrors it. A run that stopped before it
 could write a result (no repo, no SQLcl, an invalid config, bad arguments) leaves none — and a
@@ -83,6 +84,8 @@ puts it back whenever it is missing.
 | sync-result (with `--task`) | `<evidenceDir>/<task>/sync-<alias>-<operation>.json` | `apex-sync-check.sh` |
 | runtime-result | `<evidenceDir>/<task>/runtime-<alias>.json` | the agent (apex-sentinel) |
 | architecture-result | `<evidenceDir>/<task>/architecture.json` | the agent (apexlang-architecture) |
+| ui-result, static (with `--task`) | `<evidenceDir>/<task>/ui-<alias>-static.json` | `ux-scan.py` (apex-ux) |
+| ui-result, runtime (with `--task`) | `<evidenceDir>/<task>/ui-<alias>-runtime-<page>.json`, axe's output in `raw/ui-<alias>/` | `ux-check.py` (apex-ux) |
 | raw evidence (snapshots, eval output, logs) | `<evidenceDir>/<task>/raw/<gate>-<alias>/` | whoever produced the result citing it |
 | verification-manifest | `<evidenceDir>/<task>/manifest.json` | the orchestrator (future `apexlang-delivery`) |
 
@@ -97,14 +100,17 @@ entry; removing any of it, a major one.
   `skills/apex-sync-guard/scripts/apex-sync-hook.sh` — Claude Code `PreToolUse`, matcher
   `Bash|PowerShell`, exit 0 allow · 2 block. `skills/apex-sentinel/scripts/pw.sh [--app <alias>]
   <subcommand>` (exit 0 · 2 refused or login unverified · 3 recovered on a logged-out page ·
-  otherwise the Playwright CLI's own).
+  otherwise the Playwright CLI's own). `skills/apex-ux/scripts/ux-scan.py [--app <alias>]
+  [--task <id>] <file-or-dir>…` and `skills/apex-ux/scripts/ux-check.py [--app <alias>]
+  [--task <id>] [--dialog <selector>]… [--raw <file>]` (python3; exit 0 PASS · 1 FAIL ·
+  2 BLOCKED · 3 UNKNOWN).
 - **State.** `refs/apex-sync/<alias>`; `.git/apex-sync/<alias>/` holding `state.json`,
   `check-ok.import`, `check-ok.export`, `last-<operation>.json`.
 - **Results.** The paths above; schema `$id`s
   `https://pp-py.github.io/apexlang-skills/schemas/1/<kind>.schema.json` (identifiers, not yet
   published URLs).
 - **Configuration.** `apex-sync.json` keys `appId`, `appAlias`, `apexlangDir`,
-  `sqlclConnection`, `ignorePaths`, `testUser`, `runtimeUrl`, `evidenceDir`, `apps` — the
+  `sqlclConnection`, `ignorePaths`, `testUser`, `runtimeUrl`, `uiGate`, `evidenceDir`, `apps` — the
   canonical specification is `skills/apex-sync-guard/setup.md` §1. Environment:
   `APEX_TEST_USER[_<ALIAS>]`, `APEX_TEST_PASSWORD[_<ALIAS>]`, `APEX_TEST_FILE`, `APEX_TEST_ENV`,
   `PW_WORKSPACE`, `PW_SESSION`, `PW_INSECURE_TLS`.

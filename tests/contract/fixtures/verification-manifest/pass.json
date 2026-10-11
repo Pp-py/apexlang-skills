@@ -12,6 +12,9 @@
     {"gate": "sync", "app": "hr", "required": true, "status": "PASS",
      "results": [{"kind": "sync-result", "path": ".apex-evidence/T-42/sync-hr-check-import.json", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]},
     {"gate": "runtime", "app": "hr", "required": true, "status": "PASS",
-     "results": [{"kind": "runtime-result", "path": ".apex-evidence/T-42/runtime-hr.json", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}]}
+     "results": [{"kind": "runtime-result", "path": ".apex-evidence/T-42/runtime-hr.json", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}]},
+    {"gate": "ui", "app": "hr", "required": true, "status": "PASS",
+     "results": [{"kind": "ui-result", "path": ".apex-evidence/T-42/ui-hr-static.json", "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
+                 {"kind": "ui-result", "path": ".apex-evidence/T-42/ui-hr-runtime-employees.json", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}]}
   ]
 }

@@ -30,7 +30,7 @@ Engineering guardrails    single write path · fail-closed gates · evidence, no
 |---|---|
 | [PRINCIPLES.md](PRINCIPLES.md) | the ten rules every skill and gate follows, each with where it is enforced |
 | [CONTRACTS.md](CONTRACTS.md) | who owns what (Oracle vs this repo), statuses and exit codes, each capability's input and output, where results land, the frozen interface |
-| [GATES.md](GATES.md) | the four gates — what each establishes and what it does not — their order, aggregation, freshness, and the orchestration contract |
+| [GATES.md](GATES.md) | the gates — what each establishes and what it does not — their order, aggregation, freshness, and the orchestration contract |
 | [EVIDENCE.md](EVIDENCE.md) | what counts as evidence, what a result records about its context, redaction, where evidence lives |
 | [CAPABILITIES.md](CAPABILITIES.md) | what is verified, on which Oracle version, with a link to the proof — plus known conflicts with Oracle and declared gaps |
 | `schemas/` | JSON Schema (Draft 2020-12) for every result: `sync-result` (stable), `runtime-result`, `architecture-result`, `verification-manifest` (experimental), `common` |
