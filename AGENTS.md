@@ -1,12 +1,12 @@
 # Agent instructions — apexlang-skills
 
 This repository is an engineering framework for Oracle APEX applications written as APEXlang
-declarative source (`.apx`): four skills on top of Oracle's official APEXlang skills, plus the
+declarative source (`.apx`): five skills on top of Oracle's official APEXlang skills, plus the
 contracts that make them one system (`framework/`). If you are a coding agent (Claude Code,
 Codex, opencode, Cursor, aider, …) working on an APEXlang app, load the relevant skill file below
 **before** designing, changing, or verifying anything.
 
-## The four skills
+## The five skills
 
 1. **`skills/apexlang-architecture/SKILL.md`** — read it when deciding WHERE business logic,
    validation, or DML belongs. Core rule: every write goes through a PL/SQL package (single
@@ -29,10 +29,13 @@ Codex, opencode, Cursor, aider, …) working on an APEXlang app, load the releva
    per-archetype checklists in `skills/apex-sentinel/checks/`.
 
 4. **`skills/apex-ux/SKILL.md`** — read it when designing, changing or reviewing a page's UI.
-   Criteria with IDs (`criteria/`), FAIL or ADVISE, from WCAG 2.2 AA and Oracle's policies; a
-   UX pattern catalog is an example only. Static scan: `skills/apex-ux/scripts/ux-scan.py`;
-   runtime checks: `ux-check.py` through sentinel's `pw.sh`. Both write a `ui-result`; the UI gate
-   runs after Runtime, required for an app with `"uiGate": true` in `apex-sync.json`.
+   Criteria with IDs (`criteria/`) from WCAG 2.2 AA and Oracle's policies; a pattern catalog is
+   an example only. `scripts/ux-scan.py` (static) and `ux-check.py` (runtime, through `pw.sh`)
+   write a `ui-result`; the UI gate runs after Runtime when the app sets `"uiGate": true`.
+
+5. **`skills/apex-security/SKILL.md`** — read it before calling a change safe to deploy.
+   Criteria with IDs (`criteria.md`): authorization, public pages, checksums, escaping, dynamic
+   SQL, secrets. Scans and the Security gate: Phase 3, not built yet.
 
 They form one loop: **architect → build (`.apx` + package) → validate → sync-check → import →
 record-sync → verify in the browser → UI checks** (plus sync-check before any export).

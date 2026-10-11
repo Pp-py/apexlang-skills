@@ -6,6 +6,10 @@ page 60 (
         pageTemplate: @/standard
         templateOptions: #DEFAULT#
     }
+    security {
+        authorizationScheme: mustNotBePublicUser
+        pageAccessProtection: argumentsMustHaveChecksum
+    }
 
     region breadcrumb (
         name: Breadcrumb

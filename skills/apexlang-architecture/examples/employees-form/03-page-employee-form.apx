@@ -7,6 +7,7 @@ page 41 (
         templateOptions: #DEFAULT#
     }
     security {
+        authorizationScheme: mustNotBePublicUser
         pageAccessProtection: argumentsMustHaveChecksum
     }
     help {
@@ -200,6 +201,9 @@ page 41 (
         }
         help {
             inlineHelpText: Only active sectors are listed.
+        }
+        security {
+            sessionStateProtection: checksumRequiredSessionLevel
         }
     )
 

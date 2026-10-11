@@ -7,6 +7,10 @@ page 62 (
         dialogTemplate: @/modal-dialog
         templateOptions: #DEFAULT#
     }
+    security {
+        authorizationScheme: mustNotBePublicUser
+        pageAccessProtection: argumentsMustHaveChecksum
+    }
 
     region form-resolve (
         name: Resolve request
@@ -27,6 +31,9 @@ page 62 (
             sequence: 10
             region: @form-resolve
             slot: regionBody
+        }
+        security {
+            sessionStateProtection: checksumRequiredSessionLevel
         }
     )
 
