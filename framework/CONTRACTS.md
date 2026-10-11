@@ -8,6 +8,7 @@
 | generation with policies and a local lint — 26.1 only (`apexlang-generation`) | **whether an import/export is safe now**: Builder↔git divergence against a syncpoint (`apex-sync-guard`) |
 | compilation: `apex validate` through SQLcl (`apexlang-compile`) | **whether the change works**: the running page in a real browser, with a verified test user (`apex-sentinel`) |
 | a UX pattern catalog (an example, never an authority) | **whether the UI holds**: criteria with IDs, a static scan and runtime checks (`apex-ux`) |
+| security policies and a lint — 26.1 only, advisory | **whether the app refuses what it must**: security criteria with IDs (`apex-security`; scans and gate in Phase 3) |
 | import / deploy (`apexlang-deploy`) and export (SQLcl) | the gates, their statuses and the evidence they leave (this directory) |
 
 Precedence where they overlap: [PRINCIPLES.md](PRINCIPLES.md) P6.
@@ -110,7 +111,7 @@ entry; removing any of it, a major one.
   `https://pp-py.github.io/apexlang-skills/schemas/1/<kind>.schema.json` (identifiers, not yet
   published URLs).
 - **Configuration.** `apex-sync.json` keys `appId`, `appAlias`, `apexlangDir`,
-  `sqlclConnection`, `ignorePaths`, `testUser`, `runtimeUrl`, `uiGate`, `evidenceDir`, `apps` — the
+  `sqlclConnection`, `ignorePaths`, `testUser`, `runtimeUrl`, `uiGate`, `publicPages`, `lowPrivUser`, `evidenceDir`, `apps` — the
   canonical specification is `skills/apex-sync-guard/setup.md` §1. Environment:
   `APEX_TEST_USER[_<ALIAS>]`, `APEX_TEST_PASSWORD[_<ALIAS>]`, `APEX_TEST_FILE`, `APEX_TEST_ENV`,
   `PW_WORKSPACE`, `PW_SESSION`, `PW_INSECURE_TLS`.

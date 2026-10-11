@@ -44,7 +44,8 @@ Engineering guardrails    single write path · fail-closed gates · evidence, no
 | compilation (`apex validate` through SQLcl) | **whether the change works** — [`apex-sentinel`](skills/apex-sentinel/SKILL.md): the running page in a real browser, as a verified test user, criterion by criterion, with the data read back through SQLcl |
 | import / deploy and export | **the gates, their statuses and their evidence** — [`framework/`](framework/README.md) |
 | Universal Theme, and a UX Pattern Catalog app as an example | **whether the UI is usable and accessible** — [`apex-ux`](skills/apex-ux/SKILL.md): criteria with IDs from WCAG 2.2 AA and Oracle's policies, per archetype; a static scan of the `.apx` and runtime checks in the browser (axe-core, dialog focus) for the FAIL criteria, as the UI gate (opt-in per app, `uiGate`) |
-| | *future capabilities:* the **Security** gate (Phase 3) |
+| security policies and a lint (26.1, advisory) | **whether the app refuses what it must** — [`apex-security`](skills/apex-security/SKILL.md): a threat model and security criteria with IDs from Oracle's policies and OWASP ASVS 5.0 |
+| | *future capabilities:* the Security gate's scans, probes and result (Phase 3) |
 
 This repo never duplicates what Oracle's skills do. Where its guidance and Oracle's meet, the
 precedence is explicit — SQLcl `apex validate` > Oracle's 26.1 lint > Oracle's inventory, policies

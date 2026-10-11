@@ -29,6 +29,8 @@ Verified against Oracle's skills at the revision in [`oracle-skills.lock.json`](
 | UI static scan (`ux-scan.py`): the five static FAIL criteria | yes (version-independent) | same | [ux-scan](../tests/integration/ux-scan.sh) in CI, over fixtures and the examples |
 | UI runtime checks (`ux-check.py`): axe-core 4.13.0 pinned, dialog focus | yes (version-independent) | same | [ux-check](../tests/integration/ux-check.sh) in CI, Playwright CLI stubbed; real browser: §Recorded runs |
 | UI gate (`ui-result`, `uiGate` opt-in) | yes (version-independent) | same | schema, fixtures and negatives in the [contract tier](../tests/contract/run.sh); every `ui-result` the ux suites emit validated there |
+| Security criteria (`apex-security/criteria.md`), threat model | yes (version-independent; Oracle's security lint is 26.1 only) | same | `surface.py` checks every criterion row; the examples pass Oracle's security lint (below) |
+| Security gate: scans, probes, `security-result` | not built (Phase 3, SEC-2 to SEC-6) | same | — |
 | Windows (Git Bash) | yes — integration on `windows-latest` in CI | same | [ci.yml](../.github/workflows/ci.yml); first green 0.6.0 run: [38059670802](https://github.com/Pp-py/apexlang-skills/actions/runs/38059670802) |
 
 ## Recorded runs
@@ -50,6 +52,8 @@ What CI does not run, recorded when it was run. Re-run after updating Oracle's s
 | 2026-10-11 | `ux-check.py --dialog '#open-good' --dialog '#open-bad'` on `tests/integration/fixtures/ux-check/page.html`, served on 127.0.0.1 | `@playwright/cli` 0.1.17, bundled Chromium (`PLAYWRIGHT_MCP_BROWSER=chromium`, WSL), axe-core 4.13.0 | FAIL as built — `label` and `button-name` (critical) on the page; the good dialog holds focus, the bad one fails all five steps |
 | 2026-10-11 | `ux-check.py` on Oracle's UX Pattern Catalog (an example app, public, read only): home, dashboards, browse-search, item-details, data-entry-simple-form; data-entry with `--dialog 'text=Data Entry - Drawer Form'` | same, the catalog 26.1.6 on the user's lab instance | PASS on every page and the drawer, three runs alike. A first version reported the drawer's focus as escaping: it compared against the last `role=dialog` node, which APEX adds more of while tabbing — fixed by marking the dialog that opened |
 | 2026-10-11 | `ux-check.py --task T-smoke` on the catalog's data-entry-simple-form, from a scratch repo with `apex-sync.json` (one app) | `@playwright/cli` 0.1.17, bundled Chromium (WSL), axe-core 4.13.0 | PASS — `ui-catalog-runtime-data-entry-simple-form.json` and the raw axe output (cited by sha256) in the task dir, `.gitignore` created; the URL without its session; the result validates against `ui-result` |
+| 2026-10-11 | `tests/upstream/validate-examples.sh --lint`, the app staged under `applications/` so Oracle's business-app rules run | `apexlang-generation` 26.1 at `014cdb2` | before the examples' fix: FAIL — 8 security diagnostics (`SECURITY_BASELINE_REQUIRED_001` ×5, `HIDDEN_ITEM_SSP_REQUIRED_001` ×3) the old staging path never let run; after it: PASS, only the five documented diagnostics |
+| 2026-10-11 | `SQLCL_BIN=… tests/upstream/validate-examples.sh --compiler`, the examples with their `security` blocks | SQLcl 26.2.0.181.2110 (Windows, from WSL) | FAIL as before — the same 7 errors (KC-7), none from the security properties |
 
 ## Known conflicts
 

@@ -328,13 +328,17 @@ UX_PREFIX = {"common": "UX", "dashboards": "UXDASH", "browse-search": "UXBRW", "
 
 
 def check_ux_criteria():
-    """The apex-ux catalog is what the UI scan and the ui-result will key on: one table
-    per file, every row ID | Criterion | Sev | By | Source, IDs unique and prefixed."""
+    """The apex-ux and apex-security catalogs are what their scans and results key on: one
+    table per file, every row ID | Criterion | Sev | By | Source, IDs unique and prefixed."""
+    check_criteria_tables("apex-ux", [f for f in tracked("skills/apex-ux/criteria/*.md") if not f.endswith("/README.md")],
+                          lambda rel: UX_PREFIX.get(os.path.basename(rel)[:-3]))
+    check_criteria_tables("apex-security", tracked("skills/apex-security/criteria.md"), lambda rel: "SEC")
+
+
+def check_criteria_tables(skill, files, prefix_of):
     defined, problems = {}, []
-    files = [f for f in tracked("skills/apex-ux/criteria/*.md") if not f.endswith("/README.md")]
     for rel in files:
-        name = os.path.basename(rel)[:-3]
-        prefix = UX_PREFIX.get(name)
+        prefix = prefix_of(rel)
         if not prefix:
             problems.append(f"{rel}: no criterion prefix registered for this file")
             continue
@@ -366,11 +370,11 @@ def check_ux_criteria():
         if not rows:
             problems.append(f"{rel}: no criterion rows — is its table gone?")
     if not files:
-        problems.append("no criteria files under skills/apex-ux/criteria/")
+        problems.append(f"no criteria files for {skill}")
     if problems:
-        bad("apex-ux criteria", problems)
+        bad(f"{skill} criteria", problems)
     else:
-        ok(f"{len(defined)} apex-ux criteria: unique, prefixed, with severity, method and source")
+        ok(f"{len(defined)} {skill} criteria: unique, prefixed, with severity, method and source")
 
 
 def check_capability_refs():

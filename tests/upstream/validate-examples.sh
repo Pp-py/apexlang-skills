@@ -47,7 +47,7 @@ cleanup() { if [[ -n "$STAGE" ]]; then rm -rf "$STAGE"; fi; }   # must return 0:
 trap cleanup EXIT
 
 stage_app() {  # $1 = parent dir to stage in; prints the app dir. Every copy is checked.
-  local app="$1/app" p
+  local app="$1/applications/app" p   # Oracle's lint applies its business-app rules (security included) only under an applications/ segment
   mkdir -p "$app"
   cp -r "$SCAFFOLD/." "$app/" || blocked "could not copy the scaffold"
   for p in "${PAGES[@]}"; do

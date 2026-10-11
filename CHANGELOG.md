@@ -29,7 +29,30 @@ place after Runtime, opt-in per app.
 - `apex-sync.json` takes `uiGate` (a boolean; anything else is BLOCKED). The guard and `pw.sh`
   accept it per app; neither acts on it.
 
+**apex-security (new skill) — Phase 3, SEC-1**
+- A fifth skill, `skills/apex-security/`: a threat model, what a Security PASS does not establish
+  (it is not a pentest), and 22 criteria with IDs in `criteria.md` — `FAIL` only for what a
+  machine can establish (authorization on every page and destructive action, public pages
+  declared, page and item checksums, escaping, safe URLs, bound SQL, no secrets; four runtime
+  probes), `ADVISE` for the rest. Sources: Oracle's 26.1 security policies (14 new anchors in
+  `citations.md`) and OWASP ASVS 5.0. Scans, probes and the `security-result` gate: SEC-2 to SEC-6.
+- `apex-sync.json` takes `publicPages` (an array of page numbers) and `lowPrivUser` (a string),
+  read by apex-security; the guard and `pw.sh` accept them per app and check their types.
+
+**apexlang-architecture**
+- **The examples now meet Oracle's security baseline.** Every example page declares
+  `security { authorizationScheme: mustNotBePublicUser, pageAccessProtection:
+  argumentsMustHaveChecksum }`. The hidden and key items (`P41_/P42_SECTOR_ID`,
+  `P62_ABSENCE_ID`) carry `sessionStateProtection: checksumRequiredSessionLevel`. Oracle's
+  security lint had never run on them: `validate-examples.sh` staged the app outside an
+  `applications/` directory, and Oracle's validator applies its business-app rules only under one.
+  It now does, and reported the 8 gaps this fixes. The compiler still reports the same 7 errors
+  (KC-7).
+
 ### Tests
+- `validate-examples.sh` stages under `applications/`, so Oracle's security rules run on the
+  examples. `surface.py` checks the apex-security criteria with the same rules as apex-ux's. The
+  e2e covers `publicPages` and `lowPrivUser` (+3).
 - Contract: the `ui-result` schema, two fixtures and twelve negatives. It also runs `ux-scan.sh` and
   `ux-check.sh` with `UX_RESULT_CAPTURE_DIR` and validates every `ui-result` they make the scripts
   emit; that check caught a home path in a BLOCKED message, now fixed.
