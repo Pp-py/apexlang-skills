@@ -13,7 +13,7 @@ description: Use when an APEXlang app or page is designed, changed or reviewed f
 - **Output:** a `security-result` (`framework/schemas/security-result.schema.json`, experimental) per run: per criterion `PASS` · `FAIL` · `NOT_RUN`, plus advisories that never change the verdict.
 - **Evidence:** per criterion, the file and line it rests on, or the saved browser output with its sha256 under the task's evidence dir (`framework/EVIDENCE.md`).
 - **Gate:** Security — not in `framework/GATES.md` yet (SEC-6).
-- **Interface:** the criteria in `criteria.md`; `python3 scripts/sec-scan.py [--app X] [--task <id>] <file-or-dir>…` for the static ones; the rest by hand until SEC-3 to SEC-5. Config: `publicPages` and `lowPrivUser` per app in `apex-sync.json` (`apex-sync-guard/setup.md` §1).
+- **Interface:** the criteria in `criteria.md`; `python3 scripts/sec-scan.py [--app X] [--task <id>] <file-or-dir>…` for the `.apx`, `scripts/plsql-scan.py` (same arguments) for the packages; the rest by hand until SEC-4 and SEC-5. Config: `publicPages` and `lowPrivUser` per app in `apex-sync.json` (`apex-sync-guard/setup.md` §1).
 
 ## Status — what exists
 
@@ -21,7 +21,7 @@ description: Use when an APEXlang app or page is designed, changed or reviewed f
 |---|---|
 | Threat model and criteria with IDs (`criteria.md`) | **built** (SEC-1) |
 | Static scan over `.apx`: authorization, public pages, page and item protection, escaping, URLs | **built** (SEC-2) — see §Static scan |
-| Scan of the write-path packages: dynamic SQL, `AUTHID` | not built (SEC-3) |
+| Scan of the write-path packages: dynamic SQL, `AUTHID` | **built** (SEC-3) — see §Package scan |
 | Runtime probes through `pw.sh`: anonymous access, checksum tampering, role refusal, escaped payload | not built (SEC-4) |
 | Secrets in the repo | not built (SEC-5) |
 | `security-result` schema | **built** (SEC-2, experimental) |
@@ -42,6 +42,18 @@ checks; never treat 3 as PASS. Its `.apx` reader is the one apex-ux's scan uses 
 What it does not establish: what an authorization scheme's PL/SQL decides, or that the scheme is
 the right one for the action; that a reviewed public page is safe to be public; anything in
 `.apx` it could not parse; dynamic SQL and secrets (SEC-3, SEC-5); anything at runtime (SEC-4).
+
+## Package scan
+
+`python3 scripts/plsql-scan.py [--app X] [--task <id>] <dir>…` over the packages (`.sql`, `.pks`,
+`.pkb`, `.pls`) and the `sql`/`plsql` blocks of the `.apx`, for `SEC-SQL-BIND`, with `SEC-AUTHID` as
+an advisory. Comments and literals are masked first; a variable is traced through its `:=`
+assignments in the same file. A `security-result` with `scope: plsql`
+(`security-<alias>-plsql.json` with `--task`); exit codes as above.
+
+What it does not establish: injection in views, triggers or code outside the scanned files;
+whether a reviewed statement is safe (the review comment is a person's claim); JavaScript
+injection; anything at runtime.
 
 ## Threat model
 

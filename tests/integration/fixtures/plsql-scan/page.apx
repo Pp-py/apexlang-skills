@@ -1,0 +1,15 @@
+page 50 (
+    name: Dynamic
+    process run-report (
+        name: Run report
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                begin
+                    execute immediate 'update t set x = 1 where id = ' || :P50_ID;
+                end;
+                ```
+        }
+    )
+)

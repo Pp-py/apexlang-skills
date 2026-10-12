@@ -3,7 +3,7 @@
 -- CONSTANT and a named EXCEPTION. See apexlang-architecture/back-end-conventions.md §3.
 -- A package of only constants/exceptions needs no body.
 
-CREATE OR REPLACE PACKAGE pkg_errors AS
+CREATE OR REPLACE PACKAGE pkg_errors AUTHID DEFINER AS
 
   -- Sectors band: -20800 .. -20809
   k_sector_code_duplicate CONSTANT NUMBER := -20800;
