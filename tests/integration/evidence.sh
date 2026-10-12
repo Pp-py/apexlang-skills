@@ -119,7 +119,9 @@ git checkout -q -- t.sql
 run "fresh: an untracked file counts too" 1 fresh --task T-1 "$A"
 rm -f untracked.txt
 run "fresh: the tree back as it was → fresh again" 0 fresh --task T-1 "$A"
-q "d['context']['repo'].pop('tree'); json.dump(d, open('$WORK/old.json', 'w'))" "$A"
+"$PY" -c "import json,sys
+d = json.load(open(sys.argv[1])); d['context']['repo'].pop('tree')
+json.dump(d, open(sys.argv[2], 'w'))" "$A" "$WORK/old.json"   # paths as arguments: Git Bash converts those, not literals
 run "fresh: a result without a tree is stale" 1 fresh --task T-1 "$WORK/old.json"
 run "fresh: a file that is not a result → 2" 2 fresh --task T-1 t.sql
 
