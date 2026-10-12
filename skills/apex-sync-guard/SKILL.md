@@ -9,7 +9,7 @@ description: Use when about to run `apex import` or `apex export` on an APEXlang
 
 - **Does:** gates every import and export of an APEXlang app behind a Builder↔git divergence check against a recorded syncpoint.
 - **Use when:** before any `apex import` / `apex export` — Oracle's `deploy-apex-app.sh` and `apexctl … roundtrip` included — and right after either (`record-sync`).
-- **Decides:** whether the operation destroys nothing *now*, for one app through one connection — never whether the change is right.
+- **Decides:** whether the operation destroys nothing *now*, for one app through one connection — one environment of it, named with `--env`, when it declares `environments` (`setup.md` §1) — never whether the change is right.
 - **Output:** a `sync-result` (`.git/apex-sync/<alias>/last-<op>.json`; with `--task`, in the evidence dir) and exit 0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN. A check PASS also writes the hook's 5-minute marker, bound to the source it compared.
 - **Evidence:** the Builder export, the comparison (`changes`, `payload`), the syncpoint commit — `references/sync-result.md`.
 - **Gate:** Sync (`framework/GATES.md`); enforced in Claude Code by the `PreToolUse` hook.

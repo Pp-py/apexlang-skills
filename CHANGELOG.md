@@ -9,7 +9,8 @@ runtime probes, each writing a `security-result`; and the Security gate between 
 R-2 closes the last three known conflicts (KC-4, KC-5, KC-7): the examples compile. R-3 turns
 four of Architecture's red flags into a script. R-4 writes the two results an agent judged by
 hand until now. R-7 closes GAP-7 (worktrees) and GAP-8 (stale results). R-6 binds
-the sync marker to the source it checked (GAP-9) and halves its TTL.
+the sync marker to the source it checked (GAP-9) and halves its TTL. R-1 models environments per
+app (GAP-6).
 
 ### Behavior changes — read before upgrading
 
@@ -27,6 +28,20 @@ the sync marker to the source it checked (GAP-9) and halves its TTL.
   A message passed on from `pw.sh` has the repo root shortened to `<repo>` and the home dir to `~`.
 
 **apex-sync-guard**
+- **Environments per app (GAP-6, R-1).** An app may declare `environments` — as many as the
+  project uses, each with its own `sqlclConnection` and optionally `appId`, `runtimeUrl`,
+  `testUser` and `protected`. Gates then need `--env` (BLOCKED without it); each environment has
+  its own syncpoint, markers and results, keyed `<alias>.<env>` (`refs/apex-sync/rrhh.dev`); the
+  hook reads the environment from the saved connection a command names and blocks one naming
+  none. `protected: true` blocks every agent import or export into that environment. An app
+  without `environments` works as before. `sync-result` carries `app.environment`, and its
+  `syncpoint.ref` pattern admits `<alias>.<env>`.
+- **Fixed: the tree hash (R-6, R-7) could name a file's old content.** It copied the index with a
+  fresh mtime, and git judges an entry "racily clean" by the index's mtime: a file rewritten, same
+  size, in the second the index was written was hashed from its stale stat data. Reproduced and
+  now a regression test; the copy keeps the index's mtime (`cp -p`, `shutil.copy2`). The likely
+  cause of an intermittent e2e failure (a check whose end hash differed from its start hash
+  withheld its marker), seen about once in six runs on `main` after R-6.
 - **The marker is bound to the LOCAL its check compared (GAP-9, R-6), and lapses in 5 minutes
   instead of 10.** A check hashes the app's source dir (tracked and untracked files, through a
   copy of the index) when it starts and again when it writes the marker — a LOCAL edited while
@@ -41,7 +56,14 @@ the sync marker to the source it checked (GAP-9) and halves its TTL.
   path is the same `.git/apex-sync/` as before: nothing to migrate.
 - `sync-result` records `context.repo.tree` (below); `marker.path` names the worktree's marker.
 
+**apex-sentinel**
+- `pw.sh --env <name>`: an environment's own runtime, test user, browser workspace and
+  `APEX_TEST_PASSWORD_<ALIAS>_<ENV>`.
+
 **framework**
+- `evidence.py --env <name>`: required for a runtime result on an app with environments; files
+  keyed `<alias>.<env>`, `app.environment` in the result. `result.target(..., env)` merges an
+  environment's settings.
 - **Every result records the working tree it judged (GAP-8, R-7):** `context.repo.tree`, a git
   tree hash of tracked and untracked files (ignored ones left out), hashed through a copy of the
   index. Optional in the schema, so older results still validate — and read as stale.
@@ -157,6 +179,8 @@ the sync marker to the source it checked (GAP-9) and halves its TTL.
   It now does, and reported the 8 gaps this fixes.
 
 ### Tests
+- R-1: e2e (+21), config-parity (+16: one valid fixture with environments, three both readers
+  refuse), the `pw.sh` smoke (+8), `evidence.sh` (+7).
 - e2e (+15): GAP-9 — edit after the PASS, undo, a new file, an edit outside the source, export,
   an older marker, an edit during the check, setup.md §4's five rows and its sandbox marker.
 - e2e (+11): a check and the hook in a real linked worktree; the guard's `tree` equals the one

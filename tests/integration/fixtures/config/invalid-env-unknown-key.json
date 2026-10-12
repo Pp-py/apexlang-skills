@@ -1,0 +1,2 @@
+{ "appId": 100, "appAlias": "rrhh", "apexlangDir": "apex",
+  "environments": { "dev": { "sqlclConnection": "dev_rrhh", "runtimeURL": "https://x.example/" } } }

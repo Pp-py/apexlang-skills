@@ -93,7 +93,7 @@ The **username and the runtime URL are ordinary config** — two optional fields
 
 The **password never goes there** — that file is committed. It is read from, in order:
 
-1. `$APEX_TEST_PASSWORD_<ALIAS>`, then `APEX_TEST_PASSWORD_<ALIAS>=…` in the repo root's `.env` — when the app has an alias (`<ALIAS>`: upper-cased, any other character as `_`)
+1. `$APEX_TEST_PASSWORD_<ALIAS>`, then `APEX_TEST_PASSWORD_<ALIAS>=…` in the repo root's `.env` — when the app has an alias (`<ALIAS>`: upper-cased, any other character as `_`). For an environment named with `--env`, `APEX_TEST_PASSWORD_<ALIAS>_<ENV>` is tried first, the same two ways
 2. `$APEX_TEST_PASSWORD`, then `APEX_TEST_PASSWORD=…` in that `.env` — **gitignore it first**
 3. `"password"` in `~/.apex-sentinel.json` (or `$APEX_TEST_FILE`)
 

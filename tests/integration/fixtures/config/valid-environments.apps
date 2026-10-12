@@ -1,0 +1,4 @@
+rrhh.dev	100	apex/rrhh	dev_rrhh	QA_ALL	https://dev.example/ords/r/ws/rrhh/
+rrhh.uat	1100	apex/rrhh	uat_rrhh	QA_UAT	https://uat.example/ords/r/ws/rrhh/
+rrhh.prod	100	apex/rrhh	prod_rrhh	QA_ALL	https://dev.example/ords/r/ws/rrhh/
+ventas	200	apex/ventas	dev_ws	QA_ALL	

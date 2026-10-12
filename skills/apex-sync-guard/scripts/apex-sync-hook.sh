@@ -589,12 +589,50 @@ if (( ! DEGRADED )); then
       _v="T_$d"
       for a in ${!_v}; do
         app_index "$a" || continue
+        app_envs "$a"; [[ -n "$ENVS" ]] && continue      # an app with environments: below
         [[ "${APPS_CONN[$APP_I]}" == "$_n" ]] && continue
         block "this $d connects through '$_n', but app '$a' is checked through '${APPS_CONN[$APP_I]}' (apex-sync.json): a check speaks only for the Builder it compared. Connect through '${APPS_CONN[$APP_I]}', or describe the other target as its own app in apex-sync.json."
       done
     done
   done
 fi
+
+# ---------------------------------------------------------------- environments
+# An app with environments (R-1) has a Builder per environment, and a check speaks for
+# one of them. Which one a command deploys to is read from the saved connection it
+# names (sql -name <conn>): one of the app's environments, or it blocks — so does a
+# command naming none (a connect string, as Oracle's deploy script takes, cannot be
+# compared), and so does any import or export into a protected environment, which is
+# the user's to run, never an agent's. K_<direction>: the state keys whose markers
+# are needed — the alias, or alias.env.
+# shellcheck disable=SC2034   # read and written by name: K_$direction
+K_import=" " K_export=" "
+if (( DEGRADED )) && grep -q '"environments"' "$ROOT/apex-sync.json" 2>/dev/null; then
+  block "apex-sync.json declares environments, and without jq or a python that runs the guard cannot tell which one this command reaches. Install one, then retry."
+fi
+(( DEGRADED )) || conn_names
+for d in "${needs[@]}"; do
+  _v="T_$d"; _k="K_$d"
+  for a in ${!_v}; do
+    ENVS=""; (( DEGRADED )) || app_envs "$a"
+    if [[ -z "$ENVS" ]]; then printf -v "$_k" '%s' "${!_k}$a "; continue; fi
+    _hit=""
+    for _n in ${CN[@]+"${CN[@]}"}; do
+      for (( i = 0; i < NAPPS; i++ )); do
+        [[ "${APPS_ALIAS[$i]}" == "$a" && "${APPS_CONN[$i]}" == "$_n" ]] && _hit=$i
+      done
+    done
+    if [[ -z "$_hit" ]]; then
+      _c=""; for (( i = 0; i < NAPPS; i++ )); do [[ "${APPS_ALIAS[$i]}" == "$a" ]] && _c+="${_c:+, }${APPS_ENV[$i]} → sql -name ${APPS_CONN[$i]}"; done
+      _named=""; (( ${#CN[@]} )) && _named=" (it names ${CN[*]})"
+      block "app '$a' declares environments, and this $d names none of their connections$_named: the guard cannot tell which Builder it reaches. Name the environment's saved connection: $_c."
+    fi
+    if [[ "${APPS_PROT[$_hit]}" == 1 ]]; then
+      block "environment '${APPS_ENV[$_hit]}' of app '$a' is protected (apex-sync.json): an $d there is the user's to run, outside the agent — whatever the checks say."
+    fi
+    printf -v "$_k" '%s' "${!_k}${APPS_KEY[$_hit]} "
+  done
+done
 
 # ---------------------------------------------------------------- freshness
 # Every app the operation acts on needs a fresh marker in the needed direction.
@@ -603,15 +641,16 @@ now=""; (( BASH_VERSINFO[0] >= 5 )) && now=${EPOCHSECONDS:-}
 [[ "$now" =~ ^[0-9]+$ ]] || now=$(date +%s)
 [[ "$now" =~ ^[0-9]+$ ]] || block "cannot read the clock, so the marker's age is unknown."
 for d in "${needs[@]}"; do
-  _v="T_$d"
-  for a in ${!_v}; do
+  _v="K_$d"
+  for a in ${!_v}; do                 # a state key: the alias, or alias.env
+    _env=""; [[ "$a" == *.* ]] && _env=" --env ${a#*.}"
     m="$GITDIR/apex-sync/$a/check-ok.$d"
     t=""   # its mtime: GNU stat, else BSD (macOS) stat
     if [[ -f "$m" ]]; then t=$(stat -c %Y "$m" 2>/dev/null) || t=$(stat -f %m "$m" 2>/dev/null) || t=""; fi
     # A missing, unreadable, expired — or future-dated (clock skew) — marker is no marker.
     if [[ ! -f "$m" || ! "$t" =~ ^[0-9]+$ ]] || (( now - t >= TTL || now - t < -60 )); then
-      _app=""; (( NAPPS > 1 )) && _app=" --app $a"
-      echo "apex-sync-guard: BLOCKED apex $d — no check-$d PASS in the last $((TTL/60)) min for app '$a'." >&2
+      _app=""; (( NAPPS > 1 )) && _app=" --app ${a%%.*}$_env"
+      echo "apex-sync-guard: BLOCKED apex $d — no check-$d PASS in the last $((TTL/60)) min for app '${a%%.*}'${_env:+ (environment ${a#*.})}." >&2
       echo "Run first (from the repo root): <apex-sync-guard skill dir>/scripts/apex-sync-check.sh check-$d$_app" >&2
       # Naming the path is not noise. This hook resolves the repo from the tool
       # payload's cwd, while the check resolves it from ITS OWN cwd — so running
@@ -629,11 +668,11 @@ for d in "${needs[@]}"; do
     # The source dir comes from apex-sync.json; read without a parser (degraded), from the
     # marker, which only the check writes.
     mt=$(sed -n 's/.*"tree":"\([0-9a-f]*\)".*/\1/p' "$m" 2>/dev/null) || mt=""
-    SR=""; if (( ! DEGRADED )) && app_index "$a"; then app_src "$APP_I"; else SR=$(sed -n 's/.*"src":"\([^"]*\)".*/\1/p' "$m" 2>/dev/null) || SR=""; fi
+    SR=""; if (( ! DEGRADED )) && key_index "$a"; then app_src "$APP_I"; else SR=$(sed -n 's/.*"src":"\([^"]*\)".*/\1/p' "$m" 2>/dev/null) || SR=""; fi
     ST=""; [[ -n "$SR" && "$SR" != *..* ]] && src_tree "$ROOT" "$GITDIR" "$SR"
     if [[ -z "$mt" || -z "$ST" || "$mt" != "$ST" ]]; then
-      _app=""; (( NAPPS > 1 )) && _app=" --app $a"
-      echo "apex-sync-guard: BLOCKED apex $d — the source of app '$a' changed since its check-$d PASS (or the marker predates this check, or git cannot hash it): that PASS does not speak for what is there now." >&2
+      _app=""; (( NAPPS > 1 )) && _app=" --app ${a%%.*}$_env"
+      echo "apex-sync-guard: BLOCKED apex $d — the source of app '${a%%.*}' changed since its check-$d PASS (or the marker predates this check, or git cannot hash it): that PASS does not speak for what is there now." >&2
       echo "Run again (from the repo root): <apex-sync-guard skill dir>/scripts/apex-sync-check.sh check-$d$_app" >&2
       exit 2
     fi

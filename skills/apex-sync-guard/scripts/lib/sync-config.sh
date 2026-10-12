@@ -5,9 +5,14 @@
 # makes the file invalid. bash 3.2-safe (macOS): no mapfile, no ${x,,}.
 #
 # The caller provides CFG (the apex-sync.json path) and JSON_TOOL (jq, or a python
-# that actually runs). cfg_load sets, one entry per app in file order:
+# that actually runs). cfg_load sets, one entry per app — or, for an app with
+# `environments`, one per environment — in file order:
 #   APPS_ID APPS_ALIAS APPS_DIR (canonical: no './', no trailing '/', '' = repo root)
 #   APPS_CONN APPS_IGNORE (newline-separated) APPS_USER APPS_URL
+#   APPS_ENV (the environment's name, '' for an app without environments)
+#   APPS_KEY (what state is keyed by: the alias, or <alias>.<env>)
+#   APPS_PROT (1: a protected environment — the hook never lets an agent import or export there)
+#   APPS_GROUP (which app object of the file the entry came from)
 # plus EVIDENCE_DIR, CFG_ERRORS (every problem, reported together) and CFG_NOTES.
 #
 # Two shapes, never mixed:
@@ -21,13 +26,17 @@
 RE_APP_ID='^[1-9][0-9]{0,9}$'
 RE_APP_ALIAS='^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
 RE_CONNECTION='^[^/@[:space:]\"'"'"']{1,128}$'   # a saved-connection NAME: never user/password@host
-APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl|uiGate|securityGate|publicPages|lowPrivUser'
+APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl|uiGate|securityGate|publicPages|lowPrivUser|environments'
+# An environment of an app (R-1): its own Builder, runtime and test user. How many and
+# what they are called is each project's choice; a name follows the alias pattern.
+ENV_KEYS='sqlclConnection|appId|runtimeUrl|testUser|protected'
 
 CFG_FLAT=""
 CFG_P=(); CFG_T=(); CFG_V=()     # CFG_FLAT indexed: the path, type and value of each row
 CFG_ERRORS=()
 CFG_NOTES=()
 APPS_ID=(); APPS_ALIAS=(); APPS_DIR=(); APPS_CONN=(); APPS_IGNORE=(); APPS_USER=(); APPS_URL=()
+APPS_ENV=(); APPS_KEY=(); APPS_PROT=(); APPS_GROUP=(); CFG_GROUP=0
 EVIDENCE_DIR=".apex-evidence"
 
 # One reading of apex-sync.json, identical under jq and python: every node becomes
@@ -175,9 +184,10 @@ cfg_app() {  # $1 = JSON path of the app object; appends one app or records erro
   elif [[ "$t" != string ]]; then :      # cfg_string recorded it
   elif ! rel_path_ok "$dir"; then cfg_err "$label: apexlangDir must be a relative path with forward slashes and no '..' (got '$dir')"
   else canon_rel "$dir"; dir=$CANON; fi
+  local envs=0; cfg_get "$at.environments"; [[ -n "$CT" ]] && envs=1
   cfg_string "$at" sqlclConnection "$label"; conn=$CS
   cfg_get "$at.sqlclConnection"; [[ -n "$CT" ]] || cfg_get '$.sqlclConnection'; t=$CT
-  if [[ -z "$t" ]]; then cfg_err "$label: sqlclConnection is missing"
+  if [[ -z "$t" ]]; then (( envs )) || cfg_err "$label: sqlclConnection is missing"
   elif [[ "$t" != string ]]; then :      # cfg_string recorded it
   elif [[ ! "$conn" =~ $RE_CONNECTION ]]; then
     cfg_err "$label: sqlclConnection must be a saved connection NAME (sql -name <name>), never a connect string — no '/', '@', quotes or spaces"
@@ -210,8 +220,49 @@ cfg_app() {  # $1 = JSON path of the app object; appends one app or records erro
   done
   cfg_page_list "$at.publicPages" "$label"
   cfg_string "$at" lowPrivUser "$label"
-  APPS_ID+=("$id"); APPS_ALIAS+=("$alias"); APPS_DIR+=("$dir"); APPS_CONN+=("$conn"); APPS_IGNORE+=("$ign")
-  APPS_USER+=("$user"); APPS_URL+=("$url")
+  CFG_GROUP=$((CFG_GROUP + 1))
+  if (( ! envs )); then
+    cfg_push "$id" "$alias" "$dir" "$conn" "$ign" "$user" "$url" "" 0
+    return 0
+  fi
+  # environments: one entry each, the same source dir, its own Builder and runtime.
+  local ep="$at.environments" e eid econn eurl euser prot
+  cfg_get "$ep"
+  if [[ "$CT" != object ]]; then cfg_err "$label: environments must be an object of named environments, e.g. {\"dev\": {\"sqlclConnection\": \"dev_conn\"}}"; return 0; fi
+  cfg_keys "$ep"
+  (( ${#CK[@]} )) || { cfg_err "$label: environments is empty — name at least one, or drop the key"; return 0; }
+  local names=("${CK[@]}")
+  for e in "${names[@]}"; do
+    [[ "$e" =~ $RE_APP_ALIAS ]] || { cfg_err "$label: environment name '$e' must match $RE_APP_ALIAS"; continue; }
+    cfg_get "$ep.$e"; [[ "$CT" == object ]] || { cfg_err "$label: environments.$e must be an object"; continue; }
+    cfg_keys "$ep.$e"
+    for k in ${CK[@]+"${CK[@]}"}; do
+      [[ "$k" =~ ^($ENV_KEYS)$ ]] || cfg_err "$label: environments.$e: unknown key '$k' (an environment takes: ${ENV_KEYS//|/, })"
+    done
+    cfg_get "$ep.$e.sqlclConnection"; econn=$CV
+    if [[ "$CT" != string ]]; then cfg_err "$label: environments.$e: sqlclConnection is missing (each environment names its own Builder)"
+    elif [[ ! "$econn" =~ $RE_CONNECTION ]]; then cfg_err "$label: environments.$e: sqlclConnection must be a saved connection NAME, never a connect string"; fi
+    eid=$id; cfg_get "$ep.$e.appId"
+    if [[ -n "$CT" ]]; then
+      if [[ ( "$CT" == number || "$CT" == string ) && "$CV" =~ $RE_APP_ID ]]; then eid=$CV
+      else cfg_err "$label: environments.$e: appId must be a positive integer"; fi
+    fi
+    eurl=$url; cfg_get "$ep.$e.runtimeUrl"
+    if [[ -n "$CT" ]]; then
+      if [[ "$CT" == string ]]; then eurl=$CV; else cfg_err "$label: environments.$e: runtimeUrl must be a string"; fi
+      [[ "$eurl" != *session=* ]] || cfg_err "$label: environments.$e: runtimeUrl must not carry a session token (session=…): the file is committed"
+    fi
+    euser=$user; cfg_get "$ep.$e.testUser"
+    if [[ -n "$CT" ]]; then if [[ "$CT" == string ]]; then euser=$CV; else cfg_err "$label: environments.$e: testUser must be a string"; fi; fi
+    prot=0; cfg_get "$ep.$e.protected"
+    case "$CT" in "") ;; boolean) [[ "$CV" == true ]] && prot=1 ;; *) cfg_err "$label: environments.$e: protected must be true or false" ;; esac
+    cfg_push "$eid" "$alias" "$dir" "$econn" "$ign" "$euser" "$eurl" "$e" "$prot"
+  done
+}
+cfg_push() {  # id alias dir conn ignore user url env protected — one entry
+  APPS_ID+=("$1"); APPS_ALIAS+=("$2"); APPS_DIR+=("$3"); APPS_CONN+=("$4"); APPS_IGNORE+=("$5")
+  APPS_USER+=("$6"); APPS_URL+=("$7"); APPS_ENV+=("$8"); APPS_PROT+=("$9"); APPS_GROUP+=("$CFG_GROUP")
+  APPS_KEY+=("$2${8:+.$8}")
 }
 
 # What a check's marker is bound to (GAP-9): the app's source dir as the working tree holds
@@ -226,7 +277,7 @@ src_tree() {  # $1 = repo root, $2 = its git dir, $3 = the source dir (repo-rela
   local idx="$2/apex-sync-src.$$.idx" t=""
   ST=""
   rm -f "$idx"
-  if [[ -f "$2/index" ]]; then cp "$2/index" "$idx" 2>/dev/null || true; fi
+  if [[ -f "$2/index" ]]; then cp -p "$2/index" "$idx" 2>/dev/null || true; fi
   if GIT_INDEX_FILE=$idx env -u GIT_ATTR_NOSYSTEM git -C "$1" add -A -- "$3" >/dev/null 2>&1 || [[ ! -e "$1/$3" ]]; then
     t=$(GIT_INDEX_FILE=$idx env -u GIT_ATTR_NOSYSTEM git -C "$1" write-tree 2>/dev/null) || t=""
   fi
@@ -240,12 +291,38 @@ SR=""
 app_src() { SR=${APPS_DIR[$1]:+${APPS_DIR[$1]}/}${APPS_ALIAS[$1]}; }   # $1 = app index → SR, its source dir (repo-relative)
 
 # shellcheck disable=SC2034   # APP_I is read by the scripts that source this file
-app_index() {  # $1 = alias → APP_I (exact match); 1 if there is no such app
+app_index() {  # $1 = alias → APP_I (its first entry, exact match); 1 if there is no such app
   local i
   for (( i = 0; i < ${#APPS_ALIAS[@]}; i++ )); do
     [[ "${APPS_ALIAS[$i]}" == "$1" ]] && { APP_I=$i; return 0; }
   done
   return 1
+}
+# shellcheck disable=SC2034   # APP_I is read by the scripts that source this file
+key_index() {  # $1 = a state key (alias, or alias.env) → APP_I; 1 if there is no such entry
+  local i
+  for (( i = 0; i < ${#APPS_KEY[@]}; i++ )); do
+    [[ "${APPS_KEY[$i]}" == "$1" ]] && { APP_I=$i; return 0; }
+  done
+  return 1
+}
+ENVS=""
+app_envs() {  # $1 = alias → ENVS: its environments' names, space-separated ('' = it has none)
+  local i
+  ENVS=""
+  for (( i = 0; i < ${#APPS_ALIAS[@]}; i++ )); do
+    [[ "${APPS_ALIAS[$i]}" == "$1" && -n "${APPS_ENV[$i]}" ]] && ENVS+="${ENVS:+ }${APPS_ENV[$i]}"
+  done
+  return 0
+}
+ALIASES=()
+app_aliases() {  # → ALIASES: each app once, in file order
+  local i a seen=" "
+  ALIASES=()
+  for (( i = 0; i < ${#APPS_ALIAS[@]}; i++ )); do
+    a=${APPS_ALIAS[$i]}; [[ "$seen" == *" $a "* ]] && continue
+    seen+="$a "; ALIASES+=("$a")
+  done
 }
 
 # What no single entry shows: apps that would share a ref, a Builder app or files.
@@ -264,6 +341,11 @@ cfg_cross_check() {
     app_src "$i"; a=$SR
     for (( j = i + 1; j < ${#APPS_ALIAS[@]}; j++ )); do
       app_src "$j"; b=$SR
+      if [[ "${APPS_GROUP[$i]}" == "${APPS_GROUP[$j]}" ]]; then   # two environments of one app: one source
+        [[ "${APPS_ID[$i]}|${APPS_CONN[$i]}" != "${APPS_ID[$j]}|${APPS_CONN[$j]}" ]] \
+          || cfg_err "apex-sync.json: environments '${APPS_ENV[$i]}' and '${APPS_ENV[$j]}' of '${APPS_ALIAS[$i]}' are the same Builder app (id ${APPS_ID[$i]} through '${APPS_CONN[$i]}')"
+        continue
+      fi
       if same_alias "${APPS_ALIAS[$i]}" "${APPS_ALIAS[$j]}"; then
         cfg_err "apex-sync.json: appAlias '${APPS_ALIAS[$i]}' and '${APPS_ALIAS[$j]}' collide — an alias names a git ref and a directory, which compare without case on Windows and macOS"
       fi
@@ -293,6 +375,8 @@ cfg_load() {
     cfg_get '$.appId'; k=$CT; cfg_get '$.appAlias'
     [[ -z "$k$CT" ]] \
       || cfg_err "apex-sync.json: a top-level appId/appAlias cannot be combined with apps[] — move that app into apps[]"
+    cfg_get '$.environments'
+    [[ -z "$CT" ]] || cfg_err "apex-sync.json: environments belongs inside each app of apps[], not at the top level"
     cfg_get '$.apps'; n=$CV
     (( n > 0 )) || cfg_err "apex-sync.json: apps is empty"
     for (( i = 0; i < n; i++ )); do

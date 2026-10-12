@@ -11,8 +11,10 @@
 # Options (before or after the subcommand):
 #   --app <alias>  which app; required for check-*/record-sync when apex-sync.json
 #                  declares several (status/doctor/apps then cover all of them)
+#   --env <name>   which environment, for an app that declares `environments`: required
+#                  for check-*/record-sync (nothing is checked against an unnamed Builder)
 #   --task <id>  check-*/record-sync: also write the result to
-#                <evidenceDir>/<id>/sync-<appAlias>-<subcommand>.json
+#                <evidenceDir>/<id>/sync-<appAlias>[.<env>]-<subcommand>.json
 #   --force      record-sync only: record the syncpoint although nothing proves the
 #                Builder holds no unsynchronized work. The user's call, never an agent's.
 #
@@ -123,7 +125,7 @@ withdraw_markers() {  # $1 = import|export
   gd=${GIT_DIR_ABS:-$(git rev-parse --absolute-git-dir 2>/dev/null)}
   [[ -n "$root" && -n "$gd" && -f "$root/apex-sync.json" ]] || return 0
   while IFS= read -r a; do
-    [[ "$a" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ ]] && rm -f "$gd/apex-sync/$a/check-ok.$1"
+    [[ "$a" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ ]] && rm -f "$gd/apex-sync/$a/check-ok.$1" "$gd/apex-sync/$a".*/"check-ok.$1"   # and each environment's
   done < <(grep -o '"appAlias"[[:space:]]*:[[:space:]]*"[^"]*"' "$root/apex-sync.json" 2>/dev/null \
            | sed 's/.*"\([^"]*\)"$/\1/' | tr -d '\r')
   return 0
@@ -181,13 +183,15 @@ trap 'exit 129' HUP
 # ------------------------------------------------------------ arguments
 # Parsed before any setup, so a usage error never depends on SQLcl or a parser.
 SELF=${0##*/}
-USAGE="usage: $SELF check-import|check-export|record-sync|status|doctor|apps [--app <alias>] [--task <id>] [--force]"
-SUB=""; OPT_FORCE=0; OPT_TASK=""; OPT_APP=""
+USAGE="usage: $SELF check-import|check-export|record-sync|status|doctor|apps [--app <alias>] [--env <name>] [--task <id>] [--force]"
+SUB=""; OPT_FORCE=0; OPT_TASK=""; OPT_APP=""; OPT_ENV=""
 while (( $# )); do
   case "$1" in
     --force)   OPT_FORCE=1 ;;
     --app)     [[ -n "${2:-}" ]] || die "--app needs a value — $USAGE"; OPT_APP=$2; shift ;;
     --app=*)   OPT_APP=${1#--app=}; [[ -n "$OPT_APP" ]] || die "--app needs a value — $USAGE" ;;
+    --env)     [[ -n "${2:-}" ]] || die "--env needs a value — $USAGE"; OPT_ENV=$2; shift ;;
+    --env=*)   OPT_ENV=${1#--env=}; [[ -n "$OPT_ENV" ]] || die "--env needs a value — $USAGE" ;;
     --task)    [[ -n "${2:-}" ]] || die "--task needs a value — $USAGE"; OPT_TASK=$2; shift ;;
     --task=*)  OPT_TASK=${1#--task=}; [[ -n "$OPT_TASK" ]] || die "--task needs a value — $USAGE" ;;
     -h|--help) echo "$USAGE"; exit 0 ;;
@@ -226,6 +230,7 @@ _here=$PWD; CDPATH='' cd -P -- "$_d"; SCRIPT_DIR=$PWD; cd -- "$_here"
 # shellcheck source=skills/apex-sync-guard/scripts/lib/sync-config.sh
 . "$SCRIPT_DIR/lib/sync-config.sh" || die "incomplete installation: $SCRIPT_DIR/lib/sync-config.sh is missing"
 [[ -z "$OPT_APP" || "$OPT_APP" =~ $RE_APP_ALIAS ]] || die "--app must be an app alias ($RE_APP_ALIAS) — got '$OPT_APP'"
+[[ -z "$OPT_ENV" || "$OPT_ENV" =~ $RE_APP_ALIAS ]] || die "--env must be an environment name ($RE_APP_ALIAS) — got '$OPT_ENV'"
 case "$SUB" in   # doctor reports a missing SQLcl instead of dying on it; apps never needs it
   check-import|check-export|record-sync|status) command -v sql >/dev/null || blocked NO_SQLCL "SQLcl (sql) is required on PATH" ;;
 esac
@@ -288,24 +293,42 @@ fi
 
 # Which apps this run acts on. A gate acts on exactly one: with several declared,
 # guessing would check one app and authorize an operation on another.
+# An app with environments has one entry per environment, and a gate acts on exactly
+# one of them: with no --env it is BLOCKED — nothing is checked against, nor deploys to,
+# an environment nobody named (R-1).
 SEL=()
 if (( ! ${#CFG_ERRORS[@]} )); then
-  if [[ -n "$OPT_APP" ]]; then
-    app_index "$OPT_APP" || blocked APP_UNKNOWN "apex-sync.json declares no app '$OPT_APP' — it declares: ${APPS_ALIAS[*]}"
-    SEL=("$APP_I")
-  elif (( ${#APPS_ALIAS[@]} == 1 )); then
-    SEL=(0)
+  app_aliases
+  _app=$OPT_APP
+  if [[ -n "$_app" ]]; then
+    app_index "$_app" || blocked APP_UNKNOWN "apex-sync.json declares no app '$_app' — it declares: ${ALIASES[*]}"
+  elif (( ${#ALIASES[@]} == 1 )); then
+    _app=${ALIASES[0]}
   elif [[ -n "$R_OP" ]]; then
-    blocked APP_REQUIRED "apex-sync.json declares ${#APPS_ALIAS[@]} apps — name the one to $R_OP: --app <$(IFS='|'; echo "${APPS_ALIAS[*]}")>"
+    blocked APP_REQUIRED "apex-sync.json declares ${#ALIASES[@]} apps — name the one to $R_OP: --app <$(IFS='|'; echo "${ALIASES[*]}")>"
+  fi
+  if [[ -n "$_app" ]]; then
+    app_envs "$_app"
+    if [[ -n "$OPT_ENV" ]]; then
+      [[ -n "$ENVS" ]] || blocked ENV_UNKNOWN "app '$_app' declares no environments — drop --env, or add an environments block to apex-sync.json"
+      key_index "$_app.$OPT_ENV" || blocked ENV_UNKNOWN "app '$_app' declares no environment '$OPT_ENV' — it declares: $ENVS"
+      SEL=("$APP_I")
+    elif [[ -n "$ENVS" && -n "$R_OP" ]]; then
+      blocked ENV_REQUIRED "app '$_app' declares environments ($ENVS) — name the one to $R_OP: --env <${ENVS// /|}>"
+    else
+      for (( _i = 0; _i < ${#APPS_ALIAS[@]}; _i++ )); do [[ "${APPS_ALIAS[$_i]}" == "$_app" ]] && SEL+=("$_i"); done
+    fi
   else
+    [[ -z "$OPT_ENV" ]] || blocked APP_REQUIRED "--env names an environment of one app: add --app <$(IFS='|'; echo "${ALIASES[*]}")>"
     for (( _i = 0; _i < ${#APPS_ALIAS[@]}; _i++ )); do SEL+=("$_i"); done
   fi
 fi
 
-APP_ID=""; ALIAS=""; SRCDIR=""; SRC_REL=""; CONN=""; IGNORE_PATHS=(); EXPORT_SCOPE=()
+APP_ID=""; ALIAS=""; KEY=""; ENV=""; LABEL=""; SRCDIR=""; SRC_REL=""; CONN=""; IGNORE_PATHS=(); EXPORT_SCOPE=()
 select_app() {  # $1 = index into the APPS_* arrays; sets the per-app globals
   local i o
   APP_ID=${APPS_ID[$1]}; ALIAS=${APPS_ALIAS[$1]}; SRCDIR=${APPS_DIR[$1]}; CONN=${APPS_CONN[$1]}
+  KEY=${APPS_KEY[$1]}; ENV=${APPS_ENV[$1]}; LABEL="'$ALIAS'${ENV:+ (environment $ENV)}"
   app_src "$1"; SRC_REL=$SR             # the app's source dir, repo-relative
   # Paths (relative to the app dir) that exist only on one side by design,
   # e.g. repo-only artifacts like "apex-exports/". Excluded from comparisons.
@@ -315,14 +338,15 @@ select_app() {  # $1 = index into the APPS_* arrays; sets the per-app globals
   # the other apps that share it, which an export of this app does not touch.
   EXPORT_SCOPE=("${SRCDIR:-.}")
   for (( i = 0; i < ${#APPS_ALIAS[@]}; i++ )); do
-    (( i == $1 )) && continue
+    [[ "${APPS_GROUP[$i]}" == "${APPS_GROUP[$1]}" ]] && continue   # itself, or another environment of it
     app_src "$i"; o=$SR
     [[ -z "$SRCDIR" || "$o/" == "$SRCDIR/"* ]] && EXPORT_SCOPE+=(":(exclude)$o")
   done
   APP_SRC="$ROOT/$SRC_REL"
-  STATE_DIR="$GIT_DIR_ABS/apex-sync/$ALIAS"       # this worktree: markers, last results
-  STATE="$GIT_COMMON/apex-sync/$ALIAS/state.json"  # every worktree: the syncpoint
-  REF="refs/apex-sync/$ALIAS"
+  # Keyed by alias — or alias.env: each environment is its own Builder, with its own BASE.
+  STATE_DIR="$GIT_DIR_ABS/apex-sync/$KEY"       # this worktree: markers, last results
+  STATE="$GIT_COMMON/apex-sync/$KEY/state.json"  # every worktree: the syncpoint
+  REF="refs/apex-sync/$KEY"
   [[ -d "$STATE_DIR" ]] || mkdir -p "$STATE_DIR"
   [[ -d "${STATE%/*}" ]] || mkdir -p "${STATE%/*}"
   # BASE round-trips through git objects (add → write-tree → archive). Content
@@ -789,7 +813,7 @@ worktree_tree() {  # → WT
   local idx="$GIT_DIR_ABS/apex-sync-tree.$$.idx"
   WT=""
   rm -f "$idx"
-  if [[ -f "$GIT_DIR_ABS/index" ]]; then cp "$GIT_DIR_ABS/index" "$idx" 2>/dev/null || true; fi
+  if [[ -f "$GIT_DIR_ABS/index" ]]; then cp -p "$GIT_DIR_ABS/index" "$idx" 2>/dev/null || true; fi
   if GIT_INDEX_FILE=$idx env -u GIT_ATTR_NOSYSTEM git -C "$ROOT" add -A >/dev/null 2>&1; then
     WT=$(GIT_INDEX_FILE=$idx env -u GIT_ATTR_NOSYSTEM git -C "$ROOT" write-tree 2>/dev/null) || WT=""
   fi
@@ -821,6 +845,7 @@ result_json() {  # → RJ: the sync-result for the current R_* state; never fail
   jtext "$R_MESSAGE"; d+="  \"reasons\": [{\"code\": \"$R_REASON\", \"message\": $J}],"$'\n'
   jstr "$ALIAS"; d+="  \"app\": {\"appId\": $APP_ID, \"appAlias\": $J"
   [[ -n "$mmd" ]] && { jstr "$mmd"; d+=", \"mmdVersion\": $J"; }
+  [[ -n "$ENV" ]] && d+=", \"environment\": \"$ENV\""
   d+=$'},\n  "context": {\n'
   jstr_or_null "$OPT_TASK"; d+="    \"task\": $J,"$'\n'
   jstr_or_null "$head"; d+="    \"repo\": {\"commit\": $J, \"dirty\": $dirty"
@@ -836,7 +861,7 @@ result_json() {  # → RJ: the sync-result for the current R_* state; never fail
   if [[ "$R_OP" == check-* ]]; then
     dir=${R_OP#check-}
     [[ "$R_STATUS" == PASS ]] && { written=true; iso_in "$TTL_SECONDS"; exp="\"$ISO\""; }
-    d+="  \"marker\": {\"written\": $written, \"path\": \"$STATE_REL/apex-sync/$ALIAS/check-ok.$dir\", \"ttlSeconds\": $TTL_SECONDS, \"expiresAt\": $exp},"$'\n'
+    d+="  \"marker\": {\"written\": $written, \"path\": \"$STATE_REL/apex-sync/$KEY/check-ok.$dir\", \"ttlSeconds\": $TTL_SECONDS, \"expiresAt\": $exp},"$'\n'
   fi
   (( R_RECORDED )) && rec=true
   jstr_or_null "$spc"; d+="  \"syncpoint\": {\"ref\": \"$REF\", \"commit\": $J, \"recorded\": $rec},"$'\n'
@@ -877,7 +902,7 @@ results_init() {
       blocked STATE_UNWRITABLE "cannot create the evidence dir $EVIDENCE_DIR"
     fi
     mkdir -p "$ev/$OPT_TASK" || blocked STATE_UNWRITABLE "cannot create $EVIDENCE_DIR/$OPT_TASK"
-    RESULT_FILES+=("$ev/$OPT_TASK/sync-$ALIAS-$R_OP.json")
+    RESULT_FILES+=("$ev/$OPT_TASK/sync-$KEY-$R_OP.json")
   fi
   classify UNKNOWN INTERRUPTED "the run did not finish: this is the placeholder written when it started."
   write_results || blocked STATE_UNWRITABLE "cannot write the result file(s): ${RESULT_FILES[*]}"
@@ -902,7 +927,7 @@ require_source_dir() {
 
 cmd_check_import() {
   revoke_marker import
-  echo "apex-sync-guard: check-import (app $APP_ID '$ALIAS' via $CONN)"
+  echo "apex-sync-guard: check-import (app $APP_ID $LABEL via $CONN)"
   require_source_dir
   source_app_id; local sid=$SID
   if [[ -n "$sid" && "$sid" != "$APP_ID" ]]; then
@@ -921,7 +946,7 @@ cmd_check_import() {
       blocked SYNCPOINT_WITHOUT_APP "app $APP_ID is not visible through '$CONN', but '$ALIAS' has a syncpoint ($(git -C "$ROOT" rev-parse --short "$REF")$via).
       Wrong saved connection, wrong workspace or wrong appId — or the app was deleted. Check with: $SELF doctor
       If this really is a first publication into a NEW workspace, the user (not an agent) sets the old syncpoint aside:
-        git update-ref refs/apex-sync-saved/$ALIAS $REF && git update-ref -d $REF"
+        git update-ref refs/apex-sync-saved/$KEY $REF && git update-ref -d $REF"
     fi
     pass FIRST_PUBLICATION "app $APP_ID does not exist in the target workspace — first publication."
     echo "  Nothing to overwrite: there is no second replica that could hold unexported"
@@ -1008,7 +1033,7 @@ cmd_check_import() {
 
 cmd_check_export() {
   revoke_marker export
-  echo "apex-sync-guard: check-export (app $APP_ID '$ALIAS')"
+  echo "apex-sync-guard: check-export (app $APP_ID $LABEL)"
   # A missing dir has no "uncommitted changes", so git status found nothing and the
   # check PASSed, whatever directory the export was really about to write.
   require_source_dir
@@ -1077,7 +1102,7 @@ cmd_record_sync() {
   fi
   R_BASIS=$basis
   builder_stamp; s=$BS; snapshot_export "$scratch"; c=$SNAP_COMMIT; write_state "$c" "$s" "$basis"
-  pass SYNCPOINT_RECORDED "syncpoint recorded for '$ALIAS'"
+  pass SYNCPOINT_RECORDED "syncpoint recorded for $LABEL"
   note "commit:       $c"
   note "builderStamp: $s"
   note "basis:        $basis"
@@ -1115,7 +1140,7 @@ cmd_doctor() {
   for i in "${SEL[@]}"; do
     select_app "$i"
     echo ""
-    echo "  app $APP_ID '$ALIAS' — source $SRC_REL, connection $CONN"
+    echo "  app $APP_ID $LABEL — source $SRC_REL, connection $CONN"
     source_app_id; sid=$SID
     if [[ -n "$sid" && "$sid" != "$APP_ID" ]]; then
       doc_fail "deployments/default.json says app $sid, apex-sync.json says $APP_ID"
@@ -1125,7 +1150,7 @@ cmd_doctor() {
     else
       doc_fail "source dir missing: $SRC_REL"
     fi
-    if [[ -w "$STATE_DIR" ]]; then doc_ok "state dir writable: $STATE_REL/apex-sync/$ALIAS"
+    if [[ -w "$STATE_DIR" ]]; then doc_ok "state dir writable: $STATE_REL/apex-sync/$KEY"
     else doc_fail "state dir not writable: $STATE_DIR"; fi
     if (( ! have_sql )); then
       doc_note "connection '$CONN' not probed — no SQLcl"
@@ -1150,17 +1175,17 @@ cmd_doctor() {
   echo "All checks passed."
 }
 
-cmd_apps() {  # per app, tab-separated: alias, appId, source dir, connection, testUser, runtimeUrl
+cmd_apps() {  # per app (per environment: alias.env), tab-separated: alias, appId, source dir, connection, testUser, runtimeUrl
   local i
   for i in "${SEL[@]}"; do
     app_src "$i"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${APPS_ALIAS[$i]}" "${APPS_ID[$i]}" "$SR" \
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${APPS_KEY[$i]}" "${APPS_ID[$i]}" "$SR" \
       "${APPS_CONN[$i]}" "${APPS_USER[$i]}" "${APPS_URL[$i]}"
   done
 }
 
 cmd_status() {
-  echo "apex-sync-guard: status (app $APP_ID '$ALIAS' via $CONN)"
+  echo "apex-sync-guard: status (app $APP_ID $LABEL via $CONN)"
   note "repo root:  $ROOT"
   note "source dir: $SRC_REL"
   if have_base; then

@@ -1,0 +1,14 @@
+{
+  "apexlangDir": "apex",
+  "sqlclConnection": "dev_ws",
+  "testUser": "QA_ALL",
+  "apps": [
+    { "appId": 100, "appAlias": "rrhh", "runtimeUrl": "https://dev.example/ords/r/ws/rrhh/",
+      "environments": {
+        "dev":  { "sqlclConnection": "dev_rrhh" },
+        "uat":  { "sqlclConnection": "uat_rrhh", "appId": 1100, "runtimeUrl": "https://uat.example/ords/r/ws/rrhh/", "testUser": "QA_UAT" },
+        "prod": { "sqlclConnection": "prod_rrhh", "protected": true }
+      } },
+    { "appId": 200, "appAlias": "ventas" }
+  ]
+}

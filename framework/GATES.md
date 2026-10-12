@@ -98,9 +98,10 @@ may not do. It orchestrates the gates; it adds no rule of its own (P2, P6).
   to a verdict;
 - turn `UNKNOWN` into `PASS` by retrying until it passes without recording the attempts;
 - write markers, refs or guard state, or run `record-sync --force`;
-- import or export without the Sync gate's `PASS` for that app and direction in the last
-  5 minutes, for the LOCAL it checked;
-- deploy to an environment the user did not name.
+- import or export without the Sync gate's `PASS` for that app, environment and direction in
+  the last 5 minutes, for the LOCAL it checked;
+- deploy to an environment the user did not name (`--env`; the guard BLOCKS a gate without
+  it for an app with environments), or import or export at all into a `protected` one.
 
 ## Adding a gate
 

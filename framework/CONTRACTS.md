@@ -101,11 +101,11 @@ What a consumer may rely on. Changing any of it is a minor release with a `CHANG
 entry; removing any of it, a major one.
 
 - **Scripts.** `skills/apex-sync-guard/scripts/apex-sync-check.sh
-  check-import|check-export|record-sync|status|doctor|apps [--app <alias>] [--task <id>] [--force]`
+  check-import|check-export|record-sync|status|doctor|apps [--app <alias>] [--env <name>] [--task <id>] [--force]`
   (exit 0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN).
   `skills/apex-sync-guard/scripts/apex-sync-hook.sh` — Claude Code `PreToolUse`, matcher
   `Bash|PowerShell`, exit 0 allow · 2 block. `skills/apex-sentinel/scripts/pw.sh [--app <alias>]
-  <subcommand>` (exit 0 · 2 refused or login unverified · 3 recovered on a logged-out page ·
+  [--env <name>] <subcommand>` (exit 0 · 2 refused or login unverified · 3 recovered on a logged-out page ·
   otherwise the Playwright CLI's own). `skills/apex-ux/scripts/ux-scan.py [--app <alias>]
   [--task <id>] <file-or-dir>…` and `skills/apex-ux/scripts/ux-check.py [--app <alias>]
   [--task <id>] [--dialog <selector>]… [--raw <file>]`, `skills/apex-security/scripts/sec-scan.py
@@ -114,9 +114,9 @@ entry; removing any of it, a major one.
   [--xss <token>]`, `secrets-scan.py [--app <alias>] [--task <id>] [<path>…]` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
   3 UNKNOWN). `skills/apexlang-architecture/scripts/arch-scan.py <file-or-dir>…` (python3; JSON on
   stdout, no result file; exit 0 no red flag · 1 red flags · 2 BLOCKED · 3 UNKNOWN).
-  `framework/scripts/evidence.py capture --gate runtime|architecture [--app <alias>] --task <id>
-  <name> -- <command>…` (exit 0 saved · 2 refused · 3 not run or not saved) and `evidence.py write
-  --kind runtime|architecture [--app <alias>] --task <id> <draft.json>` (exit the derived status
+  `framework/scripts/evidence.py capture --gate runtime|architecture [--app <alias>] [--env <name>]
+  --task <id> <name> -- <command>…` (exit 0 saved · 2 refused · 3 not run or not saved) and `evidence.py write
+  --kind runtime|architecture [--app <alias>] [--env <name>] --task <id> <draft.json>` (exit the derived status
   0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN; a refused draft 2, nothing written); `evidence.py fresh
   --task <id> <result.json>…` (exit 0 fresh · 1 stale · 2 not a result · 3 no tree). They share
   `framework/lib/` (the `.apx` reader, the PL/SQL lexer and the result envelope).

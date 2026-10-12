@@ -77,7 +77,8 @@
       "properties": {
         "appId": { "$ref": "#/$defs/appId" },
         "appAlias": { "$ref": "#/$defs/appAlias" },
-        "mmdVersion": { "$ref": "#/$defs/app/properties/mmdVersion" }
+        "mmdVersion": { "$ref": "#/$defs/app/properties/mmdVersion" },
+        "environment": { "$ref": "#/$defs/app/properties/environment" }
       }
     },
     "criterionId": {
@@ -96,6 +97,10 @@
           "description": "From the app's .apex/apexlang.json — what Oracle's skills route on (26.1.x, 26.2.x).",
           "type": "string",
           "pattern": "^[0-9]+(\\.[0-9]+)*(\\+[0-9A-Za-z.-]+)?$"
+        },
+        "environment": {
+          "description": "For an app that declares environments in apex-sync.json: the one this result is about (R-1). Absent for an app without environments.",
+          "$ref": "#/$defs/appAlias"
         }
       }
     },
