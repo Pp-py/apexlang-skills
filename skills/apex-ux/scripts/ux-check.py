@@ -29,31 +29,21 @@ import hashlib
 import json
 import os
 import re
-import shutil
-import subprocess
 import sys
-import tempfile
 from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
+from pw import redact, run_code  # noqa: E402
 from result import Stop, context, rel, scrub, target, write  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENDOR = os.environ.get("UX_AXE_DIR") or os.path.join(HERE, "..", "vendor")
-PW = os.path.join(HERE, "..", "..", "apex-sentinel", "scripts", "pw.sh")
 TEMPLATE = os.path.join(HERE, "ux-check.js")
 TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]
 ITEM_RULES = {"label", "select-name", "aria-input-field-name"}
 CONTROL_RULES = {"button-name", "link-name", "input-button-name"}
 FAIL_IDS = ["UX-AXE-SERIOUS", "UX-ITEM-NAME", "UX-CONTROL-NAME", "UX-DIALOG-FOCUS"]
 TIMEOUT = int(os.environ.get("UX_CHECK_TIMEOUT", "300"))
-
-
-def redact(url):
-    """The URL without its APEX session: the session= parameter dropped, f?p's third field emptied."""
-    url = re.sub(r"([?&])session=[^&#]*&?", r"\1", url or "")
-    url = re.sub(r"[?&]+(#|$)", r"\1", url)
-    return re.sub(r"(f\?p=[^:&#]*:[^:&#]*:)[^:&#]*", r"\1", url)
 
 
 def page_name(url):
@@ -83,43 +73,7 @@ def run_page(app, axe_src, dialogs):
     opts = {"tags": TAGS, "dialogs": dialogs}
     code = ("async (page) => {\n  const AXE = %s;\n  const OPTS = %s;\n  return (%s)(page, AXE, OPTS);\n}\n"
             % (json.dumps(axe_src), json.dumps(opts), body))
-    fd, snip = tempfile.mkstemp(prefix="ux-check-", suffix=".js")   # mode 600
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(code)
-        # bash from PATH, never a bare name Windows would resolve to System32's WSL launcher;
-        # forward slashes, which Git Bash and node both read
-        cmd = ([shutil.which("bash") or "bash", PW.replace("\\", "/")] + (["--app", app] if app else [])
-               + ["run-code", "--raw", "--filename", snip.replace("\\", "/")])
-        try:
-            p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                               errors="replace", timeout=TIMEOUT)
-        except subprocess.TimeoutExpired:
-            raise Stop("UNKNOWN", "TIMEOUT", f"pw.sh did not answer within {TIMEOUT}s")
-        except OSError as e:
-            raise Stop("BLOCKED", "PW_REFUSED", f"cannot run pw.sh: {e.__class__.__name__}")
-    finally:
-        try:
-            os.remove(snip)
-        except OSError:
-            pass
-    tail = (p.stderr or p.stdout or "").strip().splitlines()[-1:] or [""]
-    if p.returncode == 2:
-        raise Stop("BLOCKED", "PW_REFUSED", "pw.sh refused: " + scrub(redact(tail[0]))[:200])
-    if p.returncode == 3:
-        raise Stop("UNKNOWN", "DEAD_SESSION", "pw.sh reopened a dead session: the page is logged out - log in, navigate, re-run")
-    if p.returncode != 0:
-        raise Stop("UNKNOWN", "PW_ERROR", f"pw.sh exit {p.returncode}: " + scrub(redact(tail[0]))[:200])
-    lines = [ln.strip() for ln in p.stdout.splitlines() if ln.strip()]
-    try:
-        v = json.loads(lines[-1])
-        if isinstance(v, str):                 # the CLI may print the returned string quoted
-            v = json.loads(v)
-        if not isinstance(v, dict) or "verdict" not in v:
-            raise ValueError("no verdict")
-    except (IndexError, ValueError):
-        raise Stop("UNKNOWN", "NO_VERDICT", "the browser returned no verdict")
-    return v
+    return run_code(app, code, "ux-check-", TIMEOUT)
 
 
 def evaluate(v, dialogs):

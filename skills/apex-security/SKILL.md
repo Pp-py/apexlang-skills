@@ -13,7 +13,7 @@ description: Use when an APEXlang app or page is designed, changed or reviewed f
 - **Output:** a `security-result` (`framework/schemas/security-result.schema.json`, experimental) per run: per criterion `PASS` · `FAIL` · `NOT_RUN`, plus advisories that never change the verdict.
 - **Evidence:** per criterion, the file and line it rests on, or the saved browser output with its sha256 under the task's evidence dir (`framework/EVIDENCE.md`).
 - **Gate:** Security — not in `framework/GATES.md` yet (SEC-6).
-- **Interface:** the criteria in `criteria.md`; `python3 scripts/sec-scan.py [--app X] [--task <id>] <file-or-dir>…` for the `.apx`, `scripts/plsql-scan.py` (same arguments) for the packages; the rest by hand until SEC-4 and SEC-5. Config: `publicPages` and `lowPrivUser` per app in `apex-sync.json` (`apex-sync-guard/setup.md` §1).
+- **Interface:** the criteria in `criteria.md`; `python3 scripts/sec-scan.py [--app X] [--task <id>] <file-or-dir>…` for the `.apx`, `scripts/plsql-scan.py` (same arguments) for the packages; `scripts/sec-probe.py` for the runtime probes; secrets by hand until SEC-5. Config: `publicPages` and `lowPrivUser` per app in `apex-sync.json` (`apex-sync-guard/setup.md` §1).
 
 ## Status — what exists
 
@@ -22,7 +22,7 @@ description: Use when an APEXlang app or page is designed, changed or reviewed f
 | Threat model and criteria with IDs (`criteria.md`) | **built** (SEC-1) |
 | Static scan over `.apx`: authorization, public pages, page and item protection, escaping, URLs | **built** (SEC-2) — see §Static scan |
 | Scan of the write-path packages: dynamic SQL, `AUTHID` | **built** (SEC-3) — see §Package scan |
-| Runtime probes through `pw.sh`: anonymous access, checksum tampering, role refusal, escaped payload | not built (SEC-4) |
+| Runtime probes through `pw.sh`: anonymous access, checksum tampering, role refusal, escaped payload | **built** (SEC-4) — see §Runtime probes |
 | Secrets in the repo | not built (SEC-5) |
 | `security-result` schema | **built** (SEC-2, experimental) |
 | Security gate: GATES column, order, manifest enums | not built (SEC-6) |
@@ -54,6 +54,24 @@ assignments in the same file. A `security-result` with `scope: plsql`
 What it does not establish: injection in views, triggers or code outside the scanned files;
 whether a reviewed statement is safe (the review comment is a person's claim); JavaScript
 injection; anything at runtime.
+
+## Runtime probes
+
+After `pw.sh [--app X] login` and `pw.sh goto <page>`, as the test user:
+`python3 scripts/sec-probe.py [--app X] [--task <id>] [--anon <url>]… [--tamper] [--role <url>]… [--xss <token>]`.
+Each probe runs only when asked; one not asked is `NOT_RUN`. A refusal is read from the page id
+APEX renders (`#pFlowStepId`) against a control — the same URL loaded by the test user — so a
+broken link is `UNKNOWN`, never a PASS. `--anon` fetches over plain HTTP with no cookie;
+`--tamper` takes the first `cs=` link of the held page into a new tab (intact, without `cs`, with
+a value changed); `--role` logs the app's `lowPrivUser` into its own session (password from
+`$APEX_TEST_PASSWORD_LOW[_<ALIAS>]`, never argv) and closes it after. For `--xss`, first save a
+test record through the page's normal form with a text field holding
+`<b data-xss-probe="TOKEN">x</b>` (a fresh token), open the page that shows it, run the probe,
+then delete the record. A `security-result` with `scope: runtime`; DEV only.
+
+What it does not establish: anything on URLs, links or pages it was not given; that the right
+role *is* let in (a refusal proves only the refusal); payloads other than the one stored;
+anything an attacker would try beyond these four probes.
 
 ## Threat model
 

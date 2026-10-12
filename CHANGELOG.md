@@ -3,8 +3,8 @@
 ## Unreleased
 
 Phase 3, UX-5: the UI gate. apex-ux's two scripts now write a `ui-result`, and the gate takes its
-place after Runtime, opt-in per app. SEC-1 to SEC-3 open the Security block: a fifth skill,
-`apex-security`, with its criteria and two scans (`.apx`, packages) that write a `security-result`.
+place after Runtime, opt-in per app. SEC-1 to SEC-4 open the Security block: a fifth skill,
+`apex-security`, with its criteria, two scans (`.apx`, packages) and runtime probes, each writing a `security-result`.
 
 ### Behavior changes — read before upgrading
 
@@ -34,7 +34,7 @@ place after Runtime, opt-in per app. SEC-1 to SEC-3 open the Security block: a f
 - `apex-sync.json` takes `uiGate` (a boolean; anything else is BLOCKED). The guard and `pw.sh`
   accept it per app; neither acts on it.
 
-**apex-security (new skill) — Phase 3, SEC-1 to SEC-3**
+**apex-security (new skill) — Phase 3, SEC-1 to SEC-4**
 - A fifth skill, `skills/apex-security/`: a threat model, what a Security PASS does not establish
   (it is not a pentest), and 22 criteria with IDs in `criteria.md` — `FAIL` only for what a
   machine can establish (authorization on every page and destructive action, public pages
@@ -56,6 +56,15 @@ place after Runtime, opt-in per app. SEC-1 to SEC-3 open the Security block: a f
   unless a `-- dynamic sql review: <reason>` comment approves it, which is Oracle's "unless
   explicitly approved". `SEC-AUTHID` is an advisory. The output is a `security-result` with
   `scope: plsql`.
+- **Runtime probes (SEC-4):** `sec-probe.py [--anon <url>]… [--tamper] [--role <url>]…
+  [--xss <token>]`, run through `pw.sh` and written as a `security-result` with `scope: runtime`.
+  A refusal is read from `#pFlowStepId` against a control: the test user loading the same URL. A
+  broken control is UNKNOWN. Each probe:
+  - **anonymous:** a plain HTTP fetch with no cookie;
+  - **tamper:** the first `cs=` link, in a new tab;
+  - **role:** the app's `lowPrivUser` in its own session, password only through the environment;
+  - **XSS:** the agent stores a payload, and the probe checks how it renders.
+  `pw.sh` is unchanged, and its runner now lives in `framework/lib/pw.py`, shared with `ux-check.py`.
 - `SEC-ACTION-AUTHZ` now needs a role scheme (`@<static-id>`) on the action or its page:
   `mustNotBePublicUser` does not count, because every page already requires it.
 - Run over Oracle's own 26.1 scaffold, the scan finds its Home page without an
@@ -77,6 +86,8 @@ place after Runtime, opt-in per app. SEC-1 to SEC-3 open the Security block: a f
   (KC-7).
 
 ### Tests
+- `tests/integration/sec-probe.sh` (20) in CI: each probe's mapping, a failing control, the low
+  password kept out of argv and output, redaction. Contract: 2 runtime fixtures, 1 negative.
 - `tests/integration/plsql-scan.sh` (13) in CI; contract: 2 `plsql` fixtures, 3 negatives, and
   every result it emits.
 - `tests/integration/sec-scan.sh` (12): fixtures with near-misses, `fail.expected`, `publicPages`

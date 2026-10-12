@@ -1,0 +1,61 @@
+{
+  "kind": "security-result",
+  "schemaVersion": 1,
+  "status": "FAIL",
+  "reasons": [
+    {
+      "code": "SECURITY_CRITERIA_FAILED",
+      "message": "not refused or not escaped: SEC-ROLE-REFUSED"
+    }
+  ],
+  "app": {
+    "appAlias": "hr"
+  },
+  "context": {
+    "task": "T-42",
+    "repo": {
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "dirty": false
+    },
+    "frameworkVersion": "0.6.1",
+    "timestamp": "2026-10-11T13:10:00Z",
+    "producer": {
+      "skill": "apex-security",
+      "method": "tool"
+    },
+    "target": {
+      "runtimeUrl": "https://apex.example/ords/r/ws/app/orders"
+    }
+  },
+  "scope": "runtime",
+  "criteria": [
+    {
+      "id": "SEC-ANON-REDIRECT",
+      "status": "NOT_RUN",
+      "findings": [],
+      "notApplicableReason": "not asked for (no --anon)"
+    },
+    {
+      "id": "SEC-CHECKSUM-TAMPER",
+      "status": "NOT_RUN",
+      "findings": [],
+      "notApplicableReason": "not asked for (no --tamper)"
+    },
+    {
+      "id": "SEC-ROLE-REFUSED",
+      "status": "FAIL",
+      "findings": [
+        {
+          "detail": "https://apex.example/ords/r/ws/app/admin: rendered for QA_LOW"
+        }
+      ]
+    },
+    {
+      "id": "SEC-XSS-ESCAPED",
+      "status": "NOT_RUN",
+      "findings": [],
+      "notApplicableReason": "not asked for (no --xss)"
+    }
+  ],
+  "advisories": []
+}
