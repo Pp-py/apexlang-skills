@@ -136,15 +136,21 @@ cd "$SB/repo" && CLAUDE_CONFIG_DIR="$SB/cfg" claude -p \
   --plugin-dir <path-to-this-repo> --allowedTools Bash
 ```
 
-Expected: **blocked**, exit 2, with the guard's reason on stderr. Four cases worth covering, all by touching `"$SB/repo"/.git/apex-sync/hook-test/check-ok.<direction>` between runs — from your own terminal: the hook refuses an agent that writes markers:
+Expected: **blocked**, exit 2, with the guard's reason on stderr. Five cases worth covering, all by writing `"$SB/repo"/.git/apex-sync/hook-test/check-ok.<direction>` between runs — from your own terminal: the hook refuses an agent that writes markers. A marker is bound to the source it checked (GAP-9); the sandbox has no `hook-test/` dir, which git hashes as its empty tree, so a valid marker for it is:
+
+```bash
+M="$SB/repo/.git/apex-sync/hook-test"
+printf '{"check":"export","src":"hook-test","tree":"4b825dc642cb6eb9a060e54bf8d69288fbee4904"}\n' > "$M/check-ok.export"
+```
 
 | Marker state | Command | Expected | Proves |
 |---|---|---|---|
 | absent | `echo "apex export -applicationid 1"` | blocked | the hook is registered and fires |
-| fresh `check-ok.export` | the same | allowed | a PASSing check really unblocks |
-| `check-ok.export` aged 11 minutes (`touch -d '11 minutes ago'`; on macOS `touch -t <CCYYMMDDhhmm>`) | the same | blocked | the 10-min TTL is enforced, not just presence |
-| fresh `check-ok.export` only | `echo "apex import -input x"` | blocked | direction-awareness — one check does not authorize the other |
+| fresh `check-ok.export`, written as above | the same | allowed | a PASSing check really unblocks |
+| `check-ok.export` aged 6 minutes (`touch -d '6 minutes ago'`; on macOS `touch -t <CCYYMMDDhhmm>`) | the same | blocked | the 5-min TTL is enforced, not just presence |
+| fresh, but `mkdir "$SB/repo/hook-test" && echo x > "$SB/repo/hook-test/p.apx"` after it | the same | blocked | the marker speaks only for the source it checked |
+| fresh `check-ok.export` only (the dir removed again) | `echo "apex import -input x"` | blocked | direction-awareness — one check does not authorize the other |
 
-`tests/integration/sync-guard-e2e.sh` runs these four commands through the hook, so this table cannot drift from what the hook does.
+`tests/integration/sync-guard-e2e.sh` runs these commands through the hook, so this table cannot drift from what the hook does.
 
 `rm -rf "$SB"` when done. Note the hook resolves the repo from the **session's** cwd, not from any `cd` inside the command — so the run must start inside the onboarded repo.

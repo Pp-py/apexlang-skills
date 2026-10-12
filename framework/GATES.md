@@ -27,7 +27,7 @@ Architecture → build (.apx + package) → Validation → Sync → import → r
 Architecture is decided before the build and passed after it: the decisions are made first (a
 missing input BLOCKS right there), but the evidence they rest on and the red-flag scan need the
 built `.apx` and package, so its result is written once they exist. Sync goes last before the
-import because it is the perishable one: its PASS lapses in 10 minutes, and it speaks only for
+import because it is the perishable one: its PASS lapses in 5 minutes, and it speaks only for
 the LOCAL it compared. `record-sync` right after the import
 is part of the import, not an optional step — skipping it poisons the next comparison.
 Runtime comes after the import because it measures what the Builder now serves. Security
@@ -60,16 +60,18 @@ invalid.
 
 ## Freshness
 
-- A sync **marker** authorizes for 10 minutes, and is withdrawn whenever a check of that
+- A sync **marker** authorizes for 5 minutes, and is withdrawn whenever a check of that
   direction does not PASS — even one stopped before it began — so a FAIL or a BLOCKED never
-  leaves an earlier PASS standing. It is tied to a time, not to the
-  LOCAL it checked (GAP-9): after any change to LOCAL, run the check again.
+  leaves an earlier PASS standing. It is bound to the LOCAL it checked (GAP-9): the app's
+  source dir, hashed when the check starts, again when it writes the marker, and by the hook
+  before the import or export runs. A change there since the check — an edit, a new file, a
+  capture undone — and the hook blocks until the check runs again.
 - A **result** is fresh for the task named in its `context.task`, while the working tree still
   hashes to its `context.repo.tree` — tracked and untracked files, ignored ones left out, so
   results in the evidence dir never change it. Read for another task, after a file changed, or
   with no `tree` recorded, it is stale: the consumer records `NOT_RUN`, not the old status.
   `framework/scripts/evidence.py fresh --task <id> <result>…` says which (exit 0 fresh · 1 stale).
-  Nothing expires on a clock; the marker's 10 minutes are the hook's, not a result's.
+  Nothing expires on a clock; the marker's 5 minutes are the hook's, not a result's.
 
 ## The orchestration contract
 
@@ -97,7 +99,7 @@ may not do. It orchestrates the gates; it adds no rule of its own (P2, P6).
 - turn `UNKNOWN` into `PASS` by retrying until it passes without recording the attempts;
 - write markers, refs or guard state, or run `record-sync --force`;
 - import or export without the Sync gate's `PASS` for that app and direction in the last
-  10 minutes;
+  5 minutes, for the LOCAL it checked;
 - deploy to an environment the user did not name.
 
 ## Adding a gate
