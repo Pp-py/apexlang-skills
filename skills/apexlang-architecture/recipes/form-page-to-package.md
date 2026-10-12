@@ -37,7 +37,7 @@ three form-shaped recipes consistent.
 
 *Documented deviation, when the entity has 20+ columns and the declarative column mapping earns its
 keep:* use `type: form` with `formInitialization` for the read, replace the ARP with the
-`executeCode` process below, and say so in the region's `comments` — citing `apex.form.md` §*Notes*
+`invokeApi` processes below, and say so in the region's `comments` — citing `apex.form.md` §*Notes*
 ("keep form SQL minimal and offload logic to views or packages when possible"). Everything else in
 this recipe is unchanged.
 
@@ -118,6 +118,7 @@ button apply (
 process load-employee (
     type: executeCode
     source { plsqlCode: ```plsql
+        -- thin wrapper: a loader that assigns page items from one row.
         if :P41_EMPLOYEE_ID is not null then
           select full_name, sector_id, email, row_version
             into :P41_FULL_NAME, :P41_SECTOR_ID, :P41_EMAIL, :P41_ROW_VERSION
@@ -128,25 +129,34 @@ process load-employee (
 )
 
 process create-employee (
-    type: executeCode
-    source { plsqlCode: ```plsql
-        pkg_employees.create_row(
-            p_full_name => :P41_FULL_NAME,
-            p_sector_id => :P41_SECTOR_ID,
-            p_email     => :P41_EMAIL);``` }
+    type: invokeApi
+    invoke { package: pkg_employees  procedureOrFunction: create_row }
+    parameter p_full_name ( value { type: item  item: P41_FULL_NAME }  advanced { displaySequence: 1 } )
+    parameter p_email     ( value { type: item  item: P41_EMAIL }  advanced { displaySequence: 2 } )
+    parameter p_sector_id ( parameter { dataType: number }
+        value { type: item  item: P41_SECTOR_ID }  advanced { displaySequence: 3 } )
+    parameter p_hired_on  ( parameter { dataType: date  hasDefault: true }
+        value { type: apiDefault }  advanced { displaySequence: 4 } )
+    -- OUT: the new PK, so the page continues in edit mode
+    parameter p_employee_id ( parameter { direction: out  dataType: number  ignoreOutput: false }
+        value { item: P41_EMPLOYEE_ID }  advanced { displaySequence: 5 } )
     execution { point: afterSubmit }
     serverSideCondition { type: requestIsContainedInValue  value: CREATE }
 )
 
 process update-employee (
-    type: executeCode
-    source { plsqlCode: ```plsql
-        pkg_employees.update_row(
-            p_employee_id => :P41_EMPLOYEE_ID,
-            p_full_name   => :P41_FULL_NAME,
-            p_sector_id   => :P41_SECTOR_ID,
-            p_email       => :P41_EMAIL,
-            p_row_version => :P41_ROW_VERSION);``` }
+    type: invokeApi
+    invoke { package: pkg_employees  procedureOrFunction: update_row }
+    parameter p_employee_id ( parameter { dataType: number }
+        value { type: item  item: P41_EMPLOYEE_ID }  advanced { displaySequence: 1 } )
+    parameter p_full_name   ( value { type: item  item: P41_FULL_NAME }  advanced { displaySequence: 2 } )
+    parameter p_email       ( value { type: item  item: P41_EMAIL }  advanced { displaySequence: 3 } )
+    parameter p_sector_id   ( parameter { dataType: number }
+        value { type: item  item: P41_SECTOR_ID }  advanced { displaySequence: 4 } )
+    parameter p_row_version ( parameter { dataType: number }
+        value { type: item  item: P41_ROW_VERSION }  advanced { displaySequence: 5 } )
+    parameter p_hired_on    ( parameter { dataType: date  hasDefault: true }
+        value { type: apiDefault }  advanced { displaySequence: 6 } )
     execution { point: afterSubmit }
     serverSideCondition { type: requestIsContainedInValue  value: APPLY-CHANGES }
 )

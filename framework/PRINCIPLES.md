@@ -10,8 +10,8 @@ Automatic Row Processing, never DML in a page process. The package is the one pl
 business rule holds, whatever reaches the table — a page, a job, a REST handler, SQLcl.
 
 *Enforced by:* `apexlang-architecture` (procedures A/B in `package-boundaries.md`, red-flag
-scan) → the Architecture gate. Interim rule while KC-4 stands: a thin `executeCode` wrapper
-and `invokeApi` both satisfy it.
+scan) → the Architecture gate. A page process calls the package through `invokeApi`; a thin
+`executeCode` wrapper only where Oracle allows one, marked `-- thin wrapper: <reason>` (KC-4, resolved).
 
 ## P2 — Single ownership
 

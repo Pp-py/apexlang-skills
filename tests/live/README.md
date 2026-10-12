@@ -42,7 +42,7 @@ SQLCL_BIN=<path to sql or sql.exe> tests/upstream/validate-examples.sh --compile
 ```
 
 Offline (`/nolog`); records what SQLcl's `apex validate` says about the examples on Oracle's
-26.1 scaffold. A FAIL is recorded as a FAIL (KC-7), never allowlisted.
+26.1 scaffold. A FAIL is recorded as a FAIL, never allowlisted.
 
 ## L4 — the runtime walkthroughs
 

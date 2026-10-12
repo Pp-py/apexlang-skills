@@ -124,8 +124,8 @@ a single-entity form (full page + drawer). Start at
 [`examples/README.md`](skills/apexlang-architecture/examples/README.md).
 
 Grammar status, measured rather than claimed: Oracle's 26.1 local lint passes the five `.apx`
-with only the diagnostics documented where they occur, while the compiler — SQLcl 26.2.0
-`apex validate` on Oracle's 26.1 scaffold — currently **rejects** them (KC-7). Lint-clean is not
+with only the diagnostics documented where they occur, and the compiler — SQLcl 26.2.0
+`apex validate` on Oracle's 26.1 scaffold — accepts them. Lint-clean is still not
 "compiles": [`examples/README.md`](skills/apexlang-architecture/examples/README.md#grammar-status--gotchas).
 
 ## Roadmap

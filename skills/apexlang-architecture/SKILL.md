@@ -48,7 +48,7 @@ Validation in IG column                Validation + rules inside the package
 DML in page processes                  All DML behind the package API
 ```
 
-**This is a deliberate deviation from Oracle's default**, resting on an exception Oracle's own standard names: the 26.1 policies say *"Prefer ARP for simple CRUD"*, and the Interactive Grid page rule that requires Automatic Row Processing also says *"do not substitute custom PL/SQL **unless invoking a dedicated API**"* — the package the `.apx` calls **is** that API. Everywhere else the standard already points this way (`invokeApi` by default, inline PL/SQL extracted into a package API). The argument, quoted and anchored: `references/official-standard.md`. Calling the package through `invokeApi` or a thin `executeCode` wrapper both satisfy the single write path (`framework/CAPABILITIES.md` KC-4).
+**This is a deliberate deviation from Oracle's default**, resting on an exception Oracle's own standard names: the 26.1 policies say *"Prefer ARP for simple CRUD"*, and the Interactive Grid page rule that requires Automatic Row Processing also says *"do not substitute custom PL/SQL **unless invoking a dedicated API**"* — the package the `.apx` calls **is** that API. Everywhere else the standard already points this way (`invokeApi` by default, inline PL/SQL extracted into a package API). The argument, quoted and anchored: `references/official-standard.md`. A page process calls the package through `invokeApi`; a thin `executeCode` wrapper only where Oracle allows one, first line `-- thin wrapper: <reason>` (`references/official-standard.md`, KC-4).
 
 ## Which file to open
 

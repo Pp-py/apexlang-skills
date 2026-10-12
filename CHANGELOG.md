@@ -6,6 +6,7 @@ Phase 3, UX-5: the UI gate. apex-ux's two scripts now write a `ui-result`, and t
 place after Runtime, opt-in per app. SEC-1 to SEC-6 build the Security block: a fifth skill,
 `apex-security`, with its criteria; scans of the `.apx`, the packages and the tracked files, and
 runtime probes, each writing a `security-result`; and the Security gate between Runtime and UI.
+R-2 closes the last three known conflicts (KC-4, KC-5, KC-7): the examples compile.
 
 ### Behavior changes — read before upgrading
 
@@ -85,6 +86,23 @@ runtime probes, each writing a `security-result`; and the Security gate between 
   `authorizationScheme` (recorded in `CAPABILITIES.md`).
 
 **apexlang-architecture**
+- **Page processes call packages through `invokeApi` (KC-4, resolved).** The rule is now the
+  majority of Oracle's policies, not "either": `invokeApi` by default; a thin `executeCode` wrapper
+  only for an Interactive Grid save, a loader that assigns page items, or a branch-gated flow, with
+  its first line `-- thin wrapper: <reason>` and no business logic. The examples' seven package
+  calls and the recipes' snippets are rewritten (`save-sector` in the modal recipe is now
+  `create-sector` + `update-sector`); `SKILL.md`, `PRINCIPLES.md` P1 and `official-standard.md` say so.
+- **The example packages carry the version token (KC-5, resolved)** — signatures changed:
+  `pkg_employees.update_row(…, p_row_version, p_hired_on)`, `pkg_employees.delete_row(p_employee_id,
+  p_row_version)`, `pkg_sectors.update_row(…, p_row_version IN OUT)`, `pkg_sectors.delete_row(p_sector_id,
+  p_row_version)`, `pkg_sectors.save_row(…, p_row_version IN OUT)`. A stale save raises
+  `pkg_errors.k_row_changed` with §7's one sentence. The pages carry `row_version` back (`P41_/P42_ROW_VERSION`,
+  the IG's hidden `ROW_VERSION`). `pkg_absences` needs none, and the README says why.
+- **The examples compile (KC-7, resolved).** The 7 errors were ours: breadcrumb regions now use the
+  theme's `@/title-bar` template and are named after the page (Oracle's lint asks it, and so does
+  `UX-TITLEBAR-NAME`); the drawer's Cancel (`definedByDynamicAction`) drops `warnOnUnsavedChanges`.
+  SQLcl 26.2.0 `apex validate`: `Validation successful`. New upstream issue UP-4: Oracle's
+  `invokeApi` template omits `value.type`, which an IN parameter needs to compile.
 - **The example packages state `AUTHID DEFINER`** (`pkg_errors`, `pkg_sectors`, `pkg_employees`,
   `pkg_absences`), as do the snippets in `back-end-conventions.md` and `package-boundaries.md`.
 - **The examples' destructive actions are under a role scheme.** Delete employee and Reject
@@ -96,10 +114,11 @@ runtime probes, each writing a `security-result`; and the Security gate between 
   `P62_ABSENCE_ID`) carry `sessionStateProtection: checksumRequiredSessionLevel`. Oracle's
   security lint had never run on them: `validate-examples.sh` staged the app outside an
   `applications/` directory, and Oracle's validator applies its business-app rules only under one.
-  It now does, and reported the 8 gaps this fixes. The compiler still reports the same 7 errors
-  (KC-7).
+  It now does, and reported the 8 gaps this fixes.
 
 ### Tests
+- Citations: 5 new anchors for KC-4, KC-7 and UP-4 (93/93). The lint and the compiler runs on the
+  examples are recorded in `CAPABILITIES.md`; CI has no SQLcl.
 - Contract: the manifest's Security gate in the PASS fixture, 2 negatives (three scopes, another
   gate's result); the e2e covers `securityGate` (+2).
 - `tests/integration/secrets-scan.sh` (8) in CI. Its secrets are assembled at run time, so the

@@ -82,9 +82,14 @@ The link is column-level, on a `type: link` column. See `modal-crud-to-package.m
 
 ```
 process save-vigency (
-    type: executeCode
-    source { plsqlCode: ```plsql
-        pkg_surcharges.new_vigency(:P101_CODE, :P101_PERCENTAGE, to_date(:P101_VALID_FROM,'DD/MM/YYYY'));``` }
+    type: invokeApi
+    invoke { package: pkg_surcharges  procedureOrFunction: new_vigency }
+    parameter p_code       ( value { type: item  item: P101_CODE }  advanced { displaySequence: 1 } )
+    parameter p_percentage ( parameter { dataType: number }
+        value { type: item  item: P101_PERCENTAGE }  advanced { displaySequence: 2 } )
+    parameter p_valid_from ( parameter { dataType: date }
+        value { type: expression  plsqlExpression: to_date(:P101_VALID_FROM, 'DD/MM/YYYY') }
+        advanced { displaySequence: 3 } )
     execution { point: afterSubmit }
 )
 ```

@@ -123,20 +123,37 @@ page 62 (
 
     process approve-absence (
         name: Approve absence
-        type: executeCode
-        source {
-            plsqlCode:
-                ```plsql
-                begin
-                    -- transition as a package verb: from-state guard,
-                    -- approved_by/approved_at stamp and side effects, all in pkg_absences
-                    pkg_absences.approve(
-                        p_absence_id => :P62_ABSENCE_ID,
-                        p_approver   => :APP_USER
-                    );
-                end;
-                ```
+        type: invokeApi
+        invoke {
+            package: pkg_absences
+            procedureOrFunction: approve
         }
+        parameter p_absence_id (
+            parameter {
+                direction: in
+                dataType: number
+            }
+            value {
+                type: item
+                item: P62_ABSENCE_ID
+            }
+            advanced {
+                displaySequence: 1
+            }
+        )
+        parameter p_approver (
+            parameter {
+                direction: in
+                dataType: varchar2
+            }
+            value {
+                type: expression
+                plsqlExpression: :APP_USER
+            }
+            advanced {
+                displaySequence: 2
+            }
+        )
         execution {
             sequence: 10
             point: afterSubmit
@@ -149,18 +166,37 @@ page 62 (
 
     process reject-absence (
         name: Reject absence
-        type: executeCode
-        source {
-            plsqlCode:
-                ```plsql
-                begin
-                    pkg_absences.reject(
-                        p_absence_id => :P62_ABSENCE_ID,
-                        p_reason     => :P62_REASON
-                    );
-                end;
-                ```
+        type: invokeApi
+        invoke {
+            package: pkg_absences
+            procedureOrFunction: reject
         }
+        parameter p_absence_id (
+            parameter {
+                direction: in
+                dataType: number
+            }
+            value {
+                type: item
+                item: P62_ABSENCE_ID
+            }
+            advanced {
+                displaySequence: 1
+            }
+        )
+        parameter p_reason (
+            parameter {
+                direction: in
+                dataType: varchar2
+            }
+            value {
+                type: item
+                item: P62_REASON
+            }
+            advanced {
+                displaySequence: 2
+            }
+        )
         execution {
             sequence: 20
             point: afterSubmit

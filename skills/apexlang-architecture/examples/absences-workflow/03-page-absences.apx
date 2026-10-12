@@ -12,7 +12,7 @@ page 60 (
     }
 
     region breadcrumb (
-        name: Breadcrumb
+        name: Absence requests
         type: breadcrumb
         source {
             breadcrumb: @breadcrumb
@@ -22,7 +22,7 @@ page 60 (
             slot: breadcrumbBar
         }
         appearance {
-            template: @/breadcrumb
+            template: @/title-bar
             templateOptions: #DEFAULT#
         }
         componentAppearance {

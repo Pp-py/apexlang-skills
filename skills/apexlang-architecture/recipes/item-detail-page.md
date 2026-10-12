@@ -149,7 +149,7 @@ This page looks read-only and is not. Two regions mutate, and both go through a 
 else:
 
 - **Comments** (`themeTemplateComponent/comments`, `settings.style: chatSpeechBubbles`) is an
-  append-only child table. The "Add comment" button submits to an `executeCode` process calling
+  append-only child table. The "Add comment" button submits to an `invokeApi` process calling
   `pkg_item_comments.add_comment(...)` — never an inline `INSERT`. The avatar's initials are derived in
   SQL (`apex_string.get_initials(username)`, projected as their own column), which is exactly the
   derived-display-column rule (`ui-contracts.md` §4). Its colour is not derived at all: the

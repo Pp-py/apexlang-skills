@@ -9,15 +9,21 @@ CREATE OR REPLACE PACKAGE pkg_sectors AUTHID DEFINER AS
    */
   PROCEDURE create_row (p_code IN VARCHAR2, p_name IN VARCHAR2,
                         p_sector_id OUT hr_sectors.sector_id%TYPE);
+  -- p_row_version: the version the grid loaded (back-end-conventions.md section 7);
+  -- IN OUT so the caller keeps the bumped version.
   PROCEDURE update_row (p_sector_id IN NUMBER, p_code IN VARCHAR2,
-                        p_name IN VARCHAR2, p_active_flag IN VARCHAR2);
-  PROCEDURE delete_row (p_sector_id IN NUMBER);
+                        p_name IN VARCHAR2, p_active_flag IN VARCHAR2,
+                        p_row_version IN OUT hr_sectors.row_version%TYPE);
+  PROCEDURE delete_row (p_sector_id IN NUMBER,
+                        p_row_version IN hr_sectors.row_version%TYPE);
   -- IG adapter: routes :APEX$ROW_STATUS C/U/D to create_row/update_row/delete_row.
+  -- p_row_version is IN OUT: the grid keeps the new version and can save the row again.
   PROCEDURE save_row (p_row_status  IN     VARCHAR2,
                       p_sector_id   IN OUT hr_sectors.sector_id%TYPE,
                       p_code        IN     hr_sectors.code%TYPE,
                       p_name        IN     hr_sectors.name%TYPE,
-                      p_active_flag IN     hr_sectors.active_flag%TYPE);
+                      p_active_flag IN     hr_sectors.active_flag%TYPE,
+                      p_row_version IN OUT hr_sectors.row_version%TYPE);
 END pkg_sectors;
 /
 
@@ -43,7 +49,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_sectors AS
   END create_row;
 
   PROCEDURE update_row (p_sector_id IN NUMBER, p_code IN VARCHAR2,
-                        p_name IN VARCHAR2, p_active_flag IN VARCHAR2) IS
+                        p_name IN VARCHAR2, p_active_flag IN VARCHAR2,
+                        p_row_version IN OUT hr_sectors.row_version%TYPE) IS
     l_cnt PLS_INTEGER;
   BEGIN
     IF TRIM(p_code) IS NULL OR TRIM(p_name) IS NULL THEN
@@ -61,18 +68,31 @@ CREATE OR REPLACE PACKAGE BODY pkg_sectors AS
     UPDATE hr_sectors
        SET code = UPPER(TRIM(p_code)),
            name = TRIM(p_name),
-           active_flag = NVL(p_active_flag,'Y')
-     WHERE sector_id = p_sector_id;
+           active_flag = NVL(p_active_flag,'Y'),
+           row_version = row_version + 1             -- bumped in the same statement
+     WHERE sector_id = p_sector_id
+       AND row_version = p_row_version               -- the guard
+    RETURNING row_version INTO p_row_version;
+    IF SQL%ROWCOUNT = 0 THEN
+      -- The row is gone, or someone saved first: both are a conflict to the user.
+      RAISE_APPLICATION_ERROR(pkg_errors.k_row_changed,
+        'This record was changed by someone else since you opened it. Reload and try again.');
+    END IF;
   END update_row;
 
-  PROCEDURE delete_row (p_sector_id IN NUMBER) IS
+  PROCEDURE delete_row (p_sector_id IN NUMBER,
+                        p_row_version IN hr_sectors.row_version%TYPE) IS
   BEGIN
     -- A catalog is soft-deleted (back-end-conventions.md section 6). A hard DELETE
     -- here would hit hr_employees_sector_fk and surface as a raw ORA-02292.
-    UPDATE hr_sectors SET active_flag = 'N' WHERE sector_id = p_sector_id;
+    UPDATE hr_sectors
+       SET active_flag = 'N',
+           row_version = row_version + 1
+     WHERE sector_id = p_sector_id
+       AND row_version = p_row_version;
     IF SQL%ROWCOUNT = 0 THEN
-      RAISE_APPLICATION_ERROR(pkg_errors.k_sector_invalid_data,
-        'That sector no longer exists.');
+      RAISE_APPLICATION_ERROR(pkg_errors.k_row_changed,
+        'This record was changed by someone else since you opened it. Reload and try again.');
     END IF;
     -- Section 6 also asks that inactivation be refused while the sector is still
     -- referenced. That guard needs the child table, which belongs to the
@@ -85,13 +105,15 @@ CREATE OR REPLACE PACKAGE BODY pkg_sectors AS
                       p_sector_id   IN OUT hr_sectors.sector_id%TYPE,
                       p_code        IN     hr_sectors.code%TYPE,
                       p_name        IN     hr_sectors.name%TYPE,
-                      p_active_flag IN     hr_sectors.active_flag%TYPE) IS
+                      p_active_flag IN     hr_sectors.active_flag%TYPE,
+                      p_row_version IN OUT hr_sectors.row_version%TYPE) IS
   BEGIN
     CASE p_row_status
       WHEN 'C' THEN
         create_row(p_code, p_name, p_sector_id);  -- OUT: the IG finalizes the new row
-      WHEN 'U' THEN update_row(p_sector_id, p_code, p_name, NVL(p_active_flag,'Y'));
-      WHEN 'D' THEN delete_row(p_sector_id);
+        p_row_version := 1;                        -- the column default
+      WHEN 'U' THEN update_row(p_sector_id, p_code, p_name, NVL(p_active_flag,'Y'), p_row_version);
+      WHEN 'D' THEN delete_row(p_sector_id, p_row_version);
       ELSE NULL;                                 -- unchanged rows don't reach here
     END CASE;
   END save_row;

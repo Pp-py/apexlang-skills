@@ -39,7 +39,7 @@ apex import   -input <apexlang-src-dir>
 > entry to **your** app's `shared-components/breadcrumbs.apx` — a page file cannot carry it —
 > and `INTERACTIVE_REPORT_LINK_COLUMN_TYPE_FORBIDDEN_001` on the `type: link` column, the form
 > the compiler requires (`../../references/oracle-26.1-lint.md`).
-> The SQLcl compiler currently rejects page 60 (see `../README.md` §Grammar status). Validate
+> The SQLcl compiler accepts both pages (see `../README.md` §Grammar status). Validate
 > against your own APEX version before importing, and mind that page numbers
 > (60/62) and aliases must not collide with your app's.
 

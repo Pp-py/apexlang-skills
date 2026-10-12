@@ -14,14 +14,17 @@ CREATE OR REPLACE PACKAGE pkg_employees AUTHID DEFINER AS
                         p_hired_on  IN  DATE     DEFAULT NULL,
                         p_employee_id OUT NUMBER);
 
+  -- p_row_version: the version the page loaded (back-end-conventions.md section 7).
   PROCEDURE update_row (p_employee_id IN NUMBER,
                         p_full_name   IN VARCHAR2,
                         p_email       IN VARCHAR2,
                         p_sector_id   IN NUMBER,
+                        p_row_version IN NUMBER,
                         p_hired_on    IN DATE DEFAULT NULL);
 
-  -- Soft delete: inactivates (back-end-conventions.md section 6).
-  PROCEDURE delete_row (p_employee_id IN NUMBER);
+  -- Soft delete: inactivates (back-end-conventions.md section 6), with the same guard.
+  PROCEDURE delete_row (p_employee_id IN NUMBER,
+                        p_row_version IN NUMBER);
 END pkg_employees;
 /
 
@@ -87,6 +90,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_employees AS
                         p_full_name   IN VARCHAR2,
                         p_email       IN VARCHAR2,
                         p_sector_id   IN NUMBER,
+                        p_row_version IN NUMBER,
                         p_hired_on    IN DATE DEFAULT NULL) IS
   BEGIN
     IF p_employee_id IS NULL THEN
@@ -98,28 +102,34 @@ CREATE OR REPLACE PACKAGE BODY pkg_employees AS
     check_email_free(p_email, p_employee_id);
 
     UPDATE hr_employees
-       SET full_name = TRIM(p_full_name),
-           email     = LOWER(TRIM(p_email)),
-           sector_id = p_sector_id,
-           hired_on  = NVL(p_hired_on, hired_on)
-     WHERE employee_id = p_employee_id;
+       SET full_name   = TRIM(p_full_name),
+           email       = LOWER(TRIM(p_email)),
+           sector_id   = p_sector_id,
+           hired_on    = NVL(p_hired_on, hired_on),
+           row_version = row_version + 1             -- bumped in the same statement
+     WHERE employee_id = p_employee_id
+       AND row_version = p_row_version;              -- the guard
 
     IF SQL%ROWCOUNT = 0 THEN
-      RAISE_APPLICATION_ERROR(pkg_errors.k_employee_invalid_data,
-        'That employee no longer exists.');
+      -- The row is gone, or someone saved first: both are a conflict to the user.
+      RAISE_APPLICATION_ERROR(pkg_errors.k_row_changed,
+        'This record was changed by someone else since you opened it. Reload and try again.');
     END IF;
   END update_row;
 
-  PROCEDURE delete_row (p_employee_id IN NUMBER) IS
+  PROCEDURE delete_row (p_employee_id IN NUMBER,
+                        p_row_version IN NUMBER) IS
   BEGIN
     UPDATE hr_employees
-       SET active_flag = 'N'
+       SET active_flag = 'N',
+           row_version = row_version + 1
      WHERE employee_id = p_employee_id
-       AND active_flag = 'Y';
+       AND active_flag = 'Y'
+       AND row_version = p_row_version;
 
     IF SQL%ROWCOUNT = 0 THEN
-      RAISE_APPLICATION_ERROR(pkg_errors.k_employee_invalid_data,
-        'That employee is already inactive or does not exist.');
+      RAISE_APPLICATION_ERROR(pkg_errors.k_row_changed,
+        'This record was changed by someone else since you opened it. Reload and try again.');
     END IF;
   END delete_row;
 

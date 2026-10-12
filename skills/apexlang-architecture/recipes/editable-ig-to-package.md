@@ -79,6 +79,8 @@ process save-sectors (
             declare
                 l_err boolean := false;
             begin
+                -- thin wrapper: an Interactive Grid save routes each row by
+                -- :APEX$ROW_STATUS and writes the PK and version back to the row.
                 -- required-field checks must live here: IG column validations
                 -- do NOT fire on IG Save. Surface cleanly:
                 if :APEX$ROW_STATUS in ('C','U') then
@@ -98,7 +100,7 @@ process save-sectors (
                         p_code        => :CODE,
                         p_name        => :NAME,
                         p_active_flag => :ACTIVE_FLAG,
-                        p_row_version => :ROW_VERSION);
+                        p_row_version => :ROW_VERSION); -- IN OUT: the bumped version
                 end if;
             end;
             ```
@@ -116,7 +118,7 @@ PROCEDURE save_row (
     p_code        IN     hr_sectors.code%TYPE,
     p_name        IN     hr_sectors.name%TYPE,
     p_active_flag IN     hr_sectors.active_flag%TYPE,
-    p_row_version IN     hr_sectors.row_version%TYPE   -- ignored on 'C'
+    p_row_version IN OUT hr_sectors.row_version%TYPE   -- the bumped version comes back
 ) IS
 BEGIN
     CASE p_row_status
@@ -124,6 +126,7 @@ BEGIN
             -- create_row uses INSERT ... RETURNING sector_id INTO, so the PK comes
             -- straight back. Never re-SELECT it by a mutable business column.
             create_row(p_code, p_name, p_sector_id);
+            p_row_version := 1;                        -- the column default
         WHEN 'U' THEN update_row(p_sector_id, p_code, p_name, NVL(p_active_flag,'Y'), p_row_version);
         WHEN 'D' THEN delete_row(p_sector_id, p_row_version);
         ELSE NULL;                                     -- unchanged rows don't reach here
@@ -136,7 +139,7 @@ All validation (uniqueness, "cannot delete while referenced") lives in `create_r
 ## Non-obvious points
 
 - **`p_sector_id` is IN OUT.** On insert it returns the new PK so the IG can finalize the row; on update/delete it carries the existing PK in.
-- **`ROW_VERSION` is projected, hidden, and passed back.** It is the lost-update guard that replaces the one Automatic Row Processing was providing (`back-end-conventions.md` §7). Leave it out and the grid silently overwrites a colleague's save; the IG re-reads the bumped value after each successful save.
+- **`ROW_VERSION` is projected, hidden, and passed back.** It is the lost-update guard that replaces the one Automatic Row Processing was providing (`back-end-conventions.md` §7). Leave it out and the grid silently overwrites a colleague's save. `p_row_version` is IN OUT: `save_row` hands the bumped version back to the row, so it can be saved again without a refresh.
 - **Process point is `afterSubmit`**, not `processing` — IG per-row binds (`:CODE`, `:APEX$ROW_STATUS`) are only available there.
 - **Required-field checks go in the process**, because IG column validations don't fire on Save. Use `apex_error.add_error(..., c_inline_in_notification)` for clean inline text.
 - **Two grids on one page:** give each its own `editableRegion`-bound process, ordered by `sequence`.

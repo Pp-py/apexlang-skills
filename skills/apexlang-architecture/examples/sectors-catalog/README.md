@@ -12,7 +12,7 @@ Verify it with `apex-sentinel/examples/sectors-catalog.md`.
 |---|---|
 | `01-ddl.sql` | `hr_sectors` table, `CHECK`, case-insensitive `UNIQUE` index, seed rows |
 | `02-pkg_sectors.sql` | write-path package: `create_row`/`update_row`/`delete_row` + `save_row` adapter |
-| `03-page-sectors.apx` | the IG page (page 30): grid + `executeCode @afterSubmit` calling the package |
+| `03-page-sectors.apx` | the IG page (page 30): grid + a thin `executeCode @afterSubmit` wrapper calling `save_row`, with the hidden `ROW_VERSION` column carried back |
 
 ## Deploy (run in order, on a schema parsing as your APEX app)
 
@@ -30,8 +30,8 @@ apex validate -input <apexlang-src-dir>                   # add 03-page-sectors.
 apex import   -input <apexlang-src-dir>
 ```
 
-> Oracle's 26.1 lint (release 2026.09.21) reports two known diagnostics — and the SQLcl
-> compiler currently rejects the page (see `../README.md` §Grammar status):
+> Oracle's 26.1 lint (release 2026.09.21) reports two known diagnostics; the SQLcl compiler
+> accepts the page (see `../README.md` §Grammar status):
 > `BREADCRUMB_COVERAGE_ENTRY_REQUIRED_001`, satisfied by adding a `pageNumber: 30` entry to
 > **your** app's `shared-components/breadcrumbs.apx`, and `DSL_RULE_BLOCK … column
 > 'ACTIVE_FLAG' does not allow block 'lov'` — the EBNF grammar accepts an `lov {}` block on a
