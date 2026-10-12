@@ -14,7 +14,7 @@ ordered procedure and the satellite test. State the contract in the package head
 unambiguous:
 
 ```plsql
-CREATE OR REPLACE PACKAGE pkg_sectors AS
+CREATE OR REPLACE PACKAGE pkg_sectors AUTHID DEFINER AS   -- definer rights, stated (apex-security SEC-AUTHID)
   /*
    * Only write path for hr_sectors.
    * No internal COMMIT (the caller / APEX commits).

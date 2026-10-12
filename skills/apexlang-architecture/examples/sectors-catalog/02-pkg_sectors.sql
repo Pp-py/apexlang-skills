@@ -1,7 +1,7 @@
 -- 02-pkg_sectors.sql — single write-path package for hr_sectors.
 -- Depends on: pkg_errors (00-) and table hr_sectors (01-).
 
-CREATE OR REPLACE PACKAGE pkg_sectors AS
+CREATE OR REPLACE PACKAGE pkg_sectors AUTHID DEFINER AS
   /*
    * Only write path for hr_sectors.
    * No internal COMMIT (APEX commits on page submit).

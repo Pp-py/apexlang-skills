@@ -2,7 +2,7 @@
 -- Architecture: apexlang-architecture/back-end-conventions.md
 -- Recipe:       apexlang-architecture/recipes/form-page-to-package.md
 
-CREATE OR REPLACE PACKAGE pkg_employees AS
+CREATE OR REPLACE PACKAGE pkg_employees AUTHID DEFINER AS
   /*
    * Only write path for hr_employees.
    * No internal COMMIT (the caller / APEX commits).

@@ -87,6 +87,7 @@ puts it back whenever it is missing.
 | architecture-result | `<evidenceDir>/<task>/architecture.json` | the agent (apexlang-architecture) |
 | ui-result, static (with `--task`) | `<evidenceDir>/<task>/ui-<alias>-static.json` | `ux-scan.py` (apex-ux) |
 | security-result, static (with `--task`) | `<evidenceDir>/<task>/security-<alias>-static.json` | `sec-scan.py` (apex-security) |
+| security-result, plsql (with `--task`) | `<evidenceDir>/<task>/security-<alias>-plsql.json` | `plsql-scan.py` (apex-security) |
 | ui-result, runtime (with `--task`) | `<evidenceDir>/<task>/ui-<alias>-runtime-<page>.json`, axe's output in `raw/ui-<alias>/` | `ux-check.py` (apex-ux) |
 | raw evidence (snapshots, eval output, logs) | `<evidenceDir>/<task>/raw/<gate>-<alias>/` | whoever produced the result citing it |
 | verification-manifest | `<evidenceDir>/<task>/manifest.json` | the orchestrator (future `apexlang-delivery`) |
@@ -105,7 +106,7 @@ entry; removing any of it, a major one.
   otherwise the Playwright CLI's own). `skills/apex-ux/scripts/ux-scan.py [--app <alias>]
   [--task <id>] <file-or-dir>…` and `skills/apex-ux/scripts/ux-check.py [--app <alias>]
   [--task <id>] [--dialog <selector>]… [--raw <file>]`, `skills/apex-security/scripts/sec-scan.py
-  [--app <alias>] [--task <id>] <file-or-dir>…` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
+  [--app <alias>] [--task <id>] <file-or-dir>…` and `plsql-scan.py` with the same arguments (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
   3 UNKNOWN). They share `framework/lib/` (the `.apx` reader and the result envelope).
 - **State.** `refs/apex-sync/<alias>`; `.git/apex-sync/<alias>/` holding `state.json`,
   `check-ok.import`, `check-ok.export`, `last-<operation>.json`.

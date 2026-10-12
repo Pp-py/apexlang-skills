@@ -2,7 +2,7 @@
 -- Transitions are VERBS with a legal from-state guard, not raw `UPDATE status`.
 -- Depends on: pkg_errors (00-) and table hr_absences (01-).
 
-CREATE OR REPLACE PACKAGE pkg_absences AS
+CREATE OR REPLACE PACKAGE pkg_absences AUTHID DEFINER AS
   /*
    * Only write path for hr_absences. No internal COMMIT.
    * Every transition validates its legal from-state. Errors in the -209xx band.

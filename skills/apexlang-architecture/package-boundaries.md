@@ -287,7 +287,7 @@ Every flow package states the order it acquires `FOR UPDATE` in its header, and 
 it calls respects it:
 
 ```plsql
-CREATE OR REPLACE PACKAGE pkg_sales_flow AS
+CREATE OR REPLACE PACKAGE pkg_sales_flow AUTHID DEFINER AS
   /*
    * Coordinates orders + inventory + payments. Issues no DML of its own.
    * No internal COMMIT (back-end-conventions.md section 4).

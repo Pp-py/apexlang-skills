@@ -52,3 +52,5 @@ jobs:
         run: bash tests/integration/ux-check.sh
       - name: apex-security static scan (fixtures and the examples)
         run: bash tests/integration/sec-scan.sh
+      - name: apex-security package scan (fixtures and the examples)
+        run: bash tests/integration/plsql-scan.sh

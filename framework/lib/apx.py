@@ -7,7 +7,7 @@
   prop(comp, key)    (value, line) of a property, '' when absent ("security.authorizationScheme")
   is_destructive(c)  a control or process that deletes, rejects or cancels a record —
                      one definition for UX-DESTRUCTIVE-CONFIRM and SEC-ACTION-AUTHZ
-  collect(paths)     the .apx files under files and directories, sorted
+  collect(paths)     the .apx files (or other extensions) under files and directories, sorted
 """
 import os
 import re
@@ -121,12 +121,12 @@ def is_destructive(c):
             or prop(c, "layout.slot")[0] == "delete")
 
 
-def collect(paths):
+def collect(paths, exts=(".apx",)):
     files = []
     for p in paths:
         if os.path.isdir(p):
             for d, _, names in os.walk(p):
-                files += [os.path.join(d, n) for n in sorted(names) if n.endswith(".apx")]
+                files += [os.path.join(d, n) for n in sorted(names) if n.lower().endswith(exts)]
         elif os.path.isfile(p):
             files.append(p)
         else:

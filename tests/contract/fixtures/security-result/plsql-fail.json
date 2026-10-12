@@ -1,0 +1,78 @@
+{
+  "kind": "security-result",
+  "schemaVersion": 1,
+  "status": "FAIL",
+  "reasons": [
+    {
+      "code": "SECURITY_CRITERIA_FAILED",
+      "message": "1 file(s) scanned; 6 dynamic SQL finding(s)"
+    }
+  ],
+  "app": {
+    "appAlias": "hr"
+  },
+  "context": {
+    "task": "T-42",
+    "repo": {
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "dirty": false
+    },
+    "frameworkVersion": "0.6.1",
+    "timestamp": "2026-10-11T13:00:00Z",
+    "producer": {
+      "skill": "apex-security",
+      "method": "tool"
+    }
+  },
+  "scope": "plsql",
+  "files": [
+    "db/hr/fail.sql"
+  ],
+  "unparsed": [],
+  "criteria": [
+    {
+      "id": "SEC-SQL-BIND",
+      "status": "FAIL",
+      "findings": [
+        {
+          "path": "db/hr/fail.sql",
+          "line": 12,
+          "detail": "a value concatenated into dynamic SQL: bind it (USING) or DBMS_ASSERT it"
+        },
+        {
+          "path": "db/hr/fail.sql",
+          "line": 16,
+          "detail": "a value concatenated into dynamic SQL: bind it (USING) or DBMS_ASSERT it"
+        },
+        {
+          "path": "db/hr/fail.sql",
+          "line": 17,
+          "detail": "dynamic SQL whose text is not traceable here, with no `-- dynamic sql review: <reason>`"
+        },
+        {
+          "path": "db/hr/fail.sql",
+          "line": 14,
+          "detail": "a value concatenated into dynamic SQL: bind it (USING) or DBMS_ASSERT it"
+        },
+        {
+          "path": "db/hr/fail.sql",
+          "line": 18,
+          "detail": "dynamic SQL whose text is not traceable here, with no `-- dynamic sql review: <reason>`"
+        },
+        {
+          "path": "db/hr/fail.sql",
+          "line": 19,
+          "detail": "a value concatenated into dynamic SQL: bind it (USING) or DBMS_ASSERT it"
+        }
+      ]
+    }
+  ],
+  "advisories": [
+    {
+      "id": "SEC-AUTHID",
+      "path": "db/hr/fail.sql",
+      "line": 1,
+      "detail": "package pkg_bad states no AUTHID"
+    }
+  ]
+}
