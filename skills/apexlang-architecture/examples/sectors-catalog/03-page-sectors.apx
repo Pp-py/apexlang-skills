@@ -12,7 +12,7 @@ page 30 (
     }
 
     region breadcrumb (
-        name: Breadcrumb
+        name: Sectors
         type: breadcrumb
         source {
             breadcrumb: @breadcrumb
@@ -22,7 +22,7 @@ page 30 (
             slot: breadcrumbBar
         }
         appearance {
-            template: @/breadcrumb
+            template: @/title-bar
             templateOptions: #DEFAULT#
         }
         componentAppearance {
@@ -39,7 +39,7 @@ page 30 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                select sector_id, code, name, active_flag
+                select sector_id, code, name, active_flag, row_version
                   from hr_sectors
                  order by code
                 ```
@@ -113,6 +113,13 @@ page 30 (
                 }
             )
 
+            displayColumn (
+                column: @ROW_VERSION
+                layout {
+                    sequence: 5
+                }
+            )
+
         )
 
         column SECTOR_ID (
@@ -180,6 +187,19 @@ page 30 (
                 dataType: varchar2
             }
         )
+
+        // The lost-update token (back-end-conventions.md section 7): carried back on
+        // save, and refreshed by save_row so the row can be saved again.
+        column ROW_VERSION (
+            type: hidden
+            layout {
+                sequence: 50
+            }
+            source {
+                databaseColumn: ROW_VERSION
+                dataType: number
+            }
+        )
     )
 
     process save-sectors (
@@ -192,6 +212,8 @@ page 30 (
                 declare
                     l_err boolean := false;
                 begin
+                    -- thin wrapper: an Interactive Grid save routes each row by
+                    -- :APEX$ROW_STATUS and writes the PK and version back to the row.
                     -- Required-field checks live here: native IG column validations
                     -- do NOT fire on IG Save. apex_error shows the clean message,
                     -- without the ORA- prefix.
@@ -205,15 +227,17 @@ page 30 (
                     end if;
 
                     if not l_err then
-                        -- Normalize before writing; p_sector_id is IN OUT: on insert
-                        -- :SECTOR_ID receives the generated PK and the IG finalizes the row.
+                        -- Normalize before writing. p_sector_id and p_row_version are IN OUT:
+                        -- on insert :SECTOR_ID receives the generated PK and the IG finalizes
+                        -- the row; on update :ROW_VERSION receives the bumped version.
                         :CODE := upper(trim(:CODE));
                         pkg_sectors.save_row(
                             p_row_status  => :APEX$ROW_STATUS,
                             p_sector_id   => :SECTOR_ID,
                             p_code        => :CODE,
                             p_name        => :NAME,
-                            p_active_flag => :ACTIVE_FLAG
+                            p_active_flag => :ACTIVE_FLAG,
+                            p_row_version => :ROW_VERSION
                         );
                     end if;
                 end;

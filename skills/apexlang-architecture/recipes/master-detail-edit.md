@@ -61,6 +61,7 @@ process save-members (
     type: executeCode
     editableRegion: @members
     source { plsqlCode: ```plsql
+        -- thin wrapper: an Interactive Grid save routes each row by :APEX$ROW_STATUS.
         -- stamp the parent FK on new child rows, then route to the child package
         if :APEX$ROW_STATUS = 'C' then
             :SECTOR_ID := :P30_SECTOR_ID;

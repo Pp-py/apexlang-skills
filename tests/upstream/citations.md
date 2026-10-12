@@ -50,7 +50,11 @@ SKILL.md | If the version is unknown, use 26.1. | README.md (Requirements: the v
 26.1/apexlang-generation/references/policies/memory-bank/40-components/apex.region-interactions.md | Use declarative `behavior.target` for redirects | apexlang-architecture ui-contracts.md §3
 26.1/apexlang-generation/references/policies/memory-bank/20-data/apex.sql.md | MUST: Use process type: invokeApi with invoke | framework/CAPABILITIES.md (KC-4)
 26.1/apexlang-generation/references/policies/memory-bank/20-data/apex.sql.md | MUST NOT: Use executeCode to call packages via plsqlCode | framework/CAPABILITIES.md (KC-4)
-26.1/apexlang-generation/references/policies/memory-bank/10-global/apex.global.md | MUST: Allow a thin page-level `executeCode` wrapper for packaged calls | framework/CAPABILITIES.md (KC-4)
+26.1/apexlang-generation/references/policies/memory-bank/10-global/apex.global.md | MUST: Allow a thin page-level `executeCode` wrapper for packaged calls | framework/CAPABILITIES.md (KC-4), apexlang-architecture SKILL.md
+26.1/apexlang-generation/references/policies/memory-bank/10-global/apex.global.md | MUST NOT: Use `type: invokeApi` in `appProcess`. | framework/CAPABILITIES.md (KC-4), apexlang-architecture SKILL.md
+26.1/apexlang-generation/templates/business-logic/processes/processes.invoke-api.md | with no sibling `value.type` | framework/CAPABILITIES.md (UP-4)
+26.1/apexlang-generation/templates/buttons/buttons.defined-by-da.md | Do not include `warnOnUnsavedChanges` for this action type | framework/CAPABILITIES.md (KC-7), examples/README.md
+26.1/apexlang-generation/templates/base-app-structure/scaffold-example/shared-components/themes/universal-theme/theme.apx | breadcrumbs: @/title-bar | framework/CAPABILITIES.md (KC-7), examples/README.md
 26.1/apexlang-compile/scripts/validate-apex-app.sh | grep -Fq "Validation successful" | framework/CONTRACTS.md (Validation signal, identical in 26.1)
 26.1/apexlang-compile/scripts/validate-apex-app.sh | report APEXLang validation errors while still returning status 0 | framework/CONTRACTS.md (identical in 26.1)
 26.1/apexlang-inventory/assets/app/page/process/plugin-variants/interactive-grid-auto-row-processing/interactive-grid-auto-row-processing.md | interactiveGridAutoRowProcessing:"Interactive Grid - Automatic Row Processing (DML)" | apexlang-architecture references/decision-record.md (identical in 26.1)

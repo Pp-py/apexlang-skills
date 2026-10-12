@@ -131,14 +131,21 @@ button approve ( buttonName: APPROVE  label: Approve  layout { region: @form-res
 button reject  ( buttonName: REJECT   label: Reject   layout { region: @form-resolve  slot: delete } )
 
 process approve (
-    type: executeCode
-    source { plsqlCode: ```plsql pkg_absence_flow.approve(:P62_ABSENCE_ID, :APP_USER);``` }
+    type: invokeApi
+    invoke { package: pkg_absence_flow  procedureOrFunction: approve }
+    parameter p_absence_id ( parameter { dataType: number }
+        value { type: item  item: P62_ABSENCE_ID }  advanced { displaySequence: 1 } )
+    parameter p_approver   ( value { type: expression  plsqlExpression: :APP_USER }
+        advanced { displaySequence: 2 } )
     execution { sequence: 10  point: afterSubmit }
     serverSideCondition { type: expression  plsqlExpression: :REQUEST = 'APPROVE' }
 )
 process reject (
-    type: executeCode
-    source { plsqlCode: ```plsql pkg_absences.reject(:P62_ABSENCE_ID, :P62_REASON);``` }
+    type: invokeApi
+    invoke { package: pkg_absences  procedureOrFunction: reject }
+    parameter p_absence_id ( parameter { dataType: number }
+        value { type: item  item: P62_ABSENCE_ID }  advanced { displaySequence: 1 } )
+    parameter p_reason     ( value { type: item  item: P62_REASON }  advanced { displaySequence: 2 } )
     execution { sequence: 20  point: afterSubmit }
     serverSideCondition { type: expression  plsqlExpression: :REQUEST = 'REJECT' }
 )

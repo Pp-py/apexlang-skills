@@ -15,10 +15,15 @@ PL/SQL over 4000 characters is a hard failure whose fix is to "extract it into a
 (`PLSQL_INLINE_BLOCK_001`, §*2. Universal Guardrails* — it *blocks final output*). Form pages are told
 to "offload logic to views or packages when possible" (`apex.form.md` §*Notes*). Automatic Row
 Processing — preferred for simple CRUD, required by the IG page rule — is where the standard points the
-other way. This skill takes the direction the rest of it already sets, and removes that exception. (The
-policies also say pages call packages through `invokeApi`; the recipes use a thin `executeCode` wrapper
-— both satisfy the single write path. Oracle's own policies disagree on this one: `framework/CAPABILITIES.md`
-KC-4.)
+other way. This skill takes the direction the rest of it already sets, and removes that exception.
+
+How the page calls the package follows the majority of Oracle's policies (`apex.global.md`,
+`apex.logic.md`; `apex.sql.md` alone forbids the wrapper outright — `framework/CAPABILITIES.md` KC-4):
+a page process uses `invokeApi` by default. A thin `executeCode` wrapper is allowed only where it
+orchestrates a named-notation call plus direct page-item assignment — an Interactive Grid save (it
+routes by `:APEX$ROW_STATUS` and writes the PK and version back to the row), a loader that assigns
+page items, a branch-gated flow — with its first line `-- thin wrapper: <reason>` and no business logic
+in it. `appProcess` stays `executeCode`-only, as Oracle requires.
 
 ## Three sources, three jobs
 

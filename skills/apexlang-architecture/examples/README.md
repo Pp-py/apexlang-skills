@@ -28,17 +28,17 @@ README has the exact commands.
   as `-20xxx` errors, surfaced friendly via the EHF.
 - **DB constraints as backstop:** unique index / CHECK guarantee correctness; the package gives
   the friendly message.
-
-**One convention these slices do NOT yet carry:** the version token of
-`back-end-conventions.md` §7. `hr_sectors` and `hr_employees` declare `row_version` (`hr_absences`
-does not) and `00-pkg_errors.sql` reserves `k_row_changed`, but the packages still update by primary
-key alone — so two users editing the same
-row lose one of the two saves. Copy the write-path shape from these files, and the lost-update
-guard from §7 and the recipes, not from here.
+- **Lost-update guard** (`back-end-conventions.md` §7): `pkg_sectors` and `pkg_employees` update and
+  inactivate only at the `row_version` the page loaded, bump it in the same statement and raise
+  `pkg_errors.k_row_changed` when it moved; the pages carry it back (a hidden IG column, a hidden
+  item). `pkg_absences` needs no token: each transition locks its row (`FOR UPDATE`) and checks the
+  from-state, and no screen edits an absence's other columns.
+- **Package calls:** `invokeApi` processes; the Interactive Grid save and the loaders stay thin
+  `executeCode` wrappers, each marked `-- thin wrapper: <reason>` (`framework/CAPABILITIES.md` KC-4).
 
 ## Grammar status & gotchas
 
-Two different checks, with two different results — `tests/upstream/validate-examples.sh` runs both:
+Two different checks — `tests/upstream/validate-examples.sh` runs both:
 
 - **Oracle's 26.1 local lint** (`apexlang-generation`, release 2026.09.21; Oracle calls it advisory
   "syntax hygiene"): the five `.apx` pass with exactly the documented diagnostics — the app-level
@@ -46,11 +46,12 @@ Two different checks, with two different results — `tests/upstream/validate-ex
   Report column, which the compiler requires and the lint forbids (listed in
   `tests/upstream/expected-diagnostics.txt` and in the slice that reports them).
 - **The compiler** (SQLcl `apex validate`, the contract of Oracle's `apexlang-compile`): with SQLcl
-  26.2.0 on Oracle's 26.1 scaffold it currently **rejects** them — unresolved `@/breadcrumb`
-  template references and properties it does not accept (`templateOptions` after them, and
-  `warnOnUnsavedChanges`). Part of that is the scaffold's theme rather than these pages (Oracle's own example pages fail the same way there);
-  the rest is unresolved. Tracked as a known conflict in the capability matrix — do not read
-  "lint-clean" as "compiles".
+  26.2.0 on Oracle's 26.1 scaffold they **compile** (`Validation successful`). Three shapes it insists
+  on: a breadcrumb region takes the theme's `@/title-bar` template (the breadcrumb itself
+  `@/breadcrumb`); a `definedByDynamicAction` button has no `warnOnUnsavedChanges`; an `invokeApi`
+  IN parameter needs `value { type: item  item: … }`, while an OUT one takes `ignoreOutput: false`
+  and `value { item: … }` with no `type` (`framework/CAPABILITIES.md` UP-4). Lint-clean is still not
+  "compiles": run both.
 
 **Security.** Every page declares Oracle's baseline (`authorizationScheme: mustNotBePublicUser`,
 `pageAccessProtection: argumentsMustHaveChecksum`, checksums on hidden and key items), and the

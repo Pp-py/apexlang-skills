@@ -82,14 +82,17 @@ page 62 (
     region buttons    ( type: staticContent  layout { slot: REGION_POSITION_03 } )
 
     process create-request (
-        type: executeCode
-        source { plsqlCode: ```plsql
-            pkg_absences.create_request(
-                p_employee_id => :P62_EMPLOYEE_ID,
-                p_reason      => :P62_REASON,
-                p_date_from   => :P62_DATE_FROM,
-                p_date_to     => :P62_DATE_TO,
-                p_request_id  => :P62_REQUEST_ID);``` }
+        type: invokeApi
+        invoke { package: pkg_absences  procedureOrFunction: create_request }
+        parameter p_employee_id ( parameter { dataType: number }
+            value { type: item  item: P62_EMPLOYEE_ID }  advanced { displaySequence: 1 } )
+        parameter p_reason      ( value { type: item  item: P62_REASON }  advanced { displaySequence: 2 } )
+        parameter p_date_from   ( parameter { dataType: date }
+            value { type: item  item: P62_DATE_FROM }  advanced { displaySequence: 3 } )
+        parameter p_date_to     ( parameter { dataType: date }
+            value { type: item  item: P62_DATE_TO }  advanced { displaySequence: 4 } )
+        parameter p_request_id  ( parameter { direction: out  dataType: number  ignoreOutput: false }
+            value { item: P62_REQUEST_ID }  advanced { displaySequence: 5 } )
         execution { sequence: 20 }
         serverSideCondition { type: requestIsContainedInValue  value: FINISH }
     )

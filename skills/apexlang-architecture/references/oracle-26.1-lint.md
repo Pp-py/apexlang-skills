@@ -21,5 +21,5 @@ contradicts the compiler, as with `type: link` on an IR column, the compiler win
 Page-level validations follow a fixed skeleton — static ID prefixed `VAL_`, blocks in the order `name` → `execution` → `validation` → `error` → optional `serverSideCondition { whenButtonPressed: @<button> }` — and one page per file, named `p<5-digit>-<alias>.apx`.
 
 The lint is advisory — Oracle calls it "syntax hygiene" — and never a Validation verdict;
-the compiler is (`framework/GATES.md`). What still keeps the examples from compiling:
-`framework/CAPABILITIES.md` KC-7.
+the compiler is (`framework/GATES.md`). The examples pass both (`framework/CAPABILITIES.md`
+§Recorded runs).

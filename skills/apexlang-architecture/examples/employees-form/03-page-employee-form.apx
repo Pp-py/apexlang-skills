@@ -15,7 +15,7 @@ page 41 (
     }
 
     region breadcrumb (
-        name: Breadcrumb
+        name: Employee
         type: breadcrumb
         source {
             breadcrumb: @breadcrumb
@@ -25,7 +25,7 @@ page 41 (
             slot: breadcrumbBar
         }
         appearance {
-            template: @/breadcrumb
+            template: @/title-bar
             templateOptions: #DEFAULT#
         }
         componentAppearance {
@@ -106,6 +106,20 @@ page 41 (
         type: hidden
         layout {
             sequence: 10
+            region: @basic-data
+            slot: regionBody
+        }
+        security {
+            sessionStateProtection: checksumRequiredSessionLevel
+        }
+    )
+
+    // The lost-update token (back-end-conventions.md section 7): loaded with the row,
+    // sent back on save; the package refuses the save if the row changed since.
+    pageItem P41_ROW_VERSION (
+        type: hidden
+        layout {
+            sequence: 15
             region: @basic-data
             slot: regionBody
         }
@@ -288,11 +302,12 @@ page 41 (
             plsqlCode:
                 ```plsql
                 begin
+                    -- thin wrapper: a loader that assigns page items from one row.
                     -- Read side: plain inline SQL (back-end-conventions.md section 5).
                     -- Nothing to load in create mode.
                     if :P41_EMPLOYEE_ID is not null then
-                        select full_name, email, sector_id
-                          into :P41_FULL_NAME, :P41_EMAIL, :P41_SECTOR_ID
+                        select full_name, email, sector_id, row_version
+                          into :P41_FULL_NAME, :P41_EMAIL, :P41_SECTOR_ID, :P41_ROW_VERSION
                           from hr_employees
                          where employee_id = :P41_EMPLOYEE_ID;
                     end if;
@@ -307,25 +322,76 @@ page 41 (
 
     process create-employee (
         name: Create employee
-        type: executeCode
-        source {
-            plsqlCode:
-                ```plsql
-                declare
-                    l_employee_id number;
-                begin
-                    -- The package validates and writes; this process only orchestrates.
-                    pkg_employees.create_row(
-                        p_full_name   => :P41_FULL_NAME,
-                        p_email       => :P41_EMAIL,
-                        p_sector_id   => :P41_SECTOR_ID,
-                        p_employee_id => l_employee_id
-                    );
-                    -- Carry the generated PK back so the page continues in edit mode.
-                    :P41_EMPLOYEE_ID := l_employee_id;
-                end;
-                ```
+        type: invokeApi
+        invoke {
+            package: pkg_employees
+            procedureOrFunction: create_row
         }
+        parameter p_full_name (
+            parameter {
+                direction: in
+                dataType: varchar2
+            }
+            value {
+                type: item
+                item: P41_FULL_NAME
+            }
+            advanced {
+                displaySequence: 1
+            }
+        )
+        parameter p_email (
+            parameter {
+                direction: in
+                dataType: varchar2
+            }
+            value {
+                type: item
+                item: P41_EMAIL
+            }
+            advanced {
+                displaySequence: 2
+            }
+        )
+        parameter p_sector_id (
+            parameter {
+                direction: in
+                dataType: number
+            }
+            value {
+                type: item
+                item: P41_SECTOR_ID
+            }
+            advanced {
+                displaySequence: 3
+            }
+        )
+        parameter p_hired_on (
+            parameter {
+                direction: in
+                dataType: date
+                hasDefault: true
+            }
+            value {
+                type: apiDefault
+            }
+            advanced {
+                displaySequence: 4
+            }
+        )
+        parameter p_employee_id (
+            parameter {
+                direction: out
+                dataType: number
+                ignoreOutput: false
+            }
+            value {
+                item: P41_EMPLOYEE_ID
+            }
+            advanced {
+                displaySequence: 5
+            }
+        )
         execution {
             sequence: 20
         }
@@ -340,20 +406,89 @@ page 41 (
 
     process update-employee (
         name: Update employee
-        type: executeCode
-        source {
-            plsqlCode:
-                ```plsql
-                begin
-                    pkg_employees.update_row(
-                        p_employee_id => :P41_EMPLOYEE_ID,
-                        p_full_name   => :P41_FULL_NAME,
-                        p_email       => :P41_EMAIL,
-                        p_sector_id   => :P41_SECTOR_ID
-                    );
-                end;
-                ```
+        type: invokeApi
+        invoke {
+            package: pkg_employees
+            procedureOrFunction: update_row
         }
+        parameter p_employee_id (
+            parameter {
+                direction: in
+                dataType: number
+            }
+            value {
+                type: item
+                item: P41_EMPLOYEE_ID
+            }
+            advanced {
+                displaySequence: 1
+            }
+        )
+        parameter p_full_name (
+            parameter {
+                direction: in
+                dataType: varchar2
+            }
+            value {
+                type: item
+                item: P41_FULL_NAME
+            }
+            advanced {
+                displaySequence: 2
+            }
+        )
+        parameter p_email (
+            parameter {
+                direction: in
+                dataType: varchar2
+            }
+            value {
+                type: item
+                item: P41_EMAIL
+            }
+            advanced {
+                displaySequence: 3
+            }
+        )
+        parameter p_sector_id (
+            parameter {
+                direction: in
+                dataType: number
+            }
+            value {
+                type: item
+                item: P41_SECTOR_ID
+            }
+            advanced {
+                displaySequence: 4
+            }
+        )
+        parameter p_row_version (
+            parameter {
+                direction: in
+                dataType: number
+            }
+            value {
+                type: item
+                item: P41_ROW_VERSION
+            }
+            advanced {
+                displaySequence: 5
+            }
+        )
+        parameter p_hired_on (
+            parameter {
+                direction: in
+                dataType: date
+                hasDefault: true
+            }
+            value {
+                type: apiDefault
+            }
+            advanced {
+                displaySequence: 6
+            }
+        )
         execution {
             sequence: 30
         }
@@ -368,16 +503,37 @@ page 41 (
 
     process delete-employee (
         name: Deactivate employee
-        type: executeCode
-        source {
-            plsqlCode:
-                ```plsql
-                begin
-                    -- Soft delete: the package inactivates, it does not DELETE.
-                    pkg_employees.delete_row(p_employee_id => :P41_EMPLOYEE_ID);
-                end;
-                ```
+        type: invokeApi
+        invoke {
+            package: pkg_employees
+            procedureOrFunction: delete_row
         }
+        parameter p_employee_id (
+            parameter {
+                direction: in
+                dataType: number
+            }
+            value {
+                type: item
+                item: P41_EMPLOYEE_ID
+            }
+            advanced {
+                displaySequence: 1
+            }
+        )
+        parameter p_row_version (
+            parameter {
+                direction: in
+                dataType: number
+            }
+            value {
+                type: item
+                item: P41_ROW_VERSION
+            }
+            advanced {
+                displaySequence: 2
+            }
+        )
         execution {
             sequence: 40
         }

@@ -35,7 +35,7 @@ Oracle's 26.1 lint disagrees twice, and here the compiler wins (`framework/PRINC
 
 ## Modal page
 
-The `staticContent` region is the container; items live in its `regionBody` slot. The `load-sector` process pre-fetches on edit (PK present) at `beforeHeader` — an inline SQL read is fine there. The `save-sector` process is the write: it calls the package, never `INSERT`/`UPDATE` here. `close-dialog` closes on success ONLY — last submit-time sequence, gated by `:REQUEST`; if the package raises a `-20xxx` error the submit halts, it never runs, and the modal stays open showing the friendly error.
+The `staticContent` region is the container; items live in its `regionBody` slot. The `load-sector` process pre-fetches on edit (PK present) at `beforeHeader` — an inline SQL read is fine there. `create-sector` and `update-sector` are the write: one `invokeApi` process each, gated by whether the PK is present, never `INSERT`/`UPDATE` here. `close-dialog` closes on success ONLY — last submit-time sequence, gated by `:REQUEST`; if the package raises a `-20xxx` error the submit halts, it never runs, and the modal stays open showing the friendly error.
 
 ```
 page 81 (
@@ -62,6 +62,7 @@ page 81 (
     process load-sector (
         type: executeCode
         source { plsqlCode: ```plsql
+            -- thin wrapper: a loader that assigns page items from one row.
             if :P81_SECTOR_ID is not null then
               select code, name, row_version
                 into :P81_CODE, :P81_NAME, :P81_ROW_VERSION
@@ -70,17 +71,30 @@ page 81 (
         execution { point: beforeHeader }
     )
 
-    process save-sector (
-        type: executeCode
-        source { plsqlCode: ```plsql
-            if :P81_SECTOR_ID is null then
-              -- OUT: the new PK lands in the hidden item for the caller to use
-              pkg_sectors.create_row(:P81_CODE, :P81_NAME, :P81_SECTOR_ID);
-            else
-              pkg_sectors.update_row(:P81_SECTOR_ID, :P81_CODE, :P81_NAME, 'Y',
-                                     :P81_ROW_VERSION);
-            end if;``` }
-        execution { point: afterSubmit }
+    process create-sector (
+        type: invokeApi
+        invoke { package: pkg_sectors  procedureOrFunction: create_row }
+        parameter p_code ( value { type: item  item: P81_CODE }  advanced { displaySequence: 1 } )
+        parameter p_name ( value { type: item  item: P81_NAME }  advanced { displaySequence: 2 } )
+        -- OUT: the new PK lands in the hidden item for the caller to use
+        parameter p_sector_id ( parameter { direction: out  dataType: number  ignoreOutput: false }
+            value { item: P81_SECTOR_ID }  advanced { displaySequence: 3 } )
+        execution { sequence: 10  point: afterSubmit }
+        serverSideCondition { type: itemIsNull  item: P81_SECTOR_ID }
+    )
+
+    process update-sector (
+        type: invokeApi
+        invoke { package: pkg_sectors  procedureOrFunction: update_row }
+        parameter p_sector_id ( parameter { dataType: number }
+            value { type: item  item: P81_SECTOR_ID }  advanced { displaySequence: 1 } )
+        parameter p_code ( value { type: item  item: P81_CODE }  advanced { displaySequence: 2 } )
+        parameter p_name ( value { type: item  item: P81_NAME }  advanced { displaySequence: 3 } )
+        parameter p_active_flag ( value { type: staticValue  staticValue: Y }  advanced { displaySequence: 4 } )
+        parameter p_row_version ( parameter { direction: inOut  dataType: number  ignoreOutput: false }
+            value { item: P81_ROW_VERSION }  advanced { displaySequence: 5 } )
+        execution { sequence: 20  point: afterSubmit }
+        serverSideCondition { type: itemIsNotNull  item: P81_SECTOR_ID }
     )
 
     process close-dialog (

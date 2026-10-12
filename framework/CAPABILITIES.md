@@ -13,11 +13,11 @@ Verified against Oracle's skills at the revision in [`oracle-skills.lock.json`](
 | **Oracle** generation, policies, local lint (`apexlang-generation`) | yes | no — not shipped for 26.2 | upstream router ([citations](../tests/upstream/citations.md)) |
 | **Oracle** compile (`validate-apex-app.sh`) and deploy (`deploy-apex-app.sh`) | yes | yes | [citations](../tests/upstream/citations.md) (both scripts, both versions) |
 | **Oracle** `apexctl runtime verify-ui` | opt-in, HTML fetch only | no | [citations](../tests/upstream/citations.md) |
-| Architecture: single write path, package boundaries, recipes | yes, with KC-4, KC-5 | not recorded | the skill; §Known conflicts |
+| Architecture: single write path, package boundaries, recipes | yes | not recorded | the skill; §Known conflicts |
 | UI rules the recipes state (report links, markup in SQL, Cards classes, declarative targets) under Oracle's lint and the compiler | yes — measured on probe pages | not recorded | §Recorded runs; [probe-ui-rules](../tests/upstream/probe-ui-rules.sh) |
 | Architecture: red-flag tokens exist in Oracle's inventory | yes | yes | [citations](../tests/upstream/citations.md) (the 3 auto-row-processing process types, both versions) |
 | Examples under Oracle's local lint | yes — only the documented diagnostics | n/a | §Recorded runs; [expected-diagnostics](../tests/upstream/expected-diagnostics.txt) |
-| Examples under the compiler | no — KC-7 | no — UP-2 | §Recorded runs |
+| Examples under the compiler | yes — `Validation successful` | no — UP-2 | §Recorded runs |
 | Sync gate: check-import / check-export / record-sync, markers, sync-result | yes (version-independent) | yes (version-independent) | [e2e](../tests/integration/sync-guard-e2e.sh) and [contract](../tests/contract/run.sh) in CI, SQLcl stubbed |
 | Sync gate against a live Builder | not recorded | not recorded | — |
 | Hook lanes: `apex import`/`export` and short forms, deploy script, `apexctl` roundtrip | yes | yes (deploy lane; 26.2 has no `apexctl`) | [e2e](../tests/integration/sync-guard-e2e.sh) |
@@ -64,6 +64,7 @@ What CI does not run, recorded when it was run. Re-run after updating Oracle's s
 | 2026-10-11 | `sec-probe.py --anon <home> --tamper` on Oracle's UX Pattern Catalog (lab, public by design, read only) | `@playwright/cli` 0.1.17, bundled Chromium (WSL) | FAIL, as it must on a public app — `SEC-ANON-REDIRECT`: page 1 served with no login; `SEC-CHECKSUM-TAMPER` NOT_RUN on four pages (no `cs=` link) |
 | 2026-10-11 | `sec-probe.py --tamper` and `--xss` on a local page that imitates APEX's checksum check (127.0.0.1) | same | tamper PASS when the target checks `cs`, FAIL (both variants) when it does not; XSS PASS on escaped text, FAIL on markup. The first run found that `run-code`'s sandbox has no global `URL` — the stubbed suite could not; the URLs are now built in the page. `--role` not exercised against a real login (no app with a second user in the lab) |
 | 2026-10-11 | `secrets-scan.py` over this repository | — | FAIL at first, 16 findings: 14 were the scan's own false positives (`actions/checkout@v5`, `@playwright/mcp@latest`, code such as `pwd = os.environ.get(…)`, prose, Oracle's `scott/tiger` in fixtures) — the rules were tightened; 2 were fake passwords in `pw-wrapper-smoke.sh`, now marked `secrets-scan: allow <reason>`; the scan's own two patterns are marked too. PASS, 205 files |
+| 2026-10-12 | `validate-examples.sh --lint` and `SQLCL_BIN=… validate-examples.sh --compiler`, after KC-4/5/7 (breadcrumb regions on `@/title-bar` named after the page, no `warnOnUnsavedChanges` on a `definedByDynamicAction` button, `invokeApi` processes, the version token) | SQLcl 26.2.0.181.2110 (Windows, from WSL), `apexlang-generation` 26.1 at `014cdb2`, Oracle's 26.1 scaffold | PASS both — the compiler's first PASS (`Validation successful`); the lint only the five documented diagnostics. Found on the way: an `invokeApi` IN parameter without `value.type` does not compile (UP-4) |
 
 ## Known conflicts
 
@@ -74,9 +75,7 @@ conflicts and its ID is not reused. Owner of the open ones: Phase 3, as noted.
 
 | ID | Topic | Oracle (26.1, release 2026.09.21) | This repo | Until fixed |
 |---|---|---|---|---|
-| KC-4 | calling a package from a page process | `apex.sql.md` requires `invokeApi` and forbids calling packages from `executeCode`; `apex.global.md` allows a thin `executeCode` wrapper with named notation — and says "Prefer ARP for simple CRUD" | recipes use thin `executeCode` wrappers; never ARP (P1) | interim rule: `invokeApi` and a logic-free `executeCode` wrapper both satisfy P1 (Oracle's own policies disagree) |
-| KC-5 | lost-update guard in the examples | — (internal) | `back-end-conventions.md` §7 requires a version token; the example packages update by primary key alone | copy the guard from §7, not from the examples (owner: apexlang-architecture) |
-| KC-7 | examples vs the compiler | SQLcl 26.2.0 `apex validate`, Oracle's 26.1 scaffold: unresolved `@/breadcrumb` template references and `templateOptions` after them (pages 30, 41, 60), `warnOnUnsavedChanges` (page 42) | the same pages pass the 26.1 lint, with the documented diagnostics | the template errors also hit Oracle's own example pages on that scaffold (theme); the rest is unresolved — validate against your own app before importing (owner: apexlang-architecture) |
+| — | none open | | | |
 
 ### Resolved conflicts
 
@@ -85,7 +84,10 @@ conflicts and its ID is not reused. Owner of the open ones: Phase 3, as noted.
 | KC-1 | conditional card styling | Oracle's rule, generalised. A row-dependent class comes from a closed set of literals and is mapped whole: the six `u-*` classes on Cards and on report badges, `success\|warning\|danger\|info` on template-component badges, never a composed class. Avatar colours come from `applyThemeColors`. | `ui-contracts.md` §2; recipes, the absences example (0.7.0, unreleased) |
 | KC-2 | Metric Card drill-down | Oracle's rule: the card's `position: link` action only when every card opens the same page with its own key; otherwise a header action or a nearby report | `recipes/dashboard-kpis-charts.md` (0.7.0, unreleased) |
 | KC-3 | navigation targets | Oracle's rule: a declarative `behavior.target` / `link.target`; the query projects the key, never a URL | `ui-contracts.md` §3 (0.7.0, unreleased) |
+| KC-4 | calling a package from a page process | The majority of Oracle's policies (`apex.global.md`, `apex.logic.md`, the guard, `rules.catalog.json`): `invokeApi` by default; a thin `executeCode` wrapper only where it orchestrates a named-notation call plus direct page-item assignment — an Interactive Grid save, a loader, a branch-gated flow — marked `-- thin wrapper: <reason>`, with no business logic. `apex.sql.md` alone forbids the wrapper outright; the lint enforces neither. `appProcess` stays `executeCode`-only | `SKILL.md`, `PRINCIPLES.md` P1; the examples' and recipes' processes (0.7.0, unreleased) |
+| KC-5 | lost-update guard in the examples | `pkg_sectors` and `pkg_employees` update and inactivate at the loaded `row_version`, bump it in the same statement and raise `k_row_changed`; the IG adapter hands the new version back (IN OUT). `hr_absences` needs none: transitions lock the row and check the from-state, no screen edits its other columns | `examples/` (0.7.0, unreleased) |
 | KC-6 | report rules (`REPORT_*`) | measured: SQLcl 26.2.0 enforces none of them. Data-only SQL and no region-level link stay this skill's own rules. Report links go on a `type: link` column, which the compiler requires even though the lint forbids it on an IR | `references/oracle-26.1-lint.md`; [probe-ui-rules](../tests/upstream/probe-ui-rules.sh) (0.7.0, unreleased) |
+| KC-7 | examples vs the compiler | Ours, not the scaffold's: a breadcrumb region takes the theme's `@/title-bar` template (`@/breadcrumb` is the breadcrumb's own), named after the page; a `definedByDynamicAction` button carries no `warnOnUnsavedChanges`. SQLcl 26.2.0 now validates the examples | `examples/` (0.7.0, unreleased); §Recorded runs |
 
 ## Upstream issues
 
@@ -96,6 +98,7 @@ Behaviors of Oracle's tooling that affect a gate.
 | UP-1 | SQLcl prints its verdict in the JVM's language ("Validación correcta." on a Spanish Windows); the compile script greps the English `Validation successful` | a valid app reads as not validated | pin the JVM: `JAVA_TOOL_OPTIONS='-Duser.language=en -Duser.country=US'` (`validate-examples.sh` does) |
 | UP-2 | SQLcl 26.2.0 refuses an app at `mmdVersion` 26.2.0+3479 — "not supported by this SQLcl version" — and still exits 0 | Validation is `BLOCKED` for 26.2 apps on that SQLcl | a newer SQLcl; never read exit 0 as PASS |
 | UP-3 | `deploy-apex-app.sh` imports without validating, and passes `SQLCL_CONNECTION_STRING` as a SQLcl argument | Validation is not enforced on the deploy lane (GAP-3); the connect string is visible in the process list | run Validation first; on shared machines, a connect string without an inline password |
+| UP-4 | Oracle's `processes.invoke-api.md` template maps parameters as `value { item: … }` with no `type`; SQLcl 26.2.0 accepts that only on an OUT parameter (with `ignoreOutput: false`) and requires `type: item` on an IN one | a generated `invokeApi` process fails to compile | IN: `value { type: item  item: … }`; OUT: `parameter { direction: out  ignoreOutput: false }` + `value { item: … }` — as the examples do |
 
 ## Declared gaps
 

@@ -12,7 +12,7 @@ Verify it with `apex-sentinel/checks/form-page.md`.
 | File | What |
 |---|---|
 | `01-ddl.sql` | `hr_employees` table, FK to `hr_sectors`, case-insensitive `UNIQUE` email index, seed row |
-| `02-pkg_employees.sql` | write-path package: `create_row` (PK out) / `update_row` / `delete_row` (inactivates) |
+| `02-pkg_employees.sql` | write-path package: `create_row` (PK out) / `update_row` / `delete_row` (inactivates), both guarded by `row_version` |
 | `03-page-employee-form.apx` | full page (page 41): sections, plain items, one process per intent |
 | `04-page-employee-drawer.apx` | drawer (page 42): same processes, `closeDialog` gated by `:REQUEST` |
 
@@ -36,8 +36,8 @@ apex validate -input <apexlang-src-dir>                   # add both .apx into y
 apex import   -input <apexlang-src-dir>
 ```
 
-> Oracle's 26.1 lint (release 2026.09.21) reports one known diagnostic — and the SQLcl
-> compiler currently rejects both pages (see `../README.md` §Grammar status):
+> Oracle's 26.1 lint (release 2026.09.21) reports one known diagnostic; the SQLcl compiler
+> accepts both pages (see `../README.md` §Grammar status):
 > `BREADCRUMB_COVERAGE_ENTRY_REQUIRED_001` for page 41, satisfied by adding a `pageNumber: 41` entry
 > to **your** app's `shared-components/breadcrumbs.apx` (page 42 is a modal drawer, so it needs
 > none). Page numbers (41, 42) and aliases (`EMPLOYEE-FORM`, `EMPLOYEE-DRAWER`) must not collide
@@ -49,7 +49,7 @@ The official form standard binds a `type: form` region to "exactly one `formAuto
 (`apex.form.md` §*Deterministic CRUD Form Routing*) and, unlike the Interactive Grid standard, offers
 no "dedicated API" carve-out.
 These pages therefore use a plain item container: ordinary page items, a `load` process for the read,
-and one `executeCode` process per intent for the write. Nothing is deviating from the official
+and one `invokeApi` process per intent for the write. Nothing is deviating from the official
 contract because no form region exists — and the single write-path survives intact. The cost is
 visible in the source: two short processes instead of an inherited column mapping.
 
@@ -57,8 +57,11 @@ visible in the source: two short processes instead of an inherited column mappin
 
 - Opening page 41 with no `P41_EMPLOYEE_ID` shows **Create**; with a PK it loads the row and shows
   **Apply Changes** / **Delete**.
-- Creating with a new email saves, and the page continues in edit mode — the process copies the
-  generated PK back into the item.
+- Creating with a new email saves, and the page continues in edit mode — `create_row`'s OUT
+  parameter puts the generated PK in the item.
+- Two sessions open the same employee; the first **Apply Changes** saves, the second is refused with
+  *"This record was changed by someone else since you opened it. Reload and try again."* and changes
+  nothing (`row_version`, `back-end-conventions.md` §7).
 - Creating with `ana.rojas@example.com` is rejected with *"An employee with email
   ana.rojas@example.com already exists."* — no `ORA-20811:` prefix, and **no row inserted**.
 - Same rejection on the drawer (page 42) leaves the drawer **open** with the message: the
