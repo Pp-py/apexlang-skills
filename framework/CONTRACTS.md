@@ -83,8 +83,9 @@ puts it back whenever it is missing.
 |---|---|---|
 | sync-result (every run) | `.git/apex-sync/<alias>/last-<operation>.json` | `apex-sync-check.sh` |
 | sync-result (with `--task`) | `<evidenceDir>/<task>/sync-<alias>-<operation>.json` | `apex-sync-check.sh` |
-| runtime-result | `<evidenceDir>/<task>/runtime-<alias>.json` | the agent (apex-sentinel) |
-| architecture-result | `<evidenceDir>/<task>/architecture.json` | the agent (apexlang-architecture) |
+| runtime-result | `<evidenceDir>/<task>/runtime-<alias>.json` | the agent (apex-sentinel), through `evidence.py write` |
+| architecture-result | `<evidenceDir>/<task>/architecture.json` | the agent (apexlang-architecture), through `evidence.py write` |
+| raw evidence | `<evidenceDir>/<task>/raw/<gate>-<alias>/<name>` | `evidence.py capture` |
 | ui-result, static (with `--task`) | `<evidenceDir>/<task>/ui-<alias>-static.json` | `ux-scan.py` (apex-ux) |
 | security-result, static (with `--task`) | `<evidenceDir>/<task>/security-<alias>-static.json` | `sec-scan.py` (apex-security) |
 | security-result, plsql (with `--task`) | `<evidenceDir>/<task>/security-<alias>-plsql.json` | `plsql-scan.py` (apex-security) |
@@ -112,7 +113,11 @@ entry; removing any of it, a major one.
   `sec-probe.py [--app <alias>] [--task <id>] [--anon <url>]… [--tamper] [--role <url>]…
   [--xss <token>]`, `secrets-scan.py [--app <alias>] [--task <id>] [<path>…]` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
   3 UNKNOWN). `skills/apexlang-architecture/scripts/arch-scan.py <file-or-dir>…` (python3; JSON on
-  stdout, no result file; exit 0 no red flag · 1 red flags · 2 BLOCKED · 3 UNKNOWN). They share
+  stdout, no result file; exit 0 no red flag · 1 red flags · 2 BLOCKED · 3 UNKNOWN).
+  `framework/scripts/evidence.py capture --gate runtime|architecture [--app <alias>] --task <id>
+  <name> -- <command>…` (exit 0 saved · 2 refused · 3 not run or not saved) and `evidence.py write
+  --kind runtime|architecture [--app <alias>] --task <id> <draft.json>` (exit the derived status
+  0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN; a refused draft 2, nothing written). They share
   `framework/lib/` (the `.apx` reader, the PL/SQL lexer and the result envelope).
 - **State.** `refs/apex-sync/<alias>`; `.git/apex-sync/<alias>/` holding `state.json`,
   `check-ok.import`, `check-ok.export`, `last-<operation>.json`.

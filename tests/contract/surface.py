@@ -411,6 +411,11 @@ def check_interface():
                          ("apex-security/scripts/secrets-scan.py", "[--app <alias>] [--task <id>] [<path>...]")):
         if args not in read(f"skills/{script}"):
             missing.append(f"{script} usage: {args}")
+    ev = read("framework/scripts/evidence.py")
+    for args in ("capture --gate runtime|architecture [--app <alias>] --task <id> <name> -- <command>...",
+                 "write --kind runtime|architecture [--app <alias>] --task <id> <draft.json>"):
+        if args not in ev:
+            missing.append(f"framework/scripts/evidence.py usage: {args}")
     hooks = json.loads(read("hooks/hooks.json"))
     cmds = [h.get("command", "") for e in hooks.get("hooks", {}).get("PreToolUse", []) for h in e.get("hooks", [])]
     matchers = [e.get("matcher") for e in hooks.get("hooks", {}).get("PreToolUse", [])]

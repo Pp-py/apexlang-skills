@@ -18,16 +18,33 @@ Record every one you were asked to verify:
     { "kind": "sql", "statement": "select count(*) from hr_sectors where upper(code) = 'PROD'", "exitCode": 0, "result": "1" } ] }
 ```
 
-Save what the page told you **by redirection**, then hash the file — the hash is what makes
-the result auditable after the fact. If the evidence dir does not exist yet, create it with a
-`.gitignore` of `*` first: evidence is never committed by accident.
+Save what the page told you through `framework/scripts/evidence.py capture`: it runs the step,
+stores its output under `raw/runtime-<alias>/` with session ids, local paths, passwords and connect
+strings removed, creates the evidence dir's `.gitignore`, and prints the `evidence` entry with the
+file's sha256 — the hash is what makes the result auditable after the fact.
 
 ```bash
-[ -f .apex-evidence/.gitignore ] || { mkdir -p .apex-evidence && printf '*\n' > .apex-evidence/.gitignore; }
-R=.apex-evidence/T-42/raw/runtime-hr; mkdir -p "$R"
-scripts/pw.sh --app hr eval '() => document.querySelector("#t_Alert_Notification")?.innerText ?? null' > "$R/ig-duplicate.json"
-sha256sum "$R/ig-duplicate.json"          # macOS: shasum -a 256
+EV=framework/scripts/evidence.py
+python3 $EV capture --gate runtime --app hr --task T-42 ig-duplicate.json -- \
+  scripts/pw.sh --app hr eval '() => document.querySelector("#t_Alert_Notification")?.innerText ?? null'
 ```
+
+## Writing it
+
+Never write the result by hand. Put what you observed in a draft — `check`, `backend`, `login`,
+`criteria` (the `evidence` entries `capture` printed; a file entry may omit `sha256`), and
+optionally `evidence` and `target` — and let the script write it:
+
+```bash
+python3 $EV write --kind runtime --app hr --task T-42 draft.json
+```
+
+It adds `kind`, `app`, `context` (`method: agent`; `runtimeUrl` from `apex-sync.json` when the draft
+has none) and **derives the status** by the table below; a draft with a `status` is refused. It
+hashes every cited file again and refuses one that changed since `capture`, a PASS criterion with
+no evidence, a NOT_RUN with no reason, and any field holding a password or a connect string — the
+message names the field, never the value. Exit: the status (0 PASS · 1 FAIL · 2 BLOCKED ·
+3 UNKNOWN); a refused draft exits 2 and writes nothing.
 
 ## Which status
 
