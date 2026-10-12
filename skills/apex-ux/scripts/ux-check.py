@@ -35,7 +35,8 @@ import sys
 import tempfile
 from urllib.parse import urlsplit
 
-from ui_result import Stop, context, rel, scrub, target, write
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
+from result import Stop, context, rel, scrub, target, write  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENDOR = os.environ.get("UX_AXE_DIR") or os.path.join(HERE, "..", "vendor")
@@ -174,10 +175,10 @@ def main(argv):
     ap.add_argument("--raw", help="write axe's full output here (default with --task: the task's raw dir)")
     a = ap.parse_args(argv)
     result = {"kind": "ui-result", "schemaVersion": 1, "status": "UNKNOWN", "reasons": [],
-              "context": context(a.task), "scope": "runtime", "criteria": [], "advisories": []}
+              "context": context(a.task, "apex-ux"), "scope": "runtime", "criteria": [], "advisories": []}
     task_dir, page = None, "page"
     try:
-        alias, task_dir = target(a.app, a.task)
+        alias, task_dir, _ = target(a.app, a.task)
         if alias:
             result["app"] = {"appAlias": alias}
         axe_src, lock = load_axe()

@@ -30,7 +30,8 @@ Verified against Oracle's skills at the revision in [`oracle-skills.lock.json`](
 | UI runtime checks (`ux-check.py`): axe-core 4.13.0 pinned, dialog focus | yes (version-independent) | same | [ux-check](../tests/integration/ux-check.sh) in CI, Playwright CLI stubbed; real browser: §Recorded runs |
 | UI gate (`ui-result`, `uiGate` opt-in) | yes (version-independent) | same | schema, fixtures and negatives in the [contract tier](../tests/contract/run.sh); every `ui-result` the ux suites emit validated there |
 | Security criteria (`apex-security/criteria.md`), threat model | yes (version-independent; Oracle's security lint is 26.1 only) | same | `surface.py` checks every criterion row; the examples pass Oracle's security lint (below) |
-| Security gate: scans, probes, `security-result` | not built (Phase 3, SEC-2 to SEC-6) | same | — |
+| Security static scan (`sec-scan.py`, `security-result`) | yes (version-independent) | same | [sec-scan](../tests/integration/sec-scan.sh) in CI: fixtures, near-misses and the examples; schema, fixtures and negatives in the contract tier |
+| Security gate: package scan, probes, secrets, GATES column | not built (Phase 3, SEC-3 to SEC-6) | same | — |
 | Windows (Git Bash) | yes — integration on `windows-latest` in CI | same | [ci.yml](../.github/workflows/ci.yml); first green 0.6.0 run: [38059670802](https://github.com/Pp-py/apexlang-skills/actions/runs/38059670802) |
 
 ## Recorded runs
@@ -54,6 +55,8 @@ What CI does not run, recorded when it was run. Re-run after updating Oracle's s
 | 2026-10-11 | `ux-check.py --task T-smoke` on the catalog's data-entry-simple-form, from a scratch repo with `apex-sync.json` (one app) | `@playwright/cli` 0.1.17, bundled Chromium (WSL), axe-core 4.13.0 | PASS — `ui-catalog-runtime-data-entry-simple-form.json` and the raw axe output (cited by sha256) in the task dir, `.gitignore` created; the URL without its session; the result validates against `ui-result` |
 | 2026-10-11 | `tests/upstream/validate-examples.sh --lint`, the app staged under `applications/` so Oracle's business-app rules run | `apexlang-generation` 26.1 at `014cdb2` | before the examples' fix: FAIL — 8 security diagnostics (`SECURITY_BASELINE_REQUIRED_001` ×5, `HIDDEN_ITEM_SSP_REQUIRED_001` ×3) the old staging path never let run; after it: PASS, only the five documented diagnostics |
 | 2026-10-11 | `SQLCL_BIN=… tests/upstream/validate-examples.sh --compiler`, the examples with their `security` blocks | SQLcl 26.2.0.181.2110 (Windows, from WSL) | FAIL as before — the same 7 errors (KC-7), none from the security properties |
+| 2026-10-11 | `sec-scan.py` over Oracle's 26.1 scaffold (`templates/base-app-structure/scaffold-example`, copied into a scratch repo) | `apexlang-generation` 26.1 at `014cdb2` | FAIL, as found — `SEC-PAGE-AUTHZ` on `p00001-home.apx`: the scaffold's Home page has no `authorizationScheme`, which Oracle's own baseline requires of every non-login page. Every other criterion PASS (`SEC-APP-SSP` included); the parser first could not read `file "…" (` in `static-files.apx`, now fixed |
+| 2026-10-11 | `sec-scan.py` over `skills/apexlang-architecture/examples` | — | FAIL at first: four destructive actions (Delete employee, Reject absence: button and process) under no role scheme. Fixed with `@administration-rights` (the scaffold's scheme); PASS, `SEC-APP-SSP` NOT_RUN (no `application.apx`); lint PASS, compiler the same 7 errors (KC-7) |
 
 ## Known conflicts
 

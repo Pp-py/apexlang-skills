@@ -1,0 +1,85 @@
+{
+  "kind": "security-result",
+  "schemaVersion": 1,
+  "status": "PASS",
+  "reasons": [
+    {
+      "code": "SECURITY_CRITERIA_HELD",
+      "message": "5 file(s); the static FAIL criteria held"
+    }
+  ],
+  "app": {
+    "appAlias": "hr"
+  },
+  "context": {
+    "task": "T-42",
+    "repo": {
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "dirty": false
+    },
+    "frameworkVersion": "0.6.1",
+    "timestamp": "2026-10-11T12:50:00Z",
+    "producer": {
+      "skill": "apex-security",
+      "method": "tool"
+    }
+  },
+  "scope": "static",
+  "files": [
+    "apex/apexlang/hr/pages/03-page-absences.apx",
+    "apex/apexlang/hr/pages/04-page-absence-resolve.apx",
+    "apex/apexlang/hr/pages/03-page-employee-form.apx",
+    "apex/apexlang/hr/pages/04-page-employee-drawer.apx",
+    "apex/apexlang/hr/pages/03-page-sectors.apx"
+  ],
+  "unparsed": [],
+  "criteria": [
+    {
+      "id": "SEC-PAGE-AUTHZ",
+      "status": "PASS",
+      "findings": []
+    },
+    {
+      "id": "SEC-PUBLIC-DECLARED",
+      "status": "PASS",
+      "findings": []
+    },
+    {
+      "id": "SEC-PAGE-CHECKSUM",
+      "status": "PASS",
+      "findings": []
+    },
+    {
+      "id": "SEC-APP-SSP",
+      "status": "NOT_RUN",
+      "findings": [],
+      "notApplicableReason": "no application.apx among the scanned files"
+    },
+    {
+      "id": "SEC-ITEM-SSP",
+      "status": "PASS",
+      "findings": []
+    },
+    {
+      "id": "SEC-ESCAPE-COLUMN",
+      "status": "PASS",
+      "findings": []
+    },
+    {
+      "id": "SEC-ESCAPE-SUBST",
+      "status": "PASS",
+      "findings": []
+    },
+    {
+      "id": "SEC-URL-SAFE",
+      "status": "PASS",
+      "findings": []
+    },
+    {
+      "id": "SEC-ACTION-AUTHZ",
+      "status": "PASS",
+      "findings": []
+    }
+  ],
+  "advisories": []
+}

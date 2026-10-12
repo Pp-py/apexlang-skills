@@ -1,0 +1,7 @@
+app DEMO (
+    name: Demo
+    sessionManagement {
+        maxSessionIdleTime: 7200
+        rejoinSessions: allSessions
+    }
+)

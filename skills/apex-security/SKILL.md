@@ -10,23 +10,38 @@ description: Use when an APEXlang app or page is designed, changed or reviewed f
 - **Does:** judges an APEXlang app's security against a catalog of criteria with IDs (`criteria.md`) — from Oracle's 26.1 security policies and OWASP ASVS 5.0 — statically over the repo's `.apx`, package source and config, and at runtime through probes in the browser.
 - **Use when:** a page, an action or a write-path package is added or changed, and before anyone calls a change safe to deploy.
 - **Decides:** whether each criterion holds — never where logic lives (`apexlang-architecture`), never whether the page works (`apex-sentinel`), never grammar (Oracle's compiler).
-- **Output:** per criterion `PASS` · `FAIL` · `NOT_RUN`, plus advisories that never change the verdict. As a gate result (`security-result`): Phase 3, SEC-6 — not built yet.
+- **Output:** a `security-result` (`framework/schemas/security-result.schema.json`, experimental) per run: per criterion `PASS` · `FAIL` · `NOT_RUN`, plus advisories that never change the verdict.
 - **Evidence:** per criterion, the file and line it rests on, or the saved browser output with its sha256 under the task's evidence dir (`framework/EVIDENCE.md`).
 - **Gate:** Security — not in `framework/GATES.md` yet (SEC-6).
-- **Interface:** the criteria in `criteria.md`; apply them by hand until the scans exist (SEC-2 to SEC-5). Config it reads: `publicPages` and `lowPrivUser` per app in `apex-sync.json` (`apex-sync-guard/setup.md` §1).
+- **Interface:** the criteria in `criteria.md`; `python3 scripts/sec-scan.py [--app X] [--task <id>] <file-or-dir>…` for the static ones; the rest by hand until SEC-3 to SEC-5. Config: `publicPages` and `lowPrivUser` per app in `apex-sync.json` (`apex-sync-guard/setup.md` §1).
 
 ## Status — what exists
 
 | Piece | State |
 |---|---|
 | Threat model and criteria with IDs (`criteria.md`) | **built** (SEC-1) |
-| Static scan over `.apx`: authorization, public pages, page and item protection, escaping, URLs | not built (SEC-2) |
+| Static scan over `.apx`: authorization, public pages, page and item protection, escaping, URLs | **built** (SEC-2) — see §Static scan |
 | Scan of the write-path packages: dynamic SQL, `AUTHID` | not built (SEC-3) |
 | Runtime probes through `pw.sh`: anonymous access, checksum tampering, role refusal, escaped payload | not built (SEC-4) |
 | Secrets in the repo | not built (SEC-5) |
-| `security-result` schema, gate, manifest enums | not built (SEC-6) |
+| `security-result` schema | **built** (SEC-2, experimental) |
+| Security gate: GATES column, order, manifest enums | not built (SEC-6) |
 
 Until the scripts exist, a review cites the criterion IDs it checked and says which it did not. A criterion nobody exercised is `NOT_RUN`, never PASS.
+
+## Static scan
+
+`python3 scripts/sec-scan.py [--app X] [--task <id>] <app-dir>` over the app's `.apx` tree
+(`application.apx` included, or `SEC-APP-SSP` is `NOT_RUN`). It checks the nine static `FAIL`
+criteria other than `SEC-SQL-BIND` and `SEC-NO-SECRETS`, and reports the session advisories.
+`publicPages` comes from the app's entry in `apex-sync.json` (none = no public page but the
+login). With `--task` the result lands in `<evidenceDir>/<task>/security-<alias>-static.json`.
+Exit 0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN — a file it could not parse got no page or item
+checks; never treat 3 as PASS. Its `.apx` reader is the one apex-ux's scan uses (`framework/lib/`).
+
+What it does not establish: what an authorization scheme's PL/SQL decides, or that the scheme is
+the right one for the action; that a reviewed public page is safe to be public; anything in
+`.apx` it could not parse; dynamic SQL and secrets (SEC-3, SEC-5); anything at runtime (SEC-4).
 
 ## Threat model
 

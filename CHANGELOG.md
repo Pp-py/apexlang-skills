@@ -3,7 +3,8 @@
 ## Unreleased
 
 Phase 3, UX-5: the UI gate. apex-ux's two scripts now write a `ui-result`, and the gate takes its
-place after Runtime, opt-in per app.
+place after Runtime, opt-in per app. SEC-1 and SEC-2 open the Security block: a fifth skill,
+`apex-security`, with its criteria and a static scan that writes a `security-result`.
 
 ### Behavior changes — read before upgrading
 
@@ -21,6 +22,10 @@ place after Runtime, opt-in per app.
   A message passed on from `pw.sh` has the repo root shortened to `<repo>` and the home dir to `~`.
 
 **framework**
+- `framework/lib/` holds what the scans share: `apx.py`, the `.apx` reader, now with quoted
+  component names (`file "icons/x.png" (`) and one `is_destructive` for UX and Security; and
+  `result.py`, the result envelope, was `skills/apex-ux/scripts/ui_result.py`. The capture variable
+  of the contract tier is `RESULT_CAPTURE_DIR`.
 - **The UI gate** (`GATES.md`): owner apex-ux, after Runtime. It passes on the static result PASS
   and a runtime result PASS for each page the change touched. It is required for an app whose
   `apex-sync.json` sets `"uiGate": true` (top-level default or per app), opt-in until 1.0.0.
@@ -29,7 +34,7 @@ place after Runtime, opt-in per app.
 - `apex-sync.json` takes `uiGate` (a boolean; anything else is BLOCKED). The guard and `pw.sh`
   accept it per app; neither acts on it.
 
-**apex-security (new skill) — Phase 3, SEC-1**
+**apex-security (new skill) — Phase 3, SEC-1 and SEC-2**
 - A fifth skill, `skills/apex-security/`: a threat model, what a Security PASS does not establish
   (it is not a pentest), and 22 criteria with IDs in `criteria.md` — `FAIL` only for what a
   machine can establish (authorization on every page and destructive action, public pages
@@ -39,7 +44,21 @@ place after Runtime, opt-in per app.
 - `apex-sync.json` takes `publicPages` (an array of page numbers) and `lowPrivUser` (a string),
   read by apex-security; the guard and `pw.sh` accept them per app and check their types.
 
+- **Static scan (SEC-2):** `skills/apex-security/scripts/sec-scan.py [--app] [--task] <app-dir>`
+  checks nine static `FAIL` criteria over the `.apx`. They are page authorization, public pages
+  declared in both places, page checksums, application SSP, item SSP, column escaping, escaped
+  substitutions, safe URLs, and destructive actions under a role scheme. It also reports the
+  session advisories. Its output is a **`security-result`** (`framework/schemas/`, experimental),
+  brought forward from SEC-6 so the format never changes later.
+- `SEC-ACTION-AUTHZ` now needs a role scheme (`@<static-id>`) on the action or its page:
+  `mustNotBePublicUser` does not count, because every page already requires it.
+- Run over Oracle's own 26.1 scaffold, the scan finds its Home page without an
+  `authorizationScheme` (recorded in `CAPABILITIES.md`).
+
 **apexlang-architecture**
+- **The examples' destructive actions are under a role scheme.** Delete employee and Reject
+  absence, button and process, carry `authorizationScheme: @administration-rights`, the scheme
+  Oracle's scaffold ships; your app supplies it or names its own (examples README §Security).
 - **The examples now meet Oracle's security baseline.** Every example page declares
   `security { authorizationScheme: mustNotBePublicUser, pageAccessProtection:
   argumentsMustHaveChecksum }`. The hidden and key items (`P41_/P42_SECTOR_ID`,
@@ -50,13 +69,16 @@ place after Runtime, opt-in per app.
   (KC-7).
 
 ### Tests
+- `tests/integration/sec-scan.sh` (12): fixtures with near-misses, `fail.expected`, `publicPages`
+  per app, `--task`, the examples. Contract: the `security-result` schema, 2 fixtures, 8 negatives,
+  and every result `sec-scan.sh` makes the script emit.
 - `validate-examples.sh` stages under `applications/`, so Oracle's security rules run on the
   examples. `surface.py` checks the apex-security criteria with the same rules as apex-ux's. The
   e2e covers `publicPages` and `lowPrivUser` (+3).
 - Contract: the `ui-result` schema, two fixtures and twelve negatives. It also runs `ux-scan.sh` and
-  `ux-check.sh` with `UX_RESULT_CAPTURE_DIR` and validates every `ui-result` they make the scripts
+  `ux-check.sh` with `RESULT_CAPTURE_DIR` and validates every `ui-result` they make the scripts
   emit; that check caught a home path in a BLOCKED message, now fixed.
-- `surface.py`: the keys an app takes are the same in the guard and in `pw.sh`; `ui_result.py`
+- `surface.py`: the keys an app takes are the same in the guard and in `pw.sh`; `framework/lib/result.py`
   reports the release's version; the frozen interface lists the apex-ux scripts.
 - `ux-scan.sh` (+2) and `ux-check.sh` (+3) cover `--task` and path scrubbing; the e2e covers
   `uiGate` (+3). A real-browser run with `--task` is recorded in `CAPABILITIES.md`.

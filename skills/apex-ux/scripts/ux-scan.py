@@ -24,103 +24,14 @@ import os
 import re
 import sys
 
-from ui_result import Stop, context, rel, target, write
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
+from apx import RE_FENCE, RE_PROP, ParseError, collect, is_destructive, parse, prop, walk  # noqa: E402
+from result import Stop, context, rel, target, write  # noqa: E402
 
 CRITERIA = ["UX-ITEM-NAME", "UX-CONTROL-NAME", "UX-DESTRUCTIVE-CONFIRM",
             "UX-NO-INLINE-STYLE", "UX-NO-COMPOSED-CLASS"]
 
-# --- parser: canonical multi-line .apx (one construct per line) -------------------
-RE_COMP_OPEN = re.compile(r"^(\w+)(?:\s+([\w@.$-]+))?\s*\($")  # button reject (   displayColumn (
-RE_GROUP_OPEN = re.compile(r"^([\w-]+):?\s*\{$")                # label {   target: {
-RE_PROP = re.compile(r"^([\w$-]+):\s*(.*)$")                    # key: value
-RE_FENCE = re.compile(r"^```")
-
-
-class ParseError(Exception):
-    pass
-
-
-class Comp:
-    def __init__(self, kind, name, line, parent):
-        self.kind, self.name, self.line, self.parent = kind, name, line, parent
-        self.props = {}          # "label.label" -> (value, line)
-        self.children = []
-
-
-def parse(lines):
-    """Component tree of one file. Raises ParseError on anything not understood."""
-    root = Comp("file", "", 0, None)
-    comp, path, stack = root, [], []      # stack: ("comp"|"group", saved path)
-    fence, pending, array = False, None, None   # array: (key, items) of an open `key: [`
-    for no, raw in enumerate(lines, 1):
-        s = raw.strip()
-        if array:
-            if s == "]":
-                comp.props[array[0]] = (" ".join(array[1]), no)
-                array = None
-            elif s:
-                array[1].append(s)
-            continue
-        if fence:
-            if RE_FENCE.match(s):
-                fence = False
-            continue
-        if not s or s.startswith("//"):
-            continue
-        if RE_FENCE.match(s):
-            if pending is None:
-                raise ParseError(f"line {no}: code fence without a property")
-            fence, pending = True, None
-            continue
-        pending = None
-        m = RE_COMP_OPEN.match(s)
-        if m:
-            child = Comp(m.group(1), m.group(2) or "", no, comp)
-            comp.children.append(child)
-            stack.append(("comp", path))
-            comp, path = child, []
-            continue
-        m = RE_GROUP_OPEN.match(s)
-        if m:
-            stack.append(("group", path))
-            path = path + [m.group(1)]
-            continue
-        if s in (")", "}"):
-            if not stack or stack[-1][0] != ("comp" if s == ")" else "group"):
-                raise ParseError(f"line {no}: unexpected '{s}'")
-            _, path = stack.pop()
-            if s == ")":
-                comp = comp.parent
-            continue
-        m = RE_PROP.match(s)
-        if m:
-            key = ".".join(path + [m.group(1)])
-            if m.group(2).strip() == "[":
-                array = (key, [])
-                continue
-            comp.props[key] = (m.group(2).strip(), no)
-            if not m.group(2).strip():
-                pending = key          # value follows as a ``` fence
-            continue
-        raise ParseError(f"line {no}: not understood: {s[:60]}")
-    if fence or stack or array:
-        raise ParseError("end of file inside a block or a code fence")
-    return root
-
-
-def walk(comp):
-    for c in comp.children:
-        yield c
-        yield from walk(c)
-
-
-def prop(comp, key):
-    return comp.props.get(key, ("", comp.line))
-
-
 # --- checks -----------------------------------------------------------------------
-DESTRUCTIVE = re.compile(r"(?i)(?:^|[\s_-])(delete|remove|reject|discard|purge|revoke|deactivate)(?:$|[\s_-])")
-CANCEL_RECORD = re.compile(r"(?i)^cancel[\s_-]+\w")             # "Cancel request", not "Cancel"
 VISIBLE_NAME = re.compile(r"(?i)aria-label(?:ledby)?\s*=|u-VisuallyHidden")
 RE_A = re.compile(r"(?is)<(a|button)\b([^>]*)>(.*?)</\1>")
 RE_TAG = re.compile(r"(?s)<[^>]*>")
@@ -181,27 +92,9 @@ def scan_tree(root, add):
                 add("UX-ITEM-NAME", c.line, f"pageItem {c.name} has no label")
         elif c.kind == "button" and not prop(c, "label")[0]:
             add("UX-CONTROL-NAME", c.line, f"button {c.name} has no label")
-        if c.kind not in ("button", "action") or prop(c, "action")[0]:
-            continue                       # `action:` set = a dynamic-action step, not a control
-        words = [c.name, prop(c, "buttonName")[0], prop(c, "label")[0]]
-        destructive = any(DESTRUCTIVE.search(w) or CANCEL_RECORD.search(w) for w in words if w)
-        destructive = destructive or prop(c, "layout.slot")[0] == "delete"
-        redirect = "redirect" in (prop(c, "behavior.action")[0] + prop(c, "behavior.type")[0]).lower()
-        if destructive and not redirect and not prop(c, "confirmation.message")[0]:
+        # a control the user clicks: a process has no confirmation of its own
+        if c.kind in ("button", "action") and is_destructive(c) and not prop(c, "confirmation.message")[0]:
             add("UX-DESTRUCTIVE-CONFIRM", c.line, f"{c.kind} {c.name} submits without a confirmation message")
-
-
-def collect(paths):
-    files = []
-    for p in paths:
-        if os.path.isdir(p):
-            for d, _, names in os.walk(p):
-                files += [os.path.join(d, n) for n in sorted(names) if n.endswith(".apx")]
-        elif os.path.isfile(p):
-            files.append(p)
-        else:
-            raise OSError(f"no such file or directory: {rel(p) or os.path.basename(p)}")   # never a home path
-    return sorted(set(files))
 
 
 def main(argv):
@@ -211,11 +104,11 @@ def main(argv):
     ap.add_argument("paths", nargs="*")
     a = ap.parse_args(argv)
     result = {"kind": "ui-result", "schemaVersion": 1, "status": "UNKNOWN", "reasons": [],
-              "context": context(a.task), "scope": "static", "files": [], "unparsed": [],
+              "context": context(a.task, "apex-ux"), "scope": "static", "files": [], "unparsed": [],
               "criteria": [], "advisories": []}
     task_dir = None
     try:
-        alias, task_dir = target(a.app, a.task)
+        alias, task_dir, _ = target(a.app, a.task)
         if alias:
             result["app"] = {"appAlias": alias}
         result.update(scan(a.paths))
@@ -227,8 +120,8 @@ def main(argv):
 def scan(paths):
     try:
         files = collect(paths)
-    except OSError as e:
-        raise Stop("BLOCKED", "NOTHING_TO_SCAN", str(e))
+    except FileNotFoundError as e:             # never a home path in the message
+        raise Stop("BLOCKED", "NOTHING_TO_SCAN", f"no such file or directory: {rel(str(e.args[0])) or os.path.basename(str(e.args[0]))}")
     if not files:
         raise Stop("BLOCKED", "NOTHING_TO_SCAN", "no .apx file to scan")
     out = {"files": [], "unparsed": []}

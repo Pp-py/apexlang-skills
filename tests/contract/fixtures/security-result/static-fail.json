@@ -1,0 +1,204 @@
+{
+  "kind": "security-result",
+  "schemaVersion": 1,
+  "status": "FAIL",
+  "reasons": [
+    {
+      "code": "SECURITY_CRITERIA_FAILED",
+      "message": "4 file(s) scanned; findings in 9 criteria"
+    }
+  ],
+  "app": {
+    "appAlias": "hr"
+  },
+  "context": {
+    "task": "T-42",
+    "repo": {
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "dirty": false
+    },
+    "frameworkVersion": "0.6.1",
+    "timestamp": "2026-10-11T12:50:00Z",
+    "producer": {
+      "skill": "apex-security",
+      "method": "tool"
+    }
+  },
+  "scope": "static",
+  "files": [
+    "apex/apexlang/hr/application.apx",
+    "apex/apexlang/hr/p00020-bad.apx",
+    "apex/apexlang/hr/p00030-open.apx",
+    "apex/apexlang/hr/p00031-listed.apx"
+  ],
+  "unparsed": [],
+  "criteria": [
+    {
+      "id": "SEC-PAGE-AUTHZ",
+      "status": "FAIL",
+      "findings": [
+        {
+          "path": "apex/apexlang/hr/p00020-bad.apx",
+          "line": 1,
+          "component": "page 20",
+          "detail": "no security.authorizationScheme"
+        }
+      ]
+    },
+    {
+      "id": "SEC-PUBLIC-DECLARED",
+      "status": "FAIL",
+      "findings": [
+        {
+          "path": "apex/apexlang/hr/p00030-open.apx",
+          "line": 1,
+          "component": "page 30",
+          "detail": "public page without a `public page review: <reason>` comment"
+        },
+        {
+          "path": "apex/apexlang/hr/p00030-open.apx",
+          "line": 1,
+          "component": "page 30",
+          "detail": "public page not listed in publicPages (apex-sync.json)"
+        }
+      ]
+    },
+    {
+      "id": "SEC-PAGE-CHECKSUM",
+      "status": "FAIL",
+      "findings": [
+        {
+          "path": "apex/apexlang/hr/p00020-bad.apx",
+          "line": 1,
+          "component": "page 20",
+          "detail": "no security.pageAccessProtection"
+        },
+        {
+          "path": "apex/apexlang/hr/p00030-open.apx",
+          "line": 1,
+          "component": "page 30",
+          "detail": "pageAccessProtection is unrestricted"
+        }
+      ]
+    },
+    {
+      "id": "SEC-APP-SSP",
+      "status": "FAIL",
+      "findings": [
+        {
+          "path": "apex/apexlang/hr/application.apx",
+          "line": 1,
+          "component": "app DEMO",
+          "detail": "Session State Protection is not enabled"
+        }
+      ]
+    },
+    {
+      "id": "SEC-ITEM-SSP",
+      "status": "FAIL",
+      "findings": [
+        {
+          "path": "apex/apexlang/hr/p00020-bad.apx",
+          "line": 31,
+          "component": "pageItem P20_NOTE_ID",
+          "detail": "no security.sessionStateProtection"
+        },
+        {
+          "path": "apex/apexlang/hr/p00020-bad.apx",
+          "line": 37,
+          "component": "pageItem P20_STATE",
+          "detail": "sessionStateProtection unrestricted with no dynamic-action comment"
+        }
+      ]
+    },
+    {
+      "id": "SEC-ESCAPE-COLUMN",
+      "status": "FAIL",
+      "findings": [
+        {
+          "path": "apex/apexlang/hr/p00020-bad.apx",
+          "line": 10,
+          "detail": "escapeSpecialChars: false"
+        }
+      ]
+    },
+    {
+      "id": "SEC-ESCAPE-SUBST",
+      "status": "FAIL",
+      "findings": [
+        {
+          "path": "apex/apexlang/hr/p00020-bad.apx",
+          "line": 15,
+          "detail": "&NOTE. in HTML without !HTML"
+        }
+      ]
+    },
+    {
+      "id": "SEC-URL-SAFE",
+      "status": "FAIL",
+      "findings": [
+        {
+          "path": "apex/apexlang/hr/p00020-bad.apx",
+          "line": 16,
+          "detail": "javascript: URL"
+        },
+        {
+          "path": "apex/apexlang/hr/p00020-bad.apx",
+          "line": 25,
+          "detail": "data: URL"
+        },
+        {
+          "path": "apex/apexlang/hr/p00020-bad.apx",
+          "line": 26,
+          "detail": "plain-http URL"
+        },
+        {
+          "path": "apex/apexlang/hr/p00020-bad.apx",
+          "line": 27,
+          "detail": "protocol-relative URL"
+        }
+      ]
+    },
+    {
+      "id": "SEC-ACTION-AUTHZ",
+      "status": "FAIL",
+      "findings": [
+        {
+          "path": "apex/apexlang/hr/p00020-bad.apx",
+          "line": 43,
+          "component": "button reject",
+          "detail": "destructive, with no role scheme (@<static-id>) on it or its page"
+        },
+        {
+          "path": "apex/apexlang/hr/p00020-bad.apx",
+          "line": 49,
+          "component": "process purge-notes",
+          "detail": "destructive, with no role scheme (@<static-id>) on it or its page"
+        }
+      ]
+    }
+  ],
+  "advisories": [
+    {
+      "id": "SEC-SESSION-TIMEOUTS",
+      "path": "apex/apexlang/hr/application.apx",
+      "line": 1,
+      "component": "app DEMO",
+      "detail": "maxSessionIdleTime is 7200 (at most 3600)"
+    },
+    {
+      "id": "SEC-SESSION-TIMEOUTS",
+      "path": "apex/apexlang/hr/application.apx",
+      "line": 1,
+      "component": "app DEMO",
+      "detail": "maxSessionLength is not set (at most 28800)"
+    },
+    {
+      "id": "SEC-SESSION-REJOIN",
+      "path": "apex/apexlang/hr/application.apx",
+      "line": 1,
+      "component": "app DEMO",
+      "detail": "rejoinSessions is allSessions"
+    }
+  ]
+}

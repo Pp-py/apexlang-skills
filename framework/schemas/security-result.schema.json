@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pp-py.github.io/apexlang-skills/schemas/1/security-result.schema.json",
+  "title": "security-result (EXPERIMENTAL, schemaVersion 1)",
+  "description": "One apex-security run on one app, per FAIL criterion of skills/apex-security/criteria.md: the static scan over .apx files (scope static, sec-scan.py); later the package scan (plsql), the runtime probes (runtime) and the secrets scan (secrets). Written by the tool (method: tool) to stdout and, with --task, to <evidenceDir>/<task>/security-<alias>-<scope>.json. Advisories never change the status. A PASS is never 'secure': it covers the FAIL criteria this run exercised, nothing else — it is not a pentest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "schemaVersion",
+    "status",
+    "reasons",
+    "context",
+    "scope",
+    "criteria",
+    "advisories"
+  ],
+  "properties": {
+    "kind": {
+      "const": "security-result"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "BLOCKED",
+        "UNKNOWN"
+      ]
+    },
+    "reasons": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "common.schema.json#/$defs/reason"
+      }
+    },
+    "app": {
+      "$ref": "common.schema.json#/$defs/appRef"
+    },
+    "context": {
+      "$ref": "common.schema.json#/$defs/context"
+    },
+    "scope": {
+      "description": "static = sec-scan.py over .apx files; plsql = the write-path packages; runtime = probes through pw.sh; secrets = the repo's tracked files.",
+      "enum": [
+        "static",
+        "plsql",
+        "runtime",
+        "secrets"
+      ]
+    },
+    "files": {
+      "description": "static, plsql, secrets: the files scanned.",
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/relPath"
+      }
+    },
+    "unparsed": {
+      "description": "static: files the parser could not follow — their item and button checks did not run.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "detail"
+        ],
+        "properties": {
+          "path": {
+            "$ref": "common.schema.json#/$defs/relPath"
+          },
+          "detail": {
+            "$ref": "common.schema.json#/$defs/safeText"
+          }
+        }
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/criterion"
+      }
+    },
+    "advisories": {
+      "description": "ADVISE criteria that did not hold (SEC-SESSION-TIMEOUTS, …): reported, never a verdict.",
+      "type": "array",
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/finding"
+          },
+          {
+            "required": [
+              "id"
+            ]
+          }
+        ]
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/evidenceRef"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "description": "PASS: at least one criterion was exercised and held",
+      "if": {
+        "properties": {
+          "status": {
+            "const": "PASS"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "criteria": {
+            "contains": {
+              "properties": {
+                "status": {
+                  "const": "PASS"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "a FAIL criterion makes the run FAIL",
+      "if": {
+        "properties": {
+          "criteria": {
+            "contains": {
+              "properties": {
+                "status": {
+                  "const": "FAIL"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "FAIL"
+          }
+        }
+      }
+    },
+    {
+      "description": "a static or plsql PASS scanned files and parsed every one",
+      "if": {
+        "properties": {
+          "scope": {
+            "enum": [
+              "static",
+              "plsql"
+            ]
+          },
+          "status": {
+            "const": "PASS"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "files"
+        ],
+        "properties": {
+          "files": {
+            "minItems": 1
+          },
+          "unparsed": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "findings"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/criterionId"
+        },
+        "status": {
+          "description": "NOT_RUN: this run did not exercise it (no application.apx among the files, no lowPrivUser).",
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT_RUN"
+          ]
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/finding"
+          }
+        },
+        "notApplicableReason": {
+          "$ref": "common.schema.json#/$defs/safeText"
+        }
+      },
+      "allOf": [
+        {
+          "description": "a criterion not exercised says why",
+          "if": {
+            "properties": {
+              "status": {
+                "const": "NOT_RUN"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "notApplicableReason"
+            ]
+          }
+        },
+        {
+          "description": "a FAIL names what failed; a PASS has nothing against it",
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAIL"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "findings": {
+                "minItems": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "findings": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "finding": {
+      "description": "Where a criterion failed: the file, line and component, and what was found — never the secret, payload or data itself.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/criterionId"
+        },
+        "path": {
+          "$ref": "common.schema.json#/$defs/relPath"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "component": {
+          "$ref": "common.schema.json#/$defs/safeText"
+        },
+        "detail": {
+          "$ref": "common.schema.json#/$defs/safeText"
+        }
+      }
+    }
+  }
+}

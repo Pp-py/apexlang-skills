@@ -1,0 +1,52 @@
+page 20 (
+    name: Bad
+    alias: BAD
+    region notes (
+        name: Notes
+        type: classicReport
+        column NOTE (
+            type: plainText
+            security {
+                escapeSpecialChars: false
+            }
+        )
+        column LINK (
+            type: link
+            linkText: <b>&NOTE.</b>
+            linkAttributes: href="javascript:void(0)"
+        )
+    )
+    region extra (
+        name: Extra
+        type: staticContent
+        source {
+            html:
+                ```html
+                <img src="data:image/png;base64,AAAA">
+                <a href="http://example.com">old</a>
+                <a href="//cdn.example.com/x.js">cdn</a>
+                ```
+        }
+    )
+    pageItem P20_NOTE_ID (
+        type: textField
+        label {
+            label: Note
+        }
+    )
+    pageItem P20_STATE (
+        type: hidden
+        security {
+            sessionStateProtection: unrestricted
+        }
+    )
+    button reject (
+        label: Reject
+        security {
+            authorizationScheme: mustNotBePublicUser
+        }
+    )
+    process purge-notes (
+        type: invokeApi
+    )
+)
