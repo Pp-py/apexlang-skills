@@ -6,7 +6,7 @@
 # matcher change and not a rewrite.
 #
 # Blocks an import or export (in any of the lanes below) unless a fresh matching
-# check PASS marker exists (TTL 10 min). Direction-aware: an import needs a
+# check PASS marker exists (TTL 5 min) for the LOCAL it compared. Direction-aware: an import needs a
 # check-import PASS, an export needs a check-export PASS. With several apps in
 # apex-sync.json, it needs the marker of the app the command acts on — read from
 # the command, never guessed. It also refuses the commands that would let an agent
@@ -18,7 +18,7 @@
 # looks relevant, every unplanned exit is turned into a block (on_exit, below).
 set -uo pipefail
 
-TTL=600   # seconds a check PASS authorizes; must equal TTL_SECONDS in apex-sync-check.sh
+TTL=300   # seconds a check PASS authorizes; must equal TTL_SECONDS in apex-sync-check.sh
 
 # This runs before every shell command of the session, so it spawns as few processes
 # as it can: under Git Bash each one costs tens of milliseconds. Helpers hand their
@@ -621,6 +621,20 @@ for d in "${needs[@]}"; do
       echo "  (looked for the marker at: $m — this repo was resolved from cwd '$cwd')" >&2
       echo "Then retry. Rationale: the $d would silently overwrite the other replica (skill: apex-sync-guard)." >&2
       (( DEGRADED )) && echo "(No working jq/python was found, so this decision was made by scanning the raw tool payload.)" >&2
+      exit 2
+    fi
+    # Fresh in time is not enough (GAP-9): the marker speaks only for the LOCAL the check
+    # compared. Hashed again here — only for an import or an export, about 0.2 s on Git
+    # for Windows — a source dir that changed since, or that git cannot hash, blocks.
+    # The source dir comes from apex-sync.json; read without a parser (degraded), from the
+    # marker, which only the check writes.
+    mt=$(sed -n 's/.*"tree":"\([0-9a-f]*\)".*/\1/p' "$m" 2>/dev/null) || mt=""
+    SR=""; if (( ! DEGRADED )) && app_index "$a"; then app_src "$APP_I"; else SR=$(sed -n 's/.*"src":"\([^"]*\)".*/\1/p' "$m" 2>/dev/null) || SR=""; fi
+    ST=""; [[ -n "$SR" && "$SR" != *..* ]] && src_tree "$ROOT" "$GITDIR" "$SR"
+    if [[ -z "$mt" || -z "$ST" || "$mt" != "$ST" ]]; then
+      _app=""; (( NAPPS > 1 )) && _app=" --app $a"
+      echo "apex-sync-guard: BLOCKED apex $d — the source of app '$a' changed since its check-$d PASS (or the marker predates this check, or git cannot hash it): that PASS does not speak for what is there now." >&2
+      echo "Run again (from the repo root): <apex-sync-guard skill dir>/scripts/apex-sync-check.sh check-$d$_app" >&2
       exit 2
     fi
   done

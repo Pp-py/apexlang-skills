@@ -10,7 +10,7 @@ description: Use when about to run `apex import` or `apex export` on an APEXlang
 - **Does:** gates every import and export of an APEXlang app behind a Builder↔git divergence check against a recorded syncpoint.
 - **Use when:** before any `apex import` / `apex export` — Oracle's `deploy-apex-app.sh` and `apexctl … roundtrip` included — and right after either (`record-sync`).
 - **Decides:** whether the operation destroys nothing *now*, for one app through one connection — never whether the change is right.
-- **Output:** a `sync-result` (`.git/apex-sync/<alias>/last-<op>.json`; with `--task`, in the evidence dir) and exit 0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN. A check PASS also writes the hook's 10-minute marker.
+- **Output:** a `sync-result` (`.git/apex-sync/<alias>/last-<op>.json`; with `--task`, in the evidence dir) and exit 0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN. A check PASS also writes the hook's 5-minute marker, bound to the source it compared.
 - **Evidence:** the Builder export, the comparison (`changes`, `payload`), the syncpoint commit — `references/sync-result.md`.
 - **Gate:** Sync (`framework/GATES.md`); enforced in Claude Code by the `PreToolUse` hook.
 - **Interface:** `scripts/apex-sync-check.sh check-import|check-export|record-sync|status|doctor|apps [--app <alias>] [--task <id>] [--force]`
@@ -52,7 +52,7 @@ Updates the syncpoint (tree + timestamps). Skipping this poisons every future co
 
 ## Resolution when the Builder moved
 
-Per differing file: changed only in the Builder → copy it from the kept export into LOCAL and commit; changed on both sides → a per-file 3-way merge (`git merge-file` against the BASE version from the syncpoint ref). Re-run `check-import` until it PASSes; then validate, run `check-import` once more as the last step before the import (its PASS lapses in 10 minutes), import, `record-sync`. **Never `record-sync` to clear a CONFLICT** — it launders the Builder-only work into BASE. Step by step: `references/resolution.md`.
+Per differing file: changed only in the Builder → copy it from the kept export into LOCAL and commit; changed on both sides → a per-file 3-way merge (`git merge-file` against the BASE version from the syncpoint ref). Re-run `check-import` until it PASSes; then validate, run `check-import` once more as the last step before the import (its PASS lapses in 5 minutes and covers only the LOCAL it compared), import, `record-sync`. **Never `record-sync` to clear a CONFLICT** — it launders the Builder-only work into BASE. Step by step: `references/resolution.md`.
 
 ## When NOT to use
 

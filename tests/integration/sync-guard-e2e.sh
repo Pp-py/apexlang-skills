@@ -26,6 +26,8 @@ if grep -q 'apex export' <<<"$stmts"; then
   # state dir that can no longer be written
   [[ -n "${FAKE_MARKER_DIR:-}" ]] && mkdir -p "$FAKE_MARKER_DIR"
   [[ -n "${FAKE_LOCK_DIR:-}" ]] && chmod a-w "$FAKE_LOCK_DIR"
+  # LOCAL edited while the Builder exports: the check compared a LOCAL that is gone
+  [[ -n "${FAKE_LOCAL_EDIT:-}" ]] && echo "-- edited during the check" >> "$FAKE_LOCAL_EDIT"
   if grep -q -- '-dir "' <<<"$stmts"; then          # the guard quotes paths holding spaces
     dir=$(sed -n 's/.*-dir "\([^"]*\)".*/\1/p' <<<"$stmts")
   else
@@ -684,10 +686,20 @@ rm -f "$MK"/check-ok.*
 expect "setup.md §4 row 1: no marker -> blocked"                2 hook_cmd "$SMOKE_EXPORT"
 "$CHK" check-export >/dev/null
 expect "setup.md §4 row 2: fresh export marker -> allowed"      0 hook_cmd "$SMOKE_EXPORT"
-touch_at "$MK/check-ok.export" $(( $(date +%s) - 660 ))
+touch_at "$MK/check-ok.export" $(( $(date +%s) - 360 ))
 expect "setup.md §4 row 3: marker past the TTL -> blocked"      2 hook_cmd "$SMOKE_EXPORT"
 "$CHK" check-export >/dev/null
-expect "setup.md §4 row 4: export marker only, import -> blocked" 2 hook_cmd "$SMOKE_IMPORT"
+printf 'page 79 (\n  name: AfterTheCheck\n)\n' > src/demo/p79.apx
+expect "setup.md §4 row 4: source changed after it -> blocked"  2 hook_cmd "$SMOKE_EXPORT"
+rm -f src/demo/p79.apx
+expect "setup.md §4 row 5: export marker only, import -> blocked" 2 hook_cmd "$SMOKE_IMPORT"
+# the marker setup.md tells a user to write for its sandbox: no hook-test/ dir → git's empty tree
+SB="$WORK/sb"; mkdir -p "$SB/repo" && git -C "$SB/repo" init -q && mkdir -p "$SB/repo/.git/apex-sync/hook-test"
+printf '{ "appId": 1, "appAlias": "hook-test" }\n' > "$SB/repo/apex-sync.json"
+sb_marker=$(sed -n "s/^printf '\(.*\)\\\\n' > \"\$M\/check-ok.export\"$/\1/p" "$SKILL_DIR/setup.md")
+printf '%s\n' "$sb_marker" > "$SB/repo/.git/apex-sync/hook-test/check-ok.export"
+sb_hook() { printf '{"tool_name":"Bash","tool_input":{"command":"%s"},"cwd":"%s"}' "$1" "$SB/repo" | "$HOOK"; }
+expect "setup.md §4: its sandbox marker is one the hook accepts" 0 sb_hook "$SMOKE_EXPORT"
 expect "and the bare mention it warns against is not an export" 0 hook_cmd 'echo "apex export"'
 
 # --- SQLcl's short forms are invocations too: `apex imp -i dir` imported unchecked,
@@ -826,6 +838,37 @@ expect     "multi: evidenceDir inside an app's dir -> BLOCKED" 2 with_config "{ 
 "$CHK" check-import --app demo >/dev/null
 expect     "hook multi: a config the check refuses blocks too" 2 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" }, { \"appId\": 200, \"appAlias\": \"Demo\" } ] }" hook_cmd 'apex import -input src/demo'
 printf '%s\n' "$SINGLE_CFG" > "$CFG_FILE"
+
+# --- the marker is bound to the LOCAL its check compared (GAP-9). It used to be bound to
+# a time only: undo a capture within the TTL and the old PASS still authorized the import.
+rm -f "$MK"/check-ok.*
+"$CHK" check-import >/dev/null 2>&1 || true
+expect_out "gap-9: the marker records the source dir's tree"      '"src":"src/demo","tree":"[0-9a-f]{40}' cat "$MK/check-ok.import"
+expect     "gap-9: unchanged LOCAL -> the import runs"            0 hook_in_proj 'apex import -input src/demo'
+cp src/demo/p30.apx "$WORK/p30.keep"
+echo "-- edited after the check" >> src/demo/p30.apx
+expect     "gap-9: LOCAL edited after the PASS -> blocked"        2 hook_in_proj 'apex import -input src/demo'
+expect_out "gap-9: and the block says why"                        'changed since its check-import PASS' hook_in_proj 'apex import -input src/demo'
+cp "$WORK/p30.keep" src/demo/p30.apx
+expect     "gap-9: the edit undone -> the import runs again"      0 hook_in_proj 'apex import -input src/demo'
+printf 'page 77 (\n  name: New\n)\n' > src/demo/p77.apx
+expect     "gap-9: a new untracked page counts too"               2 hook_in_proj 'apex import -input src/demo'
+rm -f src/demo/p77.apx
+echo "notes" > NOTES.md
+expect     "gap-9: an edit outside the source dir does not count" 0 hook_in_proj 'apex import -input src/demo'
+rm -f NOTES.md
+"$CHK" check-export >/dev/null 2>&1 || true
+expect     "gap-9: export with LOCAL as checked -> runs"          0 hook_in_proj 'sql -name fake <<< \"apex export -applicationid 100 -dir src\"'
+printf 'page 78 (\n  name: Unsaved\n)\n' > src/demo/p78.apx
+expect     "gap-9: new LOCAL work after the export check -> blocked" 2 hook_in_proj 'sql -name fake <<< \"apex export -applicationid 100 -dir src\"'
+rm -f src/demo/p78.apx
+now_iso_t=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+printf '{"check":"import","at":"%s"}\n' "$now_iso_t" > "$MK/check-ok.import"   # a marker as an earlier version wrote it
+expect     "gap-9: a marker with no tree (older version) -> blocked" 2 hook_in_proj 'apex import -input src/demo'
+expect     "gap-9: LOCAL edited during the check -> UNKNOWN"      3 env FAKE_LOCAL_EDIT="$WORK/proj/src/demo/p30.apx" "$CHK" check-import
+expect     "gap-9: ... and no marker"                             1 test -f "$MK/check-ok.import"
+cp "$WORK/p30.keep" src/demo/p30.apx
+expect_out "gap-9: the TTL is 5 minutes"                          '"ttlSeconds": 300' cat "$MK/last-check-import.json"
 
 # --- linked worktrees (GAP-7). There `.git` is a file, and the guard could not keep any
 # state. Now the syncpoint is shared (it goes with the shared ref) and each worktree keeps

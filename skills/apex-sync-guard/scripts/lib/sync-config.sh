@@ -214,6 +214,28 @@ cfg_app() {  # $1 = JSON path of the app object; appends one app or records erro
   APPS_USER+=("$user"); APPS_URL+=("$url")
 }
 
+# What a check's marker is bound to (GAP-9): the app's source dir as the working tree holds
+# it now — tracked and untracked files, ignored ones left out — as a git tree hash, through
+# a copy of the index, so the real index is never touched. Computed by the check when it
+# starts and when it writes the marker, and by the hook before it lets an import or an
+# export run: a LOCAL that changed since the check no longer matches. ST="" when git
+# cannot say; an empty or missing dir is git's empty tree.
+ST=""
+EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+src_tree() {  # $1 = repo root, $2 = its git dir, $3 = the source dir (repo-relative) → ST
+  local idx="$2/apex-sync-src.$$.idx" t=""
+  ST=""
+  rm -f "$idx"
+  if [[ -f "$2/index" ]]; then cp "$2/index" "$idx" 2>/dev/null || true; fi
+  if GIT_INDEX_FILE=$idx env -u GIT_ATTR_NOSYSTEM git -C "$1" add -A -- "$3" >/dev/null 2>&1 || [[ ! -e "$1/$3" ]]; then
+    t=$(GIT_INDEX_FILE=$idx env -u GIT_ATTR_NOSYSTEM git -C "$1" write-tree 2>/dev/null) || t=""
+  fi
+  if [[ -n "$t" ]]; then ST=$(git -C "$1" rev-parse -q --verify "$t:$3" 2>/dev/null) || ST=$EMPTY_TREE; fi
+  rm -f "$idx" "$idx.lock"
+  [[ "$ST" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] || ST=""
+  return 0
+}
+
 SR=""
 app_src() { SR=${APPS_DIR[$1]:+${APPS_DIR[$1]}/}${APPS_ALIAS[$1]}; }   # $1 = app index → SR, its source dir (repo-relative)
 

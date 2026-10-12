@@ -15,7 +15,7 @@ mirrors it.** A run stopped before it knew its app (no repo, no SQLcl, an invali
 | Field | Says |
 |---|---|
 | `status`, `reasons[0].code` | the verdict and why — catalog below |
-| `marker` | checks only: `written` is true exactly when the check PASSed; `expiresAt` = 10 minutes later |
+| `marker` | checks only: `written` is true exactly when the check PASSed; `expiresAt` = 5 minutes later; the marker itself also records the source dir and its tree, which the hook checks |
 | `changes[]` | check-import: Builder-side differences (`A` only in the Builder, `D` only in the reference, `M` differs, `E` line endings only — never gating); check-export: what is dirty |
 | `payload` | check-import with a syncpoint: what the import **deploys** (LOCAL vs BASE) and how many commits since the syncpoint |
 | `basis` | record-sync: `fresh-check`, `builder-unchanged`, `local-equals-builder` or `forced` |

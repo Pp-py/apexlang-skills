@@ -36,7 +36,7 @@
 # shared-component edits, so they are used for the who/when report only.
 set -euo pipefail
 
-TTL_SECONDS=600   # how long a check PASS authorizes; must equal TTL in apex-sync-hook.sh
+TTL_SECONDS=300   # how long a check PASS authorizes; must equal TTL in apex-sync-hook.sh
 FRAMEWORK_VERSION="0.6.1"   # the apexlang-skills release this script belongs to (.claude-plugin/plugin.json)
 
 # --- verdicts. A gate command (check-import, check-export, record-sync) ends in
@@ -336,6 +336,10 @@ select_app() {  # $1 = index into the APPS_* arrays; sets the per-app globals
 APP_SRC=""; STATE_DIR=""; STATE=""; REF=""; GIT_HERMETIC=()
 export GIT_ATTR_NOSYSTEM=1
 [[ -z "$R_OP" ]] || select_app "${SEL[0]}"
+# The LOCAL this check compares, hashed before it starts; its marker is written only if
+# LOCAL still hashes the same at the end (write_marker).
+CHECK_TREE=""
+if [[ "$R_OP" == check-* ]]; then src_tree "$ROOT" "$GIT_DIR_ABS" "$SRC_REL"; CHECK_TREE=$ST; fi
 
 
 # ------------------------------------------------------------ sql layer
@@ -630,8 +634,16 @@ payload_report() {  # $1 = materialized BASE app dir
 }
 
 write_marker() {  # $1 = import|export — fails when the marker could not be written
+  # Bound to the LOCAL the check compared (GAP-9): hashed again now, it must still be the
+  # tree hashed when the check began — LOCAL edited while the Builder was exporting is
+  # LOCAL nobody compared.
+  src_tree "$ROOT" "$GIT_DIR_ABS" "$SRC_REL"
+  if [[ -z "$ST" || "$ST" != "$CHECK_TREE" ]]; then
+    echo "apex-sync-guard: $SRC_REL changed while the check ran (or git cannot hash it) — no marker; run check-$1 again." >&2
+    return 1
+  fi
   now_iso
-  printf '{"check":"%s","at":"%s"}\n' "$1" "$ISO" > "$STATE_DIR/check-ok.$1" || return 1
+  printf '{"check":"%s","at":"%s","src":"%s","tree":"%s"}\n' "$1" "$ISO" "$SRC_REL" "$ST" > "$STATE_DIR/check-ok.$1" || return 1
   # Printed on purpose: the hook resolves the repo from the tool payload's cwd
   # and this script from its own, so a check run inside a command that `cd`s
   # elsewhere leaves the marker where the hook will not look. Showing both

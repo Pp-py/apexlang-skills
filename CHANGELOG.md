@@ -8,7 +8,8 @@ place after Runtime, opt-in per app. SEC-1 to SEC-6 build the Security block: a 
 runtime probes, each writing a `security-result`; and the Security gate between Runtime and UI.
 R-2 closes the last three known conflicts (KC-4, KC-5, KC-7): the examples compile. R-3 turns
 four of Architecture's red flags into a script. R-4 writes the two results an agent judged by
-hand until now. R-7 closes GAP-7 (worktrees) and GAP-8 (stale results).
+hand until now. R-7 closes GAP-7 (worktrees) and GAP-8 (stale results). R-6 binds
+the sync marker to the source it checked (GAP-9) and halves its TTL.
 
 ### Behavior changes — read before upgrading
 
@@ -26,6 +27,13 @@ hand until now. R-7 closes GAP-7 (worktrees) and GAP-8 (stale results).
   A message passed on from `pw.sh` has the repo root shortened to `<repo>` and the home dir to `~`.
 
 **apex-sync-guard**
+- **The marker is bound to the LOCAL its check compared (GAP-9, R-6), and lapses in 5 minutes
+  instead of 10.** A check hashes the app's source dir (tracked and untracked files, through a
+  copy of the index) when it starts and again when it writes the marker — a LOCAL edited while
+  the Builder exported gets no marker (UNKNOWN). The hook hashes it once more before an import
+  or an export and blocks on any difference: an edit, a new file, a capture undone. Markers
+  written by an earlier version carry no hash and block: run the check again. The hand-made
+  marker in `setup.md` §4's sandbox now names the empty tree.
 - **Linked worktrees work (GAP-7, R-7).** The syncpoint (`state.json`) moves to the shared git dir,
   next to the shared ref; the markers and last results stay per worktree, under
   `.git/worktrees/<name>/apex-sync/`. A check authorizes an import only from the worktree whose
@@ -149,6 +157,8 @@ hand until now. R-7 closes GAP-7 (worktrees) and GAP-8 (stale results).
   It now does, and reported the 8 gaps this fixes.
 
 ### Tests
+- e2e (+15): GAP-9 — edit after the PASS, undo, a new file, an edit outside the source, export,
+  an older marker, an edit during the check, setup.md §4's five rows and its sandbox marker.
 - e2e (+11): a check and the hook in a real linked worktree; the guard's `tree` equals the one
   `git add -A` gives through a copy of the index. `evidence.sh` (+9): freshness.
 - `tests/integration/evidence.sh` (27) in CI; the contract tier validates every result it makes

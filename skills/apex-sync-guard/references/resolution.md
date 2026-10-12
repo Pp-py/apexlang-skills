@@ -20,7 +20,7 @@ is kept in scratch):
 Then re-run `check-import`: it PASSes once LOCAL contains every Builder-side change
 (`BUILDER_CHANGES_CAPTURED` — importing rewrites those files identically, losing nothing).
 Then validate, run `check-import` once more as the last step before the import (its PASS lapses
-in 10 minutes and speaks only for the LOCAL it compared), import, `record-sync`.
+in 5 minutes and speaks only for the LOCAL it compared), import, `record-sync`.
 
 **Never `record-sync` to clear a CONFLICT.** It would record the Builder as BASE, the next
 check would PASS, and the import would destroy exactly the work the CONFLICT was about.
