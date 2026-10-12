@@ -1,0 +1,57 @@
+page 10 (
+    name: Near misses
+    alias: NEAR-MISSES
+
+    process load-thing (
+        name: Load thing
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                begin
+                    -- thin wrapper: a loader that assigns page items from one row.
+                    -- insert into, update x set and delete from in a comment are not DML
+                    select name into :P10_NAME from things where id = :P10_ID for update;
+                    :P10_NOTE := 'insert into t values (1)';
+                end;
+                ```
+        }
+        execution {
+            sequence: 10
+            point: beforeHeader
+        }
+    )
+
+    process save-grid (
+        name: Save grid
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                begin
+                    -- thin wrapper: an Interactive Grid save routes by :APEX$ROW_STATUS.
+                    case :APEX$ROW_STATUS
+                        when 'D' then pkg_things.delete_row(:ID, :ROW_VERSION);
+                        else pkg_things.save_row(:APEX$ROW_STATUS, :ID, :NAME, :ROW_VERSION);
+                    end case;
+                end;
+                ```
+        }
+        execution {
+            sequence: 20
+            point: afterSubmit
+        }
+    )
+
+    process update-thing (
+        name: Update thing
+        type: invokeApi
+        invoke {
+            package: pkg_things
+            procedureOrFunction: update_row
+        }
+        execution {
+            sequence: 30
+        }
+    )
+)

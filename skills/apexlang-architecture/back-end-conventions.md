@@ -179,6 +179,9 @@ END update_row;
 - A transition that reads its row `FOR UPDATE` (`recipes/workflow-state-transitions.md`) is already
   serialized against other *transitions*, but still needs the token if a form can edit that row's
   other columns.
+- An `UPDATE` that needs no token says why on its line or the line above:
+  `-- lost update review: <reason>` (`pkg_absences` in the examples). `scripts/arch-scan.py` flags any
+  other `UPDATE` whose `WHERE` names no `*version*` column (`NO_VERSION_TOKEN`).
 - Delete needs it too when the screen offers delete-after-read; a hard `DELETE ... AND row_version =`
   with the same `SQL%ROWCOUNT` check. Soft delete via §6 goes through `update_row` and inherits it.
 
