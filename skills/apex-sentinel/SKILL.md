@@ -11,7 +11,7 @@ description: Use when an APEXlang page or component was just imported or changed
 - **Use when:** a page was imported or changed and someone is about to say it works.
 - **Decides:** whether each required criterion holds on the running app — never grammar, never sync safety.
 - **Output:** a `runtime-result` (`<evidenceDir>/<task>/runtime-<alias>.json`): PASS · FAIL · BLOCKED (no browser, login not verified) · UNKNOWN — `references/runtime-result.md`.
-- **Evidence:** per criterion, saved `eval` output or snapshots under `raw/runtime-<alias>/` with their sha256, and SQL reads.
+- **Evidence:** per criterion, saved `eval` output or snapshots under `raw/runtime-<alias>/` with their sha256, and SQL reads — saved and written through `framework/scripts/evidence.py`, never by hand.
 - **Gate:** Runtime (`framework/GATES.md`) — discipline, no hook.
 - **Interface:** `scripts/pw.sh [--app <alias>] login|open|goto|eval|run-code|snapshot|find|…|close-all` (exit 0 · 2 refused / login unverified · 3 recovered on a logged-out page)
 

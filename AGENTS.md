@@ -48,8 +48,8 @@ record-sync → verify in the browser → security probes → UI checks** (plus 
   not exercise. PASS ≠ NOT_RUN ≠ UNKNOWN ≠ "it seemed to work".
 - Results are JSON (`framework/schemas/`): the guard writes `.git/apex-sync/<alias>/last-<op>.json`
   on every run, and with `--task <id>` a copy under the evidence dir (`.apex-evidence/` by default,
-  never committed); apex-ux's two scripts do the same with `--task` (`ui-result`). Record runtime
-  and architecture verdicts the same way (`references/runtime-result.md`,
+  never committed); apex-ux's two scripts do the same with `--task` (`ui-result`). Runtime and
+  architecture verdicts go through `framework/scripts/evidence.py` (`references/runtime-result.md`,
   `references/decision-record.md` in those skills).
 - Never write a marker, a ref under `refs/apex-sync/` or a result by hand, and never run
   `record-sync --force`: those are the user's calls.

@@ -50,6 +50,7 @@ cites — never `raw/`.
 | Where | What |
 |---|---|
 | the sync writer, automatically | in messages and recorded commands, a path that begins with the repo root becomes `<repo>/…` and one under `$HOME` becomes `~/…` — in the shell's form and in the `C:/…` form native tools print; the scratch dir in a recorded command becomes `<scratch>`; a SQL error text is never kept |
+| `evidence.py`, automatically | `capture` strips session ids, shortens local paths and replaces a password assignment or a connect string with `<redacted>` before a raw file is saved; `write` strips session ids and paths from a draft and refuses one holding a password or a connect string, naming the field, never the value |
 | `pw.sh`, automatically | the password reaches the browser through a mode-600 file deleted on exit, never argv or output; the `?session=` token is stripped from the URL it remembers; `close-all` deletes the session's snapshots |
 | the schemas, on every result | they reject an APEX session id (`session=…`, `f?p=…:…:<id>`), a password assignment, a `user/password@host` connect string, a connect string as a connection name, an absolute, `~` or `..` path |
 | the agent, by discipline | assert with `eval` on the value under test rather than full-page snapshots; keep page dumps under `raw/` only; record no customer data in `observed` |

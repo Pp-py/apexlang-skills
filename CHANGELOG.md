@@ -7,7 +7,8 @@ place after Runtime, opt-in per app. SEC-1 to SEC-6 build the Security block: a 
 `apex-security`, with its criteria; scans of the `.apx`, the packages and the tracked files, and
 runtime probes, each writing a `security-result`; and the Security gate between Runtime and UI.
 R-2 closes the last three known conflicts (KC-4, KC-5, KC-7): the examples compile. R-3 turns
-four of Architecture's red flags into a script.
+four of Architecture's red flags into a script. R-4 writes the two results an agent judged by
+hand until now.
 
 ### Behavior changes — read before upgrading
 
@@ -25,6 +26,14 @@ four of Architecture's red flags into a script.
   A message passed on from `pw.sh` has the repo root shortened to `<repo>` and the home dir to `~`.
 
 **framework**
+- **`framework/scripts/evidence.py` (R-4): the runtime and architecture results are no longer
+  hand-written.** `capture` runs a step and saves its output under `raw/<gate>-<alias>/`,
+  redacted, printing the evidence entry with its sha256. `write` takes the agent's draft (what it
+  observed, no status), adds the envelope, re-hashes every cited file, derives the status by the
+  schema's rules and writes `runtime-<alias>.json` or `architecture.json`. It refuses a draft with
+  a status, a PASS without evidence, a changed or outside file, or a field holding a password or a
+  connect string (naming the field, never the value). Standard library only: the schemas are
+  checked in CI, not on the user's machine.
 - `framework/lib/` holds what the scans share: `apx.py`, the `.apx` reader, now with quoted
   component names (`file "icons/x.png" (`) and one `is_destructive` for UX and Security; and
   `result.py`, the result envelope, was `skills/apex-ux/scripts/ui_result.py`. The capture variable
@@ -127,6 +136,8 @@ four of Architecture's red flags into a script.
   It now does, and reported the 8 gaps this fixes.
 
 ### Tests
+- `tests/integration/evidence.sh` (27) in CI; the contract tier validates every result it makes
+  the script write, and `surface.py` freezes both usages.
 - `tests/integration/arch-scan.sh` (11) in CI: near-misses, `fail.expected`, unparsed files, the
   examples. `surface.py` freezes its usage. Recorded runs over the examples and Oracle's three
   example apps in `CAPABILITIES.md`.

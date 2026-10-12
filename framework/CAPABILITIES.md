@@ -25,6 +25,7 @@ Verified against Oracle's skills at the revision in [`oracle-skills.lock.json`](
 | Runtime gate: `pw.sh` (verified login, per-app workspaces, TLS, exit 3) | yes (version-independent) | yes (version-independent) | [smoke](../tests/integration/pw-wrapper-smoke.sh) in CI, Playwright CLI stubbed |
 | Runtime walkthroughs against a live app | not recorded | not recorded | — |
 | runtime-result / architecture-result / verification-manifest | experimental — fixtures and negatives only | same | [contract](../tests/contract/run.sh) |
+| Runtime and architecture results written by `evidence.py` (derived status, re-hashed evidence, redaction) | yes (version-independent) | same | [evidence](../tests/integration/evidence.sh) in CI; every result it writes validated in the [contract tier](../tests/contract/run.sh) |
 | Architecture red-flag scan (`arch-scan.py`): Automatic Row Processing, DML in a page process, DML in a `_flow`, an `UPDATE` with no version token | yes (version-independent) | same | [arch-scan](../tests/integration/arch-scan.sh) in CI: near-misses, `fail.expected`, the examples; the other three red flags stay the agent's review |
 | UX criteria catalog (`apex-ux`): IDs, severity, method, source | yes — version-independent; Oracle sources cited at 26.1 | same | [contract](../tests/contract/run.sh) (format), [citations](../tests/upstream/citations.md) (Oracle anchors) |
 | UI static scan (`ux-scan.py`): the five static FAIL criteria | yes (version-independent) | same | [ux-scan](../tests/integration/ux-scan.sh) in CI, over fixtures and the examples |
