@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://pp-py.github.io/apexlang-skills/schemas/1/sync-result.schema.json",
   "title": "sync-result (STABLE, schemaVersion 1)",
-  "description": "The verdict of one apex-sync-check.sh gate run. Always written to .git/apex-sync/<alias>/last-<operation>.json; with --task <id> also to <evidenceDir>/<id>/sync-<alias>-<operation>.json. A placeholder (UNKNOWN, INTERRUPTED) is written when the run starts, so a run that never finished cannot be read as an earlier verdict. The exit code mirrors status: PASS 0, FAIL/CONFLICT 1, BLOCKED 2, UNKNOWN 3. A run stopped before its app was known (no repo, no SQLcl, invalid config, bad arguments) writes no file: exit 2 is BLOCKED.",
+  "description": "The verdict of one apex-sync-check.sh gate run. Always written to <git-dir>/apex-sync/<alias>/last-<operation>.json (.git/ in a clone, .git/worktrees/<name>/ in a linked worktree); with --task <id> also to <evidenceDir>/<id>/sync-<alias>-<operation>.json. A placeholder (UNKNOWN, INTERRUPTED) is written when the run starts, so a run that never finished cannot be read as an earlier verdict. The exit code mirrors status: PASS 0, FAIL/CONFLICT 1, BLOCKED 2, UNKNOWN 3. A run stopped before its app was known (no repo, no SQLcl, invalid config, bad arguments) writes no file: exit 2 is BLOCKED.",
   "type": "object",
   "additionalProperties": false,
   "required": ["kind", "schemaVersion", "operation", "status", "reasons", "app", "context", "syncpoint", "changes", "evidence"],
@@ -146,7 +146,7 @@
       }
     },
     "marker": {
-      "description": "The hook's authorization: .git/apex-sync/<alias>/check-ok.<direction>, trusted for ttlSeconds after it is written. Withdrawn when a check of that direction starts.",
+      "description": "The hook's authorization: <git-dir>/apex-sync/<alias>/check-ok.<direction> (.git/ in a clone, .git/worktrees/<name>/ in a linked worktree), trusted for ttlSeconds after it is written. Withdrawn when a check of that direction starts.",
       "type": "object",
       "additionalProperties": false,
       "required": ["written", "path", "ttlSeconds", "expiresAt"],

@@ -413,7 +413,8 @@ def check_interface():
             missing.append(f"{script} usage: {args}")
     ev = read("framework/scripts/evidence.py")
     for args in ("capture --gate runtime|architecture [--app <alias>] --task <id> <name> -- <command>...",
-                 "write --kind runtime|architecture [--app <alias>] --task <id> <draft.json>"):
+                 "write --kind runtime|architecture [--app <alias>] --task <id> <draft.json>",
+                 "fresh --task <id> <result.json>..."):
         if args not in ev:
             missing.append(f"framework/scripts/evidence.py usage: {args}")
     hooks = json.loads(read("hooks/hooks.json"))

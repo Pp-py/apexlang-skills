@@ -2,7 +2,8 @@
 security-result): the envelope's context, the app and its config, and where a result lands.
 
   scrub()     a passed-on message with the repo root and the home dir shortened
-  context()   the run's context: task, repo commit and dirty flag, framework version, UTC time
+  tree()      the working tree as a git tree hash (tracked + untracked, ignored left out)
+  context()   the run's context: task, repo commit, dirty flag and tree, framework version, UTC time
   target()    --app / --task → app alias, the task dir (<evidenceDir>/<task>/) and the app's
               settings from apex-sync.json, or a Stop
   write()     the result on stdout and, with --task, in the task dir (and in
@@ -12,6 +13,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -58,11 +60,44 @@ def scrub(text):
     return text
 
 
+def tree():
+    """The working tree as git would commit it with `git add -A` — tracked and untracked
+    files, ignored ones left out — hashed through a copy of the index, so the real index is
+    never touched. The same hash apex-sync-check.sh records. None when git cannot say."""
+    gd = git("rev-parse", "--absolute-git-dir")
+    if not gd:
+        return None
+    idx = os.path.join(gd, f"apex-sync-tree.{os.getpid()}.idx")
+    env = dict(os.environ, GIT_INDEX_FILE=idx)
+    env.pop("GIT_ATTR_NOSYSTEM", None)
+    try:
+        if os.path.isfile(os.path.join(gd, "index")):
+            shutil.copyfile(os.path.join(gd, "index"), idx)
+        for args in (["add", "-A"], ["write-tree"]):
+            p = subprocess.run(["git", "-C", ROOT] + args, capture_output=True, text=True, env=env, timeout=120)
+            if p.returncode != 0:
+                return None
+        t = p.stdout.strip()
+        return t if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", t) else None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    finally:
+        for f in (idx, idx + ".lock"):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+
+
 def context(task, skill):
     head = git("rev-parse", "HEAD")
+    repo = {"commit": head if head and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head) else None,
+            "dirty": bool(git("status", "--porcelain"))}
+    t = tree()
+    if t:
+        repo["tree"] = t
     return {"task": task,
-            "repo": {"commit": head if head and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head) else None,
-                     "dirty": bool(git("status", "--porcelain"))},
+            "repo": repo,
             "frameworkVersion": FRAMEWORK_VERSION,
             "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "producer": {"skill": skill, "method": "tool"}}

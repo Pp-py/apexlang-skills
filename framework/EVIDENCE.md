@@ -21,7 +21,7 @@ observed is absent — never guessed.
 | Recorded | Field |
 |---|---|
 | the task | `context.task` (null outside a task) |
-| the repository revision | `context.repo.commit`, and `context.repo.dirty` when the working tree differed from it |
+| the repository revision | `context.repo.commit`, `context.repo.dirty` when the working tree differed from it, and `context.repo.tree`, the working tree it judged as a git tree hash (what freshness is checked against) |
 | the framework revision | `context.frameworkVersion` (the apexlang-skills release) |
 | what it ran against | `context.target`: `connectionName` (sync), `runtimeUrl` (runtime), and — when the run talked to them — `apexVersion` and `sqlclVersion` |
 | the APEXlang version of the app | `app.mmdVersion`, from the app's `.apex/apexlang.json` |

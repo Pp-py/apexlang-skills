@@ -827,6 +827,32 @@ expect     "multi: evidenceDir inside an app's dir -> BLOCKED" 2 with_config "{ 
 expect     "hook multi: a config the check refuses blocks too" 2 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" }, { \"appId\": 200, \"appAlias\": \"Demo\" } ] }" hook_cmd 'apex import -input src/demo'
 printf '%s\n' "$SINGLE_CFG" > "$CFG_FILE"
 
+# --- linked worktrees (GAP-7). There `.git` is a file, and the guard could not keep any
+# state. Now the syncpoint is shared (it goes with the shared ref) and each worktree keeps
+# its own markers and results: a check judges ITS LOCAL, so it authorizes only there.
+"$CHK" check-import >/dev/null 2>&1 || true
+rm -f "$MK"/check-ok.*
+git worktree add -q --detach "$WORK/wt" HEAD
+WTMK="$WORK/proj/.git/worktrees/wt/apex-sync/demo"
+in_wt() { ( cd "$WORK/wt" && "$@" ); }
+hook_in_wt() { printf '{"tool_name":"Bash","tool_input":{"command":"%s"},"cwd":"%s"}' "$1" "$WORK/wt" | "$HOOK"; }
+expect     "worktree: check-import PASS on the shared syncpoint"  0 in_wt "$CHK" check-import
+expect     "worktree: the marker is the worktree's own"           0 test -f "$WTMK/check-ok.import"
+expect     "worktree: the main checkout gets none"                1 test -f "$MK/check-ok.import"
+expect     "worktree: the syncpoint stays shared (no copy)"       1 test -f "$WTMK/state.json"
+expect_out "worktree: the result names the worktree's marker"     '"path": "\.git/worktrees/wt/apex-sync/demo/check-ok\.import"' cat "$WTMK/last-check-import.json"
+expect     "worktree: the hook lets the import run there"         0 hook_in_wt 'apex import -input src/demo'
+expect     "worktree: but not from the main checkout"             2 hook_in_proj 'apex import -input src/demo'
+expect     "worktree: writing its state by hand is refused"       2 hook_in_wt 'echo x | tee .git/worktrees/wt/apex-sync/demo/last.json'
+expect     "worktree: status runs"                                0 in_wt "$CHK" status
+# GAP-8: a result records the working tree it judged, hashed as `git add -A` would commit it
+# through a copy of the index — the same hash framework/lib/result.py computes.
+cp .git/index "$WORK/idx" && GIT_INDEX_FILE="$WORK/idx" git add -A && want_tree=$(GIT_INDEX_FILE="$WORK/idx" git write-tree)
+"$CHK" check-import >/dev/null 2>&1 || true
+expect_out "tree: the sync-result records the working tree"       "\"tree\": \"$want_tree\"" cat "$MK/last-check-import.json"
+expect     "tree: hashing it left the real index alone"           0 git diff --cached --quiet
+git worktree remove --force "$WORK/wt"
+
 echo
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]

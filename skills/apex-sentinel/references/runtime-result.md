@@ -31,7 +31,8 @@ python3 $EV capture --gate runtime --app hr --task T-42 ig-duplicate.json -- \
 
 ## Writing it
 
-Never write the result by hand. Put what you observed in a draft — `check`, `backend`, `login`,
+Never write the result by hand. Put what you observed in a draft — keep it in the task dir, which
+is ignored, since a stray untracked file changes the working tree the result records — `check`, `backend`, `login`,
 `criteria` (the `evidence` entries `capture` printed; a file entry may omit `sha256`), and
 optionally `evidence` and `target` — and let the script write it:
 
@@ -39,7 +40,7 @@ optionally `evidence` and `target` — and let the script write it:
 python3 $EV write --kind runtime --app hr --task T-42 draft.json
 ```
 
-It adds `kind`, `app`, `context` (`method: agent`; `runtimeUrl` from `apex-sync.json` when the draft
+It adds `kind`, `app`, `context` (`method: agent`; `repo.tree`, what freshness is checked against; `runtimeUrl` from `apex-sync.json` when the draft
 has none) and **derives the status** by the table below; a draft with a `status` is refused. It
 hashes every cited file again and refuses one that changed since `capture`, a PASS criterion with
 no evidence, a NOT_RUN with no reason, and any field holding a password or a connect string — the

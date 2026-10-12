@@ -134,7 +134,11 @@
           "required": ["commit", "dirty"],
           "properties": {
             "commit": { "oneOf": [{ "$ref": "#/$defs/gitSha" }, { "type": "null" }] },
-            "dirty": { "type": "boolean" }
+            "dirty": { "type": "boolean" },
+            "tree": {
+              "description": "The working tree the run judged, as a git tree: tracked and untracked files, ignored ones left out (GAP-8). A result is fresh only while the working tree still hashes to it; one without it cannot be proven fresh.",
+              "$ref": "#/$defs/gitSha"
+            }
           }
         },
         "frameworkVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$" },

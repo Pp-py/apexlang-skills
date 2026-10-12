@@ -64,9 +64,12 @@ invalid.
   direction does not PASS — even one stopped before it began — so a FAIL or a BLOCKED never
   leaves an earlier PASS standing. It is tied to a time, not to the
   LOCAL it checked (GAP-9): after any change to LOCAL, run the check again.
-- A **result** is fresh for the task named in its `context.task`, at the revision in its
-  `context.repo`. Read for another task, or after the inputs it judged changed, it is stale:
-  the consumer records `NOT_RUN`, not the old status.
+- A **result** is fresh for the task named in its `context.task`, while the working tree still
+  hashes to its `context.repo.tree` — tracked and untracked files, ignored ones left out, so
+  results in the evidence dir never change it. Read for another task, after a file changed, or
+  with no `tree` recorded, it is stale: the consumer records `NOT_RUN`, not the old status.
+  `framework/scripts/evidence.py fresh --task <id> <result>…` says which (exit 0 fresh · 1 stale).
+  Nothing expires on a clock; the marker's 10 minutes are the hook's, not a result's.
 
 ## The orchestration contract
 

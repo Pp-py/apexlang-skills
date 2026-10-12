@@ -230,10 +230,10 @@ apex_subcommand "$EXPORT_SUB" "$EXPORT_FLAGS" && needs+=(export)
 guard_override=""
 if rx 'apex-sync-check(\.sh)?[^;&|]*record-sync' && rx '(^|[[:space:]])--force([[:space:]=]|$)'; then
   guard_override="record-sync --force records the Builder as BASE without any proof that it holds no unsynchronized work."
-elif rx '(touch|cp|mv|ln|tee|install|truncate|dd)[^;&|]*(check-ok\.|\.git/apex-sync/)' \
-     || rx '>>?[[:space:]]*[^;&|[:space:]]*(check-ok\.|\.git/apex-sync/)' \
+elif rx '(touch|cp|mv|ln|tee|install|truncate|dd)[^;&|]*(check-ok\.|\.git/(worktrees/[^/;&|[:space:]]+/)?apex-sync/)' \
+     || rx '>>?[[:space:]]*[^;&|[:space:]]*(check-ok\.|\.git/(worktrees/[^/;&|[:space:]]+/)?apex-sync/)' \
      || rx 'update-ref[^;&|]*refs/apex-sync|refs/apex-sync[^;&|]*update-ref'; then
-  guard_override="the markers, refs/apex-sync/* and state under .git/apex-sync/ are written only by apex-sync-check.sh."
+  guard_override="the markers, refs/apex-sync/* and state under .git/apex-sync/ (.git/worktrees/<name>/apex-sync/ in a worktree) are written only by apex-sync-check.sh."
 fi
 
 [[ ${#needs[@]} -eq 0 && -z "$guard_override" ]] && exit 0
@@ -268,7 +268,10 @@ cfg_root_of() {  # $1 = an existing dir → CRO: the nearest ancestor holding ap
   done
 }
 
-if ! ROOT=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null); then
+# One git call gives the root and this worktree's git dir, where its markers live (GAP-7).
+if _rp=$(git -C "$cwd" rev-parse --show-toplevel --absolute-git-dir 2>/dev/null); then
+  ROOT=${_rp%%$'\n'*}; GITDIR=${_rp#*$'\n'}
+else
   # Not a repo — or git refused it (dubious ownership on /mnt/c is common under
   # WSL). Ours to police when an apex-sync.json sits up the tree; then git's
   # failure must block, never quietly allow.
@@ -277,7 +280,7 @@ if ! ROOT=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null); then
     err=$(git -C "$cwd" rev-parse --show-toplevel 2>&1 | head -1)
     block "found $found/apex-sync.json, but git cannot resolve the repository here (${err:-no error text}), so the guard cannot check anything. Fix git first — e.g. git config --global --add safe.directory <repo> — then retry."
   fi
-  ROOT=""
+  ROOT=""; GITDIR=""
 fi
 SESSION=""; [[ -n "$ROOT" && -f "$ROOT/apex-sync.json" ]] && phys_dir "$ROOT" && SESSION=$PD
 
@@ -602,7 +605,7 @@ now=""; (( BASH_VERSINFO[0] >= 5 )) && now=${EPOCHSECONDS:-}
 for d in "${needs[@]}"; do
   _v="T_$d"
   for a in ${!_v}; do
-    m="$ROOT/.git/apex-sync/$a/check-ok.$d"
+    m="$GITDIR/apex-sync/$a/check-ok.$d"
     t=""   # its mtime: GNU stat, else BSD (macOS) stat
     if [[ -f "$m" ]]; then t=$(stat -c %Y "$m" 2>/dev/null) || t=$(stat -f %m "$m" 2>/dev/null) || t=""; fi
     # A missing, unreadable, expired — or future-dated (clock skew) — marker is no marker.

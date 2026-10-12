@@ -52,7 +52,7 @@ repo never redefines them, and never promotes an advisory signal to a verdict.
 | BASE / syncpoint | the app's tree at the last synchronization: a git commit at `refs/apex-sync/<alias>`, snapshotted from a Builder export |
 | LOCAL | the app's source dir in the working tree: `<apexlangDir>/<appAlias>` |
 | BUILDER (REMOTE) | the app as the target workspace holds it, exported through the saved SQLcl connection |
-| marker | `.git/apex-sync/<alias>/check-ok.<direction>`: the hook's authorization, written only by a check PASS, trusted for 10 minutes |
+| marker | `<git-dir>/apex-sync/<alias>/check-ok.<direction>` (`.git/` in a clone, `.git/worktrees/<name>/` in a linked worktree): the hook's authorization for that worktree, written only by a check PASS, trusted for 10 minutes |
 | app alias | how every script, ref, directory and result names an app (`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`) |
 | task | one unit of work an orchestrator verifies; its id names a directory under the evidence dir |
 | result | a producer's JSON verdict, validated by its schema in `schemas/` |
@@ -81,7 +81,7 @@ puts it back whenever it is missing.
 
 | Result | Path | Written by |
 |---|---|---|
-| sync-result (every run) | `.git/apex-sync/<alias>/last-<operation>.json` | `apex-sync-check.sh` |
+| sync-result (every run) | `<git-dir>/apex-sync/<alias>/last-<operation>.json` | `apex-sync-check.sh` |
 | sync-result (with `--task`) | `<evidenceDir>/<task>/sync-<alias>-<operation>.json` | `apex-sync-check.sh` |
 | runtime-result | `<evidenceDir>/<task>/runtime-<alias>.json` | the agent (apex-sentinel), through `evidence.py write` |
 | architecture-result | `<evidenceDir>/<task>/architecture.json` | the agent (apexlang-architecture), through `evidence.py write` |
@@ -117,10 +117,12 @@ entry; removing any of it, a major one.
   `framework/scripts/evidence.py capture --gate runtime|architecture [--app <alias>] --task <id>
   <name> -- <command>…` (exit 0 saved · 2 refused · 3 not run or not saved) and `evidence.py write
   --kind runtime|architecture [--app <alias>] --task <id> <draft.json>` (exit the derived status
-  0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN; a refused draft 2, nothing written). They share
+  0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN; a refused draft 2, nothing written); `evidence.py fresh
+  --task <id> <result.json>…` (exit 0 fresh · 1 stale · 2 not a result · 3 no tree). They share
   `framework/lib/` (the `.apx` reader, the PL/SQL lexer and the result envelope).
-- **State.** `refs/apex-sync/<alias>`; `.git/apex-sync/<alias>/` holding `state.json`,
-  `check-ok.import`, `check-ok.export`, `last-<operation>.json`.
+- **State.** `refs/apex-sync/<alias>` and `<git-common-dir>/apex-sync/<alias>/state.json`, shared by
+  every worktree; `<git-dir>/apex-sync/<alias>/` holding `check-ok.import`, `check-ok.export`,
+  `last-<operation>.json`, one per worktree. In a plain clone both dirs are `.git/`.
 - **Results.** The paths above; schema `$id`s
   `https://pp-py.github.io/apexlang-skills/schemas/1/<kind>.schema.json` (identifiers, not yet
   published URLs).
