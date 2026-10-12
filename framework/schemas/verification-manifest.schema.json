@@ -27,7 +27,7 @@
       "additionalProperties": false,
       "required": ["gate", "required", "status"],
       "properties": {
-        "gate": { "description": "Phase 3 adds its gates here (security next).", "enum": ["architecture", "validation", "sync", "runtime", "ui"] },
+        "gate": { "enum": ["architecture", "validation", "sync", "runtime", "security", "ui"] },
         "app": { "$ref": "common.schema.json#/$defs/appAlias" },
         "required": { "type": "boolean" },
         "status": { "$ref": "common.schema.json#/$defs/gateStatus" },
@@ -38,7 +38,7 @@
             "additionalProperties": false,
             "required": ["kind", "path", "sha256"],
             "properties": {
-              "kind": { "enum": ["architecture-result", "sync-result", "runtime-result", "ui-result"] },
+              "kind": { "enum": ["architecture-result", "sync-result", "runtime-result", "security-result", "ui-result"] },
               "path": { "$ref": "common.schema.json#/$defs/relPath" },
               "sha256": { "$ref": "common.schema.json#/$defs/sha256" }
             }
@@ -60,7 +60,7 @@
         },
         {
           "description": "a gate with its own producer PASSes on that producer's result file",
-          "if": { "properties": { "gate": { "enum": ["architecture", "sync", "runtime", "ui"] }, "status": { "const": "PASS" } } },
+          "if": { "properties": { "gate": { "enum": ["architecture", "sync", "runtime", "security", "ui"] }, "status": { "const": "PASS" } } },
           "then": { "required": ["results"], "properties": { "results": { "minItems": 1 } } }
         },
         {
@@ -79,6 +79,11 @@
           "description": "the UI gate PASSes on two scopes: the static scan and at least one page at runtime",
           "if": { "properties": { "gate": { "const": "ui" }, "status": { "const": "PASS" } } },
           "then": { "properties": { "results": { "minItems": 2, "items": { "properties": { "kind": { "const": "ui-result" } } } } } }
+        },
+        {
+          "description": "the Security gate PASSes on four scopes: static, plsql, secrets and runtime",
+          "if": { "properties": { "gate": { "const": "security" }, "status": { "const": "PASS" } } },
+          "then": { "properties": { "results": { "minItems": 4, "items": { "properties": { "kind": { "const": "security-result" } } } } } }
         }
       ]
     },

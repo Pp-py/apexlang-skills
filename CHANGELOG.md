@@ -3,8 +3,9 @@
 ## Unreleased
 
 Phase 3, UX-5: the UI gate. apex-ux's two scripts now write a `ui-result`, and the gate takes its
-place after Runtime, opt-in per app. SEC-1 to SEC-5 open the Security block: a fifth skill,
-`apex-security`, with its criteria, two scans (`.apx`, packages), runtime probes and a secrets scan, each writing a `security-result`.
+place after Runtime, opt-in per app. SEC-1 to SEC-6 build the Security block: a fifth skill,
+`apex-security`, with its criteria; scans of the `.apx`, the packages and the tracked files, and
+runtime probes, each writing a `security-result`; and the Security gate between Runtime and UI.
 
 ### Behavior changes — read before upgrading
 
@@ -34,7 +35,7 @@ place after Runtime, opt-in per app. SEC-1 to SEC-5 open the Security block: a f
 - `apex-sync.json` takes `uiGate` (a boolean; anything else is BLOCKED). The guard and `pw.sh`
   accept it per app; neither acts on it.
 
-**apex-security (new skill) — Phase 3, SEC-1 to SEC-5**
+**apex-security (new skill) — Phase 3, SEC-1 to SEC-6**
 - A fifth skill, `skills/apex-security/`: a threat model, what a Security PASS does not establish
   (it is not a pentest), and 22 criteria with IDs in `criteria.md` — `FAIL` only for what a
   machine can establish (authorization on every page and destructive action, public pages
@@ -73,6 +74,11 @@ place after Runtime, opt-in per app. SEC-1 to SEC-5 open the Security block: a f
   - Placeholders pass. An exception needs `secrets-scan: allow <reason>`; a bare `allow` excuses
     nothing.
   - This repository passes; the two fake passwords in `pw-wrapper-smoke.sh` are marked.
+- **The Security gate (SEC-6):** in `GATES.md`, owner apex-security, after Runtime and before UI
+  (`… → Runtime → Security → UI`). It passes on four `security-result` PASSes (static, plsql,
+  secrets, runtime) and is required for an app with `"securityGate": true` (opt-in until 1.0.0).
+  `verification-manifest`: gate `security`, kind `security-result`, a `security` PASS cites at
+  least four. `apex-sync.json` takes `securityGate` (a boolean).
 - `SEC-ACTION-AUTHZ` now needs a role scheme (`@<static-id>`) on the action or its page:
   `mustNotBePublicUser` does not count, because every page already requires it.
 - Run over Oracle's own 26.1 scaffold, the scan finds its Home page without an
@@ -94,6 +100,8 @@ place after Runtime, opt-in per app. SEC-1 to SEC-5 open the Security block: a f
   (KC-7).
 
 ### Tests
+- Contract: the manifest's Security gate in the PASS fixture, 2 negatives (three scopes, another
+  gate's result); the e2e covers `securityGate` (+2).
 - `tests/integration/secrets-scan.sh` (8) in CI. Its secrets are assembled at run time, so the
   test file holds none. Contract: 2 secrets fixtures, 2 negatives.
 - `tests/integration/sec-probe.sh` (20) in CI: each probe's mapping, a failing control, the low

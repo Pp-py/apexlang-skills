@@ -21,7 +21,7 @@
 RE_APP_ID='^[1-9][0-9]{0,9}$'
 RE_APP_ALIAS='^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
 RE_CONNECTION='^[^/@[:space:]\"'"'"']{1,128}$'   # a saved-connection NAME: never user/password@host
-APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl|uiGate|publicPages|lowPrivUser'
+APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl|uiGate|securityGate|publicPages|lowPrivUser'
 
 CFG_FLAT=""
 CFG_P=(); CFG_T=(); CFG_V=()     # CFG_FLAT indexed: the path, type and value of each row
@@ -156,7 +156,7 @@ cfg_page_list() {  # $1 = JSON path, $2 = label: absent, or an array of page num
 }
 
 cfg_app() {  # $1 = JSON path of the app object; appends one app or records errors
-  local at=$1 label="apex-sync.json" t id alias dir conn ign="" i n v url user
+  local at=$1 label="apex-sync.json" t id alias dir conn ign="" i n v url user k
   [[ "$at" == "\$" ]] || label="apex-sync.json ${at#\$.}"
   cfg_get "$at.appId"; t=$CT; id=$CV
   case "$t" in
@@ -202,10 +202,12 @@ cfg_app() {  # $1 = JSON path of the app object; appends one app or records erro
   cfg_string "$at" runtimeUrl "$label"; url=$CS
   [[ "$url" != *session=* ]] || cfg_err "$label: runtimeUrl must not carry a session token (session=…): the file is committed"
   cfg_string "$at" testUser "$label"; user=$CS
-  # uiGate, publicPages, lowPrivUser: read by apex-ux / apex-security and the orchestrator, not by
+  # uiGate, securityGate, publicPages, lowPrivUser: read by apex-ux / apex-security and the orchestrator, not by
   # the guard; only their types are checked here, so a typo blocks instead of passing silently
-  cfg_get "$at.uiGate"
-  [[ -z "$CT" || "$CT" == boolean ]] || cfg_err "$label: uiGate must be true or false (got a $CT)"
+  for k in uiGate securityGate; do
+    cfg_get "$at.$k"
+    [[ -z "$CT" || "$CT" == boolean ]] || cfg_err "$label: $k must be true or false (got a $CT)"
+  done
   cfg_page_list "$at.publicPages" "$label"
   cfg_string "$at" lowPrivUser "$label"
   APPS_ID+=("$id"); APPS_ALIAS+=("$alias"); APPS_DIR+=("$dir"); APPS_CONN+=("$conn"); APPS_IGNORE+=("$ign")
@@ -285,8 +287,10 @@ cfg_load() {
     done
   fi
   if [[ "$t" == array ]]; then          # the top-level default under apps[]; one app's own is checked above
-    cfg_get '$.uiGate'
-    [[ -z "$CT" || "$CT" == boolean ]] || cfg_err "apex-sync.json: uiGate must be true or false (got a $CT)"
+    for k in uiGate securityGate; do
+      cfg_get "\$.$k"
+      [[ -z "$CT" || "$CT" == boolean ]] || cfg_err "apex-sync.json: $k must be true or false (got a $CT)"
+    done
     cfg_page_list '$.publicPages' "apex-sync.json"
   fi
   cfg_get '$.evidenceDir'

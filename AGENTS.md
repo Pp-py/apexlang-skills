@@ -34,11 +34,11 @@ Codex, opencode, Cursor, aider, …) working on an APEXlang app, load the releva
    write a `ui-result`; the UI gate runs after Runtime when the app sets `"uiGate": true`.
 
 5. **`skills/apex-security/SKILL.md`** — read it before calling a change safe to deploy.
-   Criteria with IDs (`criteria.md`); `scripts/sec-scan.py` (`.apx`) and `plsql-scan.py`
-   (packages), `sec-probe.py` (runtime) and `secrets-scan.py` write a `security-result`; gate: later.
+   Criteria with IDs (`criteria.md`); `scripts/sec-scan.py`, `plsql-scan.py`, `secrets-scan.py`,
+   `sec-probe.py` each write a `security-result`; the gate runs when `"securityGate": true`.
 
 They form one loop: **architect → build (`.apx` + package) → validate → sync-check → import →
-record-sync → verify in the browser → UI checks** (plus sync-check before any export).
+record-sync → verify in the browser → security probes → UI checks** (plus sync-check before any export).
 
 ## Gates, statuses, evidence
 

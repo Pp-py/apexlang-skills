@@ -816,6 +816,8 @@ expect     "multi: overlapping source dirs -> BLOCKED"         2 with_config "{ 
 expect     "multi: an empty apps[] -> BLOCKED"                 2 with_config "{ $APPS2, \"apps\": [] }" "$CHK" check-import
 expect     "multi: uiGate per app and as a default is accepted" 0 with_config "{ $APPS2, \"uiGate\": false, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"uiGate\": true } ] }" "$CHK" apps
 expect     "multi: uiGate that is not a boolean -> BLOCKED"    2 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"uiGate\": \"yes\" } ] }" "$CHK" check-import --app demo
+expect     "multi: securityGate per app is accepted"          0 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"securityGate\": true } ] }" "$CHK" apps
+expect     "multi: securityGate that is not a boolean -> BLOCKED" 2 with_config "{ $APPS2, \"securityGate\": \"on\", \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" } ] }" "$CHK" check-import --app demo
 expect     "multi: a top-level uiGate that is not a boolean -> BLOCKED" 2 with_config "{ $APPS2, \"uiGate\": 1, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" } ] }" "$CHK" check-import --app demo
 expect     "multi: publicPages and lowPrivUser per app are accepted" 0 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"publicPages\": [9999, 1], \"lowPrivUser\": \"QA_LOW\" } ] }" "$CHK" apps
 expect     "multi: publicPages with a non-number -> BLOCKED"   2 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"publicPages\": [\"login\"] } ] }" "$CHK" check-import --app demo

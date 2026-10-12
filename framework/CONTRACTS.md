@@ -118,7 +118,7 @@ entry; removing any of it, a major one.
   `https://pp-py.github.io/apexlang-skills/schemas/1/<kind>.schema.json` (identifiers, not yet
   published URLs).
 - **Configuration.** `apex-sync.json` keys `appId`, `appAlias`, `apexlangDir`,
-  `sqlclConnection`, `ignorePaths`, `testUser`, `runtimeUrl`, `uiGate`, `publicPages`, `lowPrivUser`, `evidenceDir`, `apps` — the
+  `sqlclConnection`, `ignorePaths`, `testUser`, `runtimeUrl`, `uiGate`, `securityGate`, `publicPages`, `lowPrivUser`, `evidenceDir`, `apps` — the
   canonical specification is `skills/apex-sync-guard/setup.md` §1. Environment:
   `APEX_TEST_USER[_<ALIAS>]`, `APEX_TEST_PASSWORD[_<ALIAS>]`, `APEX_TEST_PASSWORD_LOW[_<ALIAS>]`, `APEX_TEST_FILE`, `APEX_TEST_ENV`,
   `PW_WORKSPACE`, `PW_SESSION`, `PW_INSECURE_TLS`.
