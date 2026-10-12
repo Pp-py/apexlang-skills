@@ -13,6 +13,10 @@ Usage:
       adds kind, schemaVersion, app and context (method: agent), hashes every cited file (a hash
       that no longer matches is refused), DERIVES the status, and writes runtime-<alias>.json or
       architecture.json in the task dir.
+  evidence.py fresh --task <id> <result.json>...
+      Whether each result still speaks for now (GATES.md §Freshness): it is stale when it was
+      made for another task, records no working tree (context.repo.tree), or records another
+      tree than the working tree hashes to now. Prints [{path, fresh, reason}].
 
 Redaction: session ids are stripped and local paths shortened (<repo>, ~) everywhere. In a raw
 file a password assignment or a user/password@host connect string is replaced by <redacted>; in
@@ -21,6 +25,8 @@ a draft it is refused, naming the field, never the value.
 Exit:  capture — 0 saved · 2 refused (bad input, outside the repo) · 3 could not run or save.
        write   — the derived status: 0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN; a refused draft
        is 2 with nothing written (the message on stderr names the field).
+       fresh   — 0 every result fresh · 1 one is stale · 2 one is unreadable or not a result ·
+       3 git cannot hash the working tree.
 """
 import hashlib
 import json
@@ -30,7 +36,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
-from result import ROOT, Stop, context, rel, scrub, target  # noqa: E402
+from result import RE_TASK, ROOT, Stop, context, rel, scrub, target, tree  # noqa: E402
 
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 SESSION = [(re.compile(r"([?&])session=[0-9]+&?"), r"\1"), (re.compile(r"(f\?p=[^:\s]*:[^:\s]*:)[0-9]{6,}"), r"\1")]
@@ -223,6 +229,29 @@ def write(a):
     return {"PASS": 0, "FAIL": 1, "BLOCKED": 2}.get(status, 3)
 
 
+def fresh(a):
+    if not RE_TASK.match(a.task):
+        raise Stop("BLOCKED", "BAD_TASK", f"--task must match {RE_TASK.pattern}")
+    now = tree()
+    if not now:
+        raise Stop("UNKNOWN", "NO_TREE", "git cannot hash the working tree here, so no result can be proven fresh")
+    out, rc = [], 0
+    for f in a.results:
+        try:
+            with open(f, encoding="utf-8") as fh:
+                ctx = json.load(fh)["context"]
+            task, then = ctx["task"], ctx["repo"].get("tree")
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            raise Stop("BLOCKED", "NOT_A_RESULT", f"{os.path.basename(f)} is not a readable result with a context")
+        reason = (f"made for task {task}, not {a.task}" if task != a.task
+                  else "records no working tree: it cannot be proven fresh" if not then
+                  else "the working tree changed since it was made" if then != now else "")
+        out.append({"path": rel(f) or os.path.basename(f), "fresh": not reason, **({"reason": reason} if reason else {})})
+        rc = rc or (1 if reason else 0)
+    print(json.dumps(out, indent=2))
+    return rc
+
+
 def main(argv):
     import argparse
     rest = []
@@ -241,9 +270,12 @@ def main(argv):
     w.add_argument("--app")
     w.add_argument("--task", required=True)
     w.add_argument("draft")
+    f = sub.add_parser("fresh")
+    f.add_argument("--task", required=True)
+    f.add_argument("results", nargs="+")
     a = ap.parse_args(argv)
     try:
-        return capture(a, rest) if a.cmd == "capture" else write(a)
+        return capture(a, rest) if a.cmd == "capture" else write(a) if a.cmd == "write" else fresh(a)
     except Refuse as e:
         print(f"evidence: refused — {e}; nothing written", file=sys.stderr)
         return 2

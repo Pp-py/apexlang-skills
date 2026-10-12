@@ -71,7 +71,8 @@ UNKNOWN — the scan could not run (no source to read, a command that failed).
 ## Writing it
 
 Never write the result by hand. Put `decisions`, `redFlags`, `missingInputs` and `evidence` (the
-`arch-scan.py` command with its exit code; a file entry may omit `sha256`) in a draft and run:
+`arch-scan.py` command with its exit code; a file entry may omit `sha256`) in a draft kept in the
+task dir (a stray untracked file changes the tree the result records) and run:
 
 ```sh
 python3 framework/scripts/evidence.py write --kind architecture --app hr --task T-42 draft.json

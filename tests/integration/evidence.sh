@@ -7,6 +7,9 @@
 #             unverified login → BLOCKED · a required criterion not run → UNKNOWN); appId and
 #             runtimeUrl come from apex-sync.json; architecture: PASS on decisions and a scan,
 #             red flags → FAIL, missing inputs → BLOCKED, no scan → UNKNOWN
+#   fresh     a result is fresh for its task while the working tree hashes to its
+#             context.repo.tree: another task, a changed file, no tree → stale (1); a file
+#             that is not a result → 2
 #   refused   (exit 2, nothing written, the value never echoed): a status in the draft, a PASS
 #             without evidence, a cited file that changed or is outside the repo, a secret in a
 #             field, a decision whose branch and layer disagree
@@ -99,6 +102,26 @@ draft "{\"decisions\":[$DEC]}"
 run "architecture: no scan in evidence → UNKNOWN" 3 write --kind architecture --task T-1 "$WORK/d.json"
 draft "{\"decisions\":[{\"subject\":\"x\",\"type\":\"rule\",\"branch\":\"A1\",\"layer\":\"entity\",\"package\":\"pkg_x\",\"evidence\":[{\"kind\":\"file\",\"path\":\"t.sql\"}]}],\"evidence\":[$SCAN]}"
 run "refused: a branch and layer that disagree" 2 write --kind architecture --task T-1 "$WORK/d.json"
+
+# --- fresh
+git add -A >/dev/null 2>&1; git -c user.email=t@example.com -c user.name=t commit -qm base
+draft "{\"decisions\":[$DEC],\"evidence\":[$SCAN]}"
+"$PY" "$EV" write --kind architecture --task T-1 "$WORK/d.json" > /dev/null 2>&1
+A=.apex-evidence/T-1/architecture.json
+if q "assert len(d['context']['repo']['tree']) == 40" "$A"; then ok "a result records the working tree it judged"; else bad "no context.repo.tree"; fi
+run "fresh: same task, same tree" 0 fresh --task T-1 "$A"
+run "fresh: another task is stale" 1 fresh --task T-2 "$A"
+printf 'more\n' >> t.sql
+run "fresh: a changed file makes it stale" 1 fresh --task T-1 "$A"
+if q "assert d[0]['reason'] == 'the working tree changed since it was made'"; then ok "fresh: says why"; else bad "fresh: reason"; fi
+printf 'note\n' > untracked.txt
+git checkout -q -- t.sql
+run "fresh: an untracked file counts too" 1 fresh --task T-1 "$A"
+rm -f untracked.txt
+run "fresh: the tree back as it was → fresh again" 0 fresh --task T-1 "$A"
+q "d['context']['repo'].pop('tree'); json.dump(d, open('$WORK/old.json', 'w'))" "$A"
+run "fresh: a result without a tree is stale" 1 fresh --task T-1 "$WORK/old.json"
+run "fresh: a file that is not a result → 2" 2 fresh --task T-1 t.sql
 
 echo "evidence: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

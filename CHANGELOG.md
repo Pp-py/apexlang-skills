@@ -8,7 +8,7 @@ place after Runtime, opt-in per app. SEC-1 to SEC-6 build the Security block: a 
 runtime probes, each writing a `security-result`; and the Security gate between Runtime and UI.
 R-2 closes the last three known conflicts (KC-4, KC-5, KC-7): the examples compile. R-3 turns
 four of Architecture's red flags into a script. R-4 writes the two results an agent judged by
-hand until now.
+hand until now. R-7 closes GAP-7 (worktrees) and GAP-8 (stale results).
 
 ### Behavior changes — read before upgrading
 
@@ -25,7 +25,20 @@ hand until now.
   `runtimeUrl`. An opener not found while another criterion FAILs is reported as FAIL with both.
   A message passed on from `pw.sh` has the repo root shortened to `<repo>` and the home dir to `~`.
 
+**apex-sync-guard**
+- **Linked worktrees work (GAP-7, R-7).** The syncpoint (`state.json`) moves to the shared git dir,
+  next to the shared ref; the markers and last results stay per worktree, under
+  `.git/worktrees/<name>/apex-sync/`. A check authorizes an import only from the worktree whose
+  LOCAL it compared, and the hook refuses hand-written state there too. In a plain clone every
+  path is the same `.git/apex-sync/` as before: nothing to migrate.
+- `sync-result` records `context.repo.tree` (below); `marker.path` names the worktree's marker.
+
 **framework**
+- **Every result records the working tree it judged (GAP-8, R-7):** `context.repo.tree`, a git
+  tree hash of tracked and untracked files (ignored ones left out), hashed through a copy of the
+  index. Optional in the schema, so older results still validate — and read as stale.
+  `evidence.py fresh --task <id> <result>…` says whether a result still speaks for now (another
+  task, a changed file, no tree → stale). Nothing expires on a clock.
 - **`framework/scripts/evidence.py` (R-4): the runtime and architecture results are no longer
   hand-written.** `capture` runs a step and saves its output under `raw/<gate>-<alias>/`,
   redacted, printing the evidence entry with its sha256. `write` takes the agent's draft (what it
@@ -136,6 +149,8 @@ hand until now.
   It now does, and reported the 8 gaps this fixes.
 
 ### Tests
+- e2e (+11): a check and the hook in a real linked worktree; the guard's `tree` equals the one
+  `git add -A` gives through a copy of the index. `evidence.sh` (+9): freshness.
 - `tests/integration/evidence.sh` (27) in CI; the contract tier validates every result it makes
   the script write, and `surface.py` freezes both usages.
 - `tests/integration/arch-scan.sh` (11) in CI: near-misses, `fail.expected`, unparsed files, the

@@ -19,15 +19,17 @@
 # Exit codes: 0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED (precondition missing) ·
 #             3 UNKNOWN (started, outcome undeterminable — nothing authorized).
 # Every gate run (check-import, check-export, record-sync) also leaves its verdict
-# as JSON in .git/apex-sync/<appAlias>/last-<subcommand>.json — the sync-result
+# as JSON in <git-dir>/apex-sync/<appAlias>/last-<subcommand>.json — the sync-result
 # contract, framework/schemas/sync-result.schema.json. The JSON is the verdict;
 # the exit code mirrors it.
 #
 # Runs under bash: Linux, macOS, and Windows via Git Bash or WSL (not PowerShell/cmd).
 #
-# Reads apex-sync.json at the repo root. Sync state lives in
-# .git/apex-sync/<appAlias>/ (machine-local, never committed) plus the
-# git ref refs/apex-sync/<appAlias> holding the BASE tree.
+# Reads apex-sync.json at the repo root. Sync state is machine-local, never committed:
+# the git ref refs/apex-sync/<appAlias> holding the BASE tree and the syncpoint record
+# <git-common-dir>/apex-sync/<appAlias>/state.json, shared by every worktree; the
+# markers and last results in <git-dir>/apex-sync/<appAlias>/, one set per worktree,
+# since each worktree has its own LOCAL. In a plain clone both dirs are .git.
 #
 # The core check is always a full `apex export` + diff against BASE:
 # timestamp views (APEX_APPLICATION_PAGES / APEX_APPLICATIONS) miss some
@@ -102,6 +104,7 @@ TMP_KEEP=""                       # scratch dirs preserved on FAIL for resolutio
 TMPS=()
 RESULT_FILES=()                   # where this run's sync-result goes (results_init)
 ROOT=""; STATE_DIR=""             # known once the repo and the app are
+GIT_DIR_ABS=""; GIT_COMMON=""; STATE_REL=".git"   # this worktree's git dir, the shared one
 
 # A check that does not end in PASS leaves no authorization behind: not the marker it
 # set out to renew, nor one an earlier or a concurrent run left — what it guards is
@@ -114,12 +117,13 @@ ROOT=""; STATE_DIR=""             # known once the repo and the app are
 revoke_marker() { if [[ -e "$STATE_DIR/check-ok.$1" || -L "$STATE_DIR/check-ok.$1" ]]; then rm -f "$STATE_DIR/check-ok.$1"; fi; }
 
 withdraw_markers() {  # $1 = import|export
-  local root a
+  local root gd a
   if [[ -n "$STATE_DIR" ]]; then revoke_marker "$1"; return 0; fi
   root=${ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}
-  [[ -n "$root" && -f "$root/apex-sync.json" ]] || return 0
+  gd=${GIT_DIR_ABS:-$(git rev-parse --absolute-git-dir 2>/dev/null)}
+  [[ -n "$root" && -n "$gd" && -f "$root/apex-sync.json" ]] || return 0
   while IFS= read -r a; do
-    [[ "$a" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ ]] && rm -f "$root/.git/apex-sync/$a/check-ok.$1"
+    [[ "$a" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ ]] && rm -f "$gd/apex-sync/$a/check-ok.$1"
   done < <(grep -o '"appAlias"[[:space:]]*:[[:space:]]*"[^"]*"' "$root/apex-sync.json" 2>/dev/null \
            | sed 's/.*"\([^"]*\)"$/\1/' | tr -d '\r')
   return 0
@@ -263,7 +267,16 @@ print("" if data is None else data)' "$1" "$2") || return
   JG=${JG//$'\r'/}      # native tooling on Windows writes CRLF
 }
 
-ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || blocked NO_GIT "not inside a git repository"
+_rp=$(git rev-parse --show-toplevel --absolute-git-dir 2>/dev/null) || blocked NO_GIT "not inside a git repository"
+ROOT=${_rp%%$'\n'*}; GIT_DIR_ABS=${_rp#*$'\n'}
+# A linked worktree's git dir names the shared one in its `commondir` file (GAP-7): the
+# syncpoint lives there, next to the shared ref; this worktree's markers stay in its own.
+GIT_COMMON=$GIT_DIR_ABS
+if [[ -f "$GIT_DIR_ABS/commondir" ]]; then
+  read -r _cd < "$GIT_DIR_ABS/commondir" || _cd=""; _cd=${_cd%$'\r'}
+  if [[ "$_cd" == /* || "$_cd" =~ ^[A-Za-z]: ]]; then GIT_COMMON=$_cd; else GIT_COMMON="$GIT_DIR_ABS/$_cd"; fi
+  STATE_REL=".git/worktrees/${GIT_DIR_ABS##*/}"
+fi
 CFG="$ROOT/apex-sync.json"
 [[ -f "$CFG" ]] || blocked NO_CONFIG "apex-sync.json not found at repo root ($ROOT) — see setup.md"
 
@@ -307,10 +320,11 @@ select_app() {  # $1 = index into the APPS_* arrays; sets the per-app globals
     [[ -z "$SRCDIR" || "$o/" == "$SRCDIR/"* ]] && EXPORT_SCOPE+=(":(exclude)$o")
   done
   APP_SRC="$ROOT/$SRC_REL"
-  STATE_DIR="$ROOT/.git/apex-sync/$ALIAS"
-  STATE="$STATE_DIR/state.json"
+  STATE_DIR="$GIT_DIR_ABS/apex-sync/$ALIAS"       # this worktree: markers, last results
+  STATE="$GIT_COMMON/apex-sync/$ALIAS/state.json"  # every worktree: the syncpoint
   REF="refs/apex-sync/$ALIAS"
   [[ -d "$STATE_DIR" ]] || mkdir -p "$STATE_DIR"
+  [[ -d "${STATE%/*}" ]] || mkdir -p "${STATE%/*}"
   # BASE round-trips through git objects (add → write-tree → archive). Content
   # filters would rewrite the bytes on the way in or out, so every git call that
   # stores or restores a replica runs with them off and with attribute lookup
@@ -754,7 +768,25 @@ iso_in() {  # $1 = seconds from now → ISO, UTC (GNU date, else BSD date)
   else ISO=$(date -u -d "@$e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$e" +%Y-%m-%dT%H:%M:%SZ) || ISO=""; fi
 }
 
-RJ=""; RES_HEAD=""; RES_MMD=""; RES_ONCE=0
+# The working tree as `git add -A` would commit it — tracked and untracked files, ignored
+# ones left out — hashed through a copy of the index, so the real index is never touched
+# (GAP-8: a result is fresh only while the tree still hashes the same). The same hash
+# framework/lib/result.py records; "" when git cannot say.
+WT=""
+worktree_tree() {  # → WT
+  local idx="$GIT_DIR_ABS/apex-sync-tree.$$.idx"
+  WT=""
+  rm -f "$idx"
+  if [[ -f "$GIT_DIR_ABS/index" ]]; then cp "$GIT_DIR_ABS/index" "$idx" 2>/dev/null || true; fi
+  if GIT_INDEX_FILE=$idx env -u GIT_ATTR_NOSYSTEM git -C "$ROOT" add -A >/dev/null 2>&1; then
+    WT=$(GIT_INDEX_FILE=$idx env -u GIT_ATTR_NOSYSTEM git -C "$ROOT" write-tree 2>/dev/null) || WT=""
+  fi
+  rm -f "$idx" "$idx.lock"
+  [[ "$WT" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] || WT=""
+  return 0
+}
+
+RJ=""; RES_HEAD=""; RES_MMD=""; RES_TREE=""; RES_ONCE=0
 result_json() {  # → RJ: the sync-result for the current R_* state; never fails
   local d head dirty=false spc mmd tgt dir written=false exp=null rec=false pc=null st
   # Read once per run: the revision and the app's mmdVersion do not change while it runs.
@@ -765,6 +797,7 @@ result_json() {  # → RJ: the sync-result for the current R_* state; never fail
       RES_MMD=$JG
       [[ "$RES_MMD" =~ ^[0-9]+(\.[0-9]+)*(\+[0-9A-Za-z.-]+)?$ ]] || RES_MMD=""
     fi
+    worktree_tree; RES_TREE=$WT
     RES_ONCE=1
   fi
   head=$RES_HEAD; mmd=$RES_MMD
@@ -778,7 +811,9 @@ result_json() {  # → RJ: the sync-result for the current R_* state; never fail
   [[ -n "$mmd" ]] && { jstr "$mmd"; d+=", \"mmdVersion\": $J"; }
   d+=$'},\n  "context": {\n'
   jstr_or_null "$OPT_TASK"; d+="    \"task\": $J,"$'\n'
-  jstr_or_null "$head"; d+="    \"repo\": {\"commit\": $J, \"dirty\": $dirty},"$'\n'
+  jstr_or_null "$head"; d+="    \"repo\": {\"commit\": $J, \"dirty\": $dirty"
+  [[ -n "$RES_TREE" ]] && d+=", \"tree\": \"$RES_TREE\""
+  d+="},"$'\n'
   d+="    \"frameworkVersion\": \"$FRAMEWORK_VERSION\","$'\n'
   now_iso; d+="    \"timestamp\": \"$ISO\","$'\n'
   d+=$'    "producer": {"skill": "apex-sync-guard", "method": "tool"},\n'
@@ -789,7 +824,7 @@ result_json() {  # → RJ: the sync-result for the current R_* state; never fail
   if [[ "$R_OP" == check-* ]]; then
     dir=${R_OP#check-}
     [[ "$R_STATUS" == PASS ]] && { written=true; iso_in "$TTL_SECONDS"; exp="\"$ISO\""; }
-    d+="  \"marker\": {\"written\": $written, \"path\": \".git/apex-sync/$ALIAS/check-ok.$dir\", \"ttlSeconds\": $TTL_SECONDS, \"expiresAt\": $exp},"$'\n'
+    d+="  \"marker\": {\"written\": $written, \"path\": \"$STATE_REL/apex-sync/$ALIAS/check-ok.$dir\", \"ttlSeconds\": $TTL_SECONDS, \"expiresAt\": $exp},"$'\n'
   fi
   (( R_RECORDED )) && rec=true
   jstr_or_null "$spc"; d+="  \"syncpoint\": {\"ref\": \"$REF\", \"commit\": $J, \"recorded\": $rec},"$'\n'
@@ -1078,7 +1113,7 @@ cmd_doctor() {
     else
       doc_fail "source dir missing: $SRC_REL"
     fi
-    if [[ -w "$STATE_DIR" ]]; then doc_ok "state dir writable: .git/apex-sync/$ALIAS"
+    if [[ -w "$STATE_DIR" ]]; then doc_ok "state dir writable: $STATE_REL/apex-sync/$ALIAS"
     else doc_fail "state dir not writable: $STATE_DIR"; fi
     if (( ! have_sql )); then
       doc_note "connection '$CONN' not probed — no SQLcl"
