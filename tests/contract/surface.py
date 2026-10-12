@@ -402,7 +402,8 @@ def check_interface():
     pw = read("skills/apex-sentinel/scripts/pw.sh")
     if "pw.sh [--app <alias>] <subcommand>" not in pw:
         missing.append("pw.sh usage: [--app <alias>] <subcommand>")
-    for script, args in (("apex-ux/scripts/ux-scan.py", "[--app <alias>] [--task <id>]"),
+    for script, args in (("apexlang-architecture/scripts/arch-scan.py", "arch-scan.py <file-or-dir>..."),
+                         ("apex-ux/scripts/ux-scan.py", "[--app <alias>] [--task <id>]"),
                          ("apex-ux/scripts/ux-check.py", "[--app <alias>] [--task <id>] [--dialog <selector>]..."),
                          ("apex-security/scripts/sec-scan.py", "[--app <alias>] [--task <id>]"),
                          ("apex-security/scripts/plsql-scan.py", "[--app <alias>] [--task <id>]"),

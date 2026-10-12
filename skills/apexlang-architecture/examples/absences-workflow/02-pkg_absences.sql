@@ -41,6 +41,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_absences AS
       RAISE_APPLICATION_ERROR(pkg_errors.k_absence_invalid_status,
         'Only an absence in REQUESTED status can be approved.');
     END IF;
+    -- lost update review: the row is locked above (FOR UPDATE) and its from-state checked
     UPDATE hr_absences
        SET status = 'APPROVED', approved_by = p_approver, approved_at = SYSTIMESTAMP
      WHERE absence_id = p_absence_id;
@@ -62,6 +63,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_absences AS
       RAISE_APPLICATION_ERROR(pkg_errors.k_absence_invalid_data,
         'A rejection reason is required.');
     END IF;
+    -- lost update review: the row is locked above (FOR UPDATE) and its from-state checked
     UPDATE hr_absences
        SET status = 'REJECTED', rejection_reason = TRIM(p_reason)
      WHERE absence_id = p_absence_id;
@@ -74,6 +76,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_absences AS
      WHERE absence_id = p_absence_id AND cancelled_at IS NULL FOR UPDATE;
     -- Likewise, giving the quota back belongs to pkg_quotas via pkg_absence_flow,
     -- not here: this package writes hr_absences and nothing else.
+    -- lost update review: the row is locked above (FOR UPDATE); a cancelled absence is not found
     UPDATE hr_absences
        SET cancelled_at = SYSTIMESTAMP, cancelled_by = p_user, cancel_reason = TRIM(p_reason)
      WHERE absence_id = p_absence_id;

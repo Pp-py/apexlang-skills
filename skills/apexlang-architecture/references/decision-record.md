@@ -35,19 +35,32 @@ Run the procedures of `../package-boundaries.md` and record the first branch tha
 
 ## The red-flag scan
 
-Run it on the app's source and record each command, with its exit code, as evidence — an
-empty `redFlags` means nothing unless the scan ran. Each hit is reviewed, then recorded with
-its code and path:
+Run it on the app's source and record the command, with its exit code, as evidence — an empty
+`redFlags` means nothing unless the scan ran. Four flags have a script; the other three are your
+review, and the script says nothing about them:
+
+```sh
+python3 skills/apexlang-architecture/scripts/arch-scan.py <app-dir> <package-dir>
+```
+
+It prints JSON — `status`, `files`, `redFlags[{code, path, line, detail}]`, `advisories`,
+`unparsed` — and exits 0 (no red flag), 1 (red flags), 2 (nothing to scan, a file outside the repo)
+or 3 (a file it could not read, and no red flag: read that file by hand). Comments and string
+literals never count. Review each hit, then copy it into `redFlags`.
 
 | Red flag (`../SKILL.md`) | `code` | How to look |
 |---|---|---|
-| Automatic Row Processing, or a region bound to a table for writing | `AUTOMATIC_ROW_PROCESSING` | `grep -rnE 'autoRowProcessing\|formAutoRowProcessing\|interactiveGridAutoRowProcessing' <app-dir>` — the three process types of Oracle's inventory |
-| DML in a page process | `DML_IN_PAGE_PROCESS` | `grep -rniE '\b(insert\|update\|delete\|merge)\b' <app-dir>/pages` — then read each hit: a package call is fine, a statement is not |
-| a rule a job or REST call could bypass | `RULE_OUTSIDE_PACKAGE` | each page validation against the owning package's guards |
-| a package writing a table it does not own | `FOREIGN_TABLE_WRITE` | the DML in each package body against its entity and satellites |
-| a `_flow` package issuing DML | `FLOW_ISSUES_DML` | `grep -niE '\b(insert\|update\|delete\|merge)\b' <pkg>_flow` bodies |
-| a `_flow` around one entity | `FLOW_WRAPS_ONE_ENTITY` | each `_flow` against Test 2 of `../package-boundaries.md` |
-| an update by primary key alone | `NO_VERSION_TOKEN` | each write-path `update` against `../back-end-conventions.md` §7 |
+| Automatic Row Processing, or a region bound to a table for writing | `AUTOMATIC_ROW_PROCESSING` | `arch-scan.py`: a process of one of the three types in Oracle's inventory (`autoRowProcessing`, `formAutoRowProcessing`, `interactiveGridAutoRowProcessing`) |
+| DML in a page process | `DML_IN_PAGE_PROCESS` | `arch-scan.py`: an `INSERT`/`UPDATE`/`DELETE`/`MERGE` statement in an `executeCode` process; a package call is fine |
+| a rule a job or REST call could bypass | `RULE_OUTSIDE_PACKAGE` | review: each page validation against the owning package's guards |
+| a package writing a table it does not own | `FOREIGN_TABLE_WRITE` | review: the DML in each package body against its entity and satellites |
+| a `_flow` package issuing DML | `FLOW_ISSUES_DML` | `arch-scan.py`: a DML statement in a package body named `*_flow` |
+| a `_flow` around one entity | `FLOW_WRAPS_ONE_ENTITY` | review: each `_flow` against Test 2 of `../package-boundaries.md` |
+| an update by primary key alone | `NO_VERSION_TOKEN` | `arch-scan.py`: an `UPDATE` in a package body whose `WHERE` names no `*version*` column, unless `-- lost update review: <reason>` sits on its line or the line above (`../back-end-conventions.md` §7) |
+
+Advisory, never a red flag: `THIN_WRAPPER_UNMARKED` — an `executeCode` page process without
+`-- thin wrapper: <reason>`. A package call is an `invokeApi` process (`official-standard.md`);
+report it, do not fail on it.
 
 ## Which status
 

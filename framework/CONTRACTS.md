@@ -111,7 +111,9 @@ entry; removing any of it, a major one.
   [--app <alias>] [--task <id>] <file-or-dir>…` and `plsql-scan.py` with the same arguments,
   `sec-probe.py [--app <alias>] [--task <id>] [--anon <url>]… [--tamper] [--role <url>]…
   [--xss <token>]`, `secrets-scan.py [--app <alias>] [--task <id>] [<path>…]` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
-  3 UNKNOWN). They share `framework/lib/` (the `.apx` reader and the result envelope).
+  3 UNKNOWN). `skills/apexlang-architecture/scripts/arch-scan.py <file-or-dir>…` (python3; JSON on
+  stdout, no result file; exit 0 no red flag · 1 red flags · 2 BLOCKED · 3 UNKNOWN). They share
+  `framework/lib/` (the `.apx` reader, the PL/SQL lexer and the result envelope).
 - **State.** `refs/apex-sync/<alias>`; `.git/apex-sync/<alias>/` holding `state.json`,
   `check-ok.import`, `check-ok.export`, `last-<operation>.json`.
 - **Results.** The paths above; schema `$id`s

@@ -6,7 +6,8 @@ Phase 3, UX-5: the UI gate. apex-ux's two scripts now write a `ui-result`, and t
 place after Runtime, opt-in per app. SEC-1 to SEC-6 build the Security block: a fifth skill,
 `apex-security`, with its criteria; scans of the `.apx`, the packages and the tracked files, and
 runtime probes, each writing a `security-result`; and the Security gate between Runtime and UI.
-R-2 closes the last three known conflicts (KC-4, KC-5, KC-7): the examples compile.
+R-2 closes the last three known conflicts (KC-4, KC-5, KC-7): the examples compile. R-3 turns
+four of Architecture's red flags into a script.
 
 ### Behavior changes — read before upgrading
 
@@ -27,7 +28,8 @@ R-2 closes the last three known conflicts (KC-4, KC-5, KC-7): the examples compi
 - `framework/lib/` holds what the scans share: `apx.py`, the `.apx` reader, now with quoted
   component names (`file "icons/x.png" (`) and one `is_destructive` for UX and Security; and
   `result.py`, the result envelope, was `skills/apex-ux/scripts/ui_result.py`. The capture variable
-  of the contract tier is `RESULT_CAPTURE_DIR`.
+  of the contract tier is `RESULT_CAPTURE_DIR`. `plsql.py`, the PL/SQL lexer, moved out of
+  `plsql-scan.py` for `arch-scan.py` to share.
 - **The UI gate** (`GATES.md`): owner apex-ux, after Runtime. It passes on the static result PASS
   and a runtime result PASS for each page the change touched. It is required for an app whose
   `apex-sync.json` sets `"uiGate": true` (top-level default or per app), opt-in until 1.0.0.
@@ -86,6 +88,14 @@ R-2 closes the last three known conflicts (KC-4, KC-5, KC-7): the examples compi
   `authorizationScheme` (recorded in `CAPABILITIES.md`).
 
 **apexlang-architecture**
+- **`scripts/arch-scan.py`: the red-flag scan (R-3).** It finds `AUTOMATIC_ROW_PROCESSING`,
+  `DML_IN_PAGE_PROCESS`, `FLOW_ISSUES_DML` and `NO_VERSION_TOKEN` in `.apx` pages and PL/SQL
+  packages, with comments and literals masked, and prints JSON with each flag's path and line
+  (exit 0/1/2/3). An `executeCode` page process without `-- thin wrapper:` is an advisory
+  (`THIN_WRAPPER_UNMARKED`), never a flag. `RULE_OUTSIDE_PACKAGE`, `FOREIGN_TABLE_WRITE` and
+  `FLOW_WRAPS_ONE_ENTITY` stay the agent's review (`references/decision-record.md`).
+- **An `UPDATE` with no version token says why:** `-- lost update review: <reason>` on its line
+  or the line above (`back-end-conventions.md` §7); the three `pkg_absences` transitions carry it.
 - **Page processes call packages through `invokeApi` (KC-4, resolved).** The rule is now the
   majority of Oracle's policies, not "either": `invokeApi` by default; a thin `executeCode` wrapper
   only for an Interactive Grid save, a loader that assigns page items, or a branch-gated flow, with
@@ -117,6 +127,9 @@ R-2 closes the last three known conflicts (KC-4, KC-5, KC-7): the examples compi
   It now does, and reported the 8 gaps this fixes.
 
 ### Tests
+- `tests/integration/arch-scan.sh` (11) in CI: near-misses, `fail.expected`, unparsed files, the
+  examples. `surface.py` freezes its usage. Recorded runs over the examples and Oracle's three
+  example apps in `CAPABILITIES.md`.
 - Citations: 5 new anchors for KC-4, KC-7 and UP-4 (93/93). The lint and the compiler runs on the
   examples are recorded in `CAPABILITIES.md`; CI has no SQLcl.
 - Contract: the manifest's Security gate in the PASS fixture, 2 negatives (three scopes, another

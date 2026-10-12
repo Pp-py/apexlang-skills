@@ -28,7 +28,7 @@
   },
   "allOf": [
     {
-      "description": "PASS: decisions on evidence, and a scan that ran (a command in evidence that exited 0 or 1 — grep's found / not found; 2 and up is an error, not a scan). What it found and what is missing are the two rules below",
+      "description": "PASS: decisions on evidence, and a scan that ran (a command in evidence that exited 0 or 1 — arch-scan.py's clean / red flags, or grep's found / not found; 2 and up is not a scan). What it found and what is missing are the two rules below",
       "if": { "properties": { "status": { "const": "PASS" } } },
       "then": {
         "required": ["evidence"],

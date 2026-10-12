@@ -120,4 +120,4 @@ A report's link belongs to a column of `type: link`, never to the region. `sourc
 - A `_flow` package wraps a single entity, or an operation the `.apx` could just call in sequence.
 - A write-path package updates by PK alone, with no version token — the lost-update guard that Automatic Row Processing used to provide (`back-end-conventions.md` §7).
 
-How to scan for each of these, and how to record what was decided: `references/decision-record.md`.
+`scripts/arch-scan.py` finds four of these; how to scan for the rest and record what was decided: `references/decision-record.md`.

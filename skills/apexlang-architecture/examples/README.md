@@ -32,7 +32,8 @@ README has the exact commands.
   inactivate only at the `row_version` the page loaded, bump it in the same statement and raise
   `pkg_errors.k_row_changed` when it moved; the pages carry it back (a hidden IG column, a hidden
   item). `pkg_absences` needs no token: each transition locks its row (`FOR UPDATE`) and checks the
-  from-state, and no screen edits an absence's other columns.
+  from-state, and no screen edits an absence's other columns; each `UPDATE` says so in a
+  `-- lost update review:` line. `scripts/arch-scan.py` over this directory is clean.
 - **Package calls:** `invokeApi` processes; the Interactive Grid save and the loaders stay thin
   `executeCode` wrappers, each marked `-- thin wrapper: <reason>` (`framework/CAPABILITIES.md` KC-4).
 

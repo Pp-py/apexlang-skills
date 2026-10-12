@@ -1,0 +1,48 @@
+page 20 (
+    name: Red flags
+    alias: RED-FLAGS
+
+    process process-form-thing (
+        name: Process form Thing
+        type: formAutoRowProcessing
+        execution {
+            sequence: 10
+        }
+    )
+
+    process save-thing (
+        name: Save thing
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                begin
+                    -- thin wrapper: the marker does not excuse a statement
+                    update things
+                       set name = :P20_NAME
+                     where id = :P20_ID;
+                    delete from parts where thing_id = :P20_ID;
+                end;
+                ```
+        }
+        execution {
+            sequence: 20
+        }
+    )
+
+    process call-package (
+        name: Call package
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                begin
+                    pkg_things.update_row(:P20_ID, :P20_NAME, :P20_ROW_VERSION);
+                end;
+                ```
+        }
+        execution {
+            sequence: 30
+        }
+    )
+)
