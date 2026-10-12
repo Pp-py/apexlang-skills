@@ -156,13 +156,14 @@
       }
     },
     {
-      "description": "a static or plsql PASS scanned files and parsed every one",
+      "description": "a static, plsql or secrets PASS scanned files and parsed every one",
       "if": {
         "properties": {
           "scope": {
             "enum": [
               "static",
-              "plsql"
+              "plsql",
+              "secrets"
             ]
           },
           "status": {

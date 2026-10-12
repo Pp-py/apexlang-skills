@@ -56,3 +56,5 @@ jobs:
         run: bash tests/integration/plsql-scan.sh
       - name: apex-security runtime probes (stubbed Playwright CLI, local HTTP)
         run: bash tests/integration/sec-probe.sh
+      - name: apex-security secrets scan (a scratch repo, and this one)
+        run: bash tests/integration/secrets-scan.sh

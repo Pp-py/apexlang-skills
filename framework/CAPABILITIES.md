@@ -33,7 +33,8 @@ Verified against Oracle's skills at the revision in [`oracle-skills.lock.json`](
 | Security static scan (`sec-scan.py`, `security-result`) | yes (version-independent) | same | [sec-scan](../tests/integration/sec-scan.sh) in CI: fixtures, near-misses and the examples; schema, fixtures and negatives in the contract tier |
 | Security package scan (`plsql-scan.py`): dynamic SQL, `AUTHID` | yes (version-independent) | same | [plsql-scan](../tests/integration/plsql-scan.sh) in CI: near-misses, `fail.expected`, `.apx` blocks, the examples |
 | Security runtime probes (`sec-probe.py`): anonymous, checksum, role, XSS | yes (version-independent) | same | [sec-probe](../tests/integration/sec-probe.sh) in CI: Playwright CLI stubbed, a local HTTP server for the anonymous fetch |
-| Security gate: secrets scan, GATES column | not built (Phase 3, SEC-5, SEC-6) | same | — |
+| Security secrets scan (`secrets-scan.py`) over tracked files | yes (version-independent) | same | [secrets-scan](../tests/integration/secrets-scan.sh) in CI: planted secrets in a scratch repo, and this repository itself |
+| Security gate: GATES column, order, manifest enums | not built (Phase 3, SEC-6) | same | — |
 | Windows (Git Bash) | yes — integration on `windows-latest` in CI | same | [ci.yml](../.github/workflows/ci.yml); first green 0.6.0 run: [38059670802](https://github.com/Pp-py/apexlang-skills/actions/runs/38059670802) |
 
 ## Recorded runs
@@ -62,6 +63,7 @@ What CI does not run, recorded when it was run. Re-run after updating Oracle's s
 | 2026-10-11 | `plsql-scan.py` over `skills/apexlang-architecture/examples` | — | PASS on `SEC-SQL-BIND` (no dynamic SQL); four packages without `AUTHID` (advisory) — now `AUTHID DEFINER`, stated |
 | 2026-10-11 | `sec-probe.py --anon <home> --tamper` on Oracle's UX Pattern Catalog (lab, public by design, read only) | `@playwright/cli` 0.1.17, bundled Chromium (WSL) | FAIL, as it must on a public app — `SEC-ANON-REDIRECT`: page 1 served with no login; `SEC-CHECKSUM-TAMPER` NOT_RUN on four pages (no `cs=` link) |
 | 2026-10-11 | `sec-probe.py --tamper` and `--xss` on a local page that imitates APEX's checksum check (127.0.0.1) | same | tamper PASS when the target checks `cs`, FAIL (both variants) when it does not; XSS PASS on escaped text, FAIL on markup. The first run found that `run-code`'s sandbox has no global `URL` — the stubbed suite could not; the URLs are now built in the page. `--role` not exercised against a real login (no app with a second user in the lab) |
+| 2026-10-11 | `secrets-scan.py` over this repository | — | FAIL at first, 16 findings: 14 were the scan's own false positives (`actions/checkout@v5`, `@playwright/mcp@latest`, code such as `pwd = os.environ.get(…)`, prose, Oracle's `scott/tiger` in fixtures) — the rules were tightened; 2 were fake passwords in `pw-wrapper-smoke.sh`, now marked `secrets-scan: allow <reason>`; the scan's own two patterns are marked too. PASS, 205 files |
 
 ## Known conflicts
 

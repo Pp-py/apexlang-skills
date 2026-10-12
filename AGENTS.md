@@ -35,7 +35,7 @@ Codex, opencode, Cursor, aider, …) working on an APEXlang app, load the releva
 
 5. **`skills/apex-security/SKILL.md`** — read it before calling a change safe to deploy.
    Criteria with IDs (`criteria.md`); `scripts/sec-scan.py` (`.apx`) and `plsql-scan.py`
-   (packages), `sec-probe.py` (runtime, through `pw.sh`) write a `security-result`; the gate: later.
+   (packages), `sec-probe.py` (runtime) and `secrets-scan.py` write a `security-result`; gate: later.
 
 They form one loop: **architect → build (`.apx` + package) → validate → sync-check → import →
 record-sync → verify in the browser → UI checks** (plus sync-check before any export).

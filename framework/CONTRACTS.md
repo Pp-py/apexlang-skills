@@ -89,6 +89,7 @@ puts it back whenever it is missing.
 | security-result, static (with `--task`) | `<evidenceDir>/<task>/security-<alias>-static.json` | `sec-scan.py` (apex-security) |
 | security-result, plsql (with `--task`) | `<evidenceDir>/<task>/security-<alias>-plsql.json` | `plsql-scan.py` (apex-security) |
 | security-result, runtime (with `--task`) | `<evidenceDir>/<task>/security-<alias>-runtime.json` | `sec-probe.py` (apex-security) |
+| security-result, secrets (with `--task`) | `<evidenceDir>/<task>/security-<alias>-secrets.json` | `secrets-scan.py` (apex-security) |
 | ui-result, runtime (with `--task`) | `<evidenceDir>/<task>/ui-<alias>-runtime-<page>.json`, axe's output in `raw/ui-<alias>/` | `ux-check.py` (apex-ux) |
 | raw evidence (snapshots, eval output, logs) | `<evidenceDir>/<task>/raw/<gate>-<alias>/` | whoever produced the result citing it |
 | verification-manifest | `<evidenceDir>/<task>/manifest.json` | the orchestrator (future `apexlang-delivery`) |
@@ -109,7 +110,7 @@ entry; removing any of it, a major one.
   [--task <id>] [--dialog <selector>]… [--raw <file>]`, `skills/apex-security/scripts/sec-scan.py
   [--app <alias>] [--task <id>] <file-or-dir>…` and `plsql-scan.py` with the same arguments,
   `sec-probe.py [--app <alias>] [--task <id>] [--anon <url>]… [--tamper] [--role <url>]…
-  [--xss <token>]` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
+  [--xss <token>]`, `secrets-scan.py [--app <alias>] [--task <id>] [<path>…]` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
   3 UNKNOWN). They share `framework/lib/` (the `.apx` reader and the result envelope).
 - **State.** `refs/apex-sync/<alias>`; `.git/apex-sync/<alias>/` holding `state.json`,
   `check-ok.import`, `check-ok.export`, `last-<operation>.json`.

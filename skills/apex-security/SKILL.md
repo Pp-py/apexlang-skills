@@ -13,7 +13,7 @@ description: Use when an APEXlang app or page is designed, changed or reviewed f
 - **Output:** a `security-result` (`framework/schemas/security-result.schema.json`, experimental) per run: per criterion `PASS` · `FAIL` · `NOT_RUN`, plus advisories that never change the verdict.
 - **Evidence:** per criterion, the file and line it rests on, or the saved browser output with its sha256 under the task's evidence dir (`framework/EVIDENCE.md`).
 - **Gate:** Security — not in `framework/GATES.md` yet (SEC-6).
-- **Interface:** the criteria in `criteria.md`; `python3 scripts/sec-scan.py [--app X] [--task <id>] <file-or-dir>…` for the `.apx`, `scripts/plsql-scan.py` (same arguments) for the packages; `scripts/sec-probe.py` for the runtime probes; secrets by hand until SEC-5. Config: `publicPages` and `lowPrivUser` per app in `apex-sync.json` (`apex-sync-guard/setup.md` §1).
+- **Interface:** the criteria in `criteria.md`; `python3 scripts/sec-scan.py [--app X] [--task <id>] <file-or-dir>…` for the `.apx`, `scripts/plsql-scan.py` (same arguments) for the packages; `scripts/sec-probe.py` for the runtime probes; `scripts/secrets-scan.py` for secrets. Config: `publicPages` and `lowPrivUser` per app in `apex-sync.json` (`apex-sync-guard/setup.md` §1).
 
 ## Status — what exists
 
@@ -23,7 +23,7 @@ description: Use when an APEXlang app or page is designed, changed or reviewed f
 | Static scan over `.apx`: authorization, public pages, page and item protection, escaping, URLs | **built** (SEC-2) — see §Static scan |
 | Scan of the write-path packages: dynamic SQL, `AUTHID` | **built** (SEC-3) — see §Package scan |
 | Runtime probes through `pw.sh`: anonymous access, checksum tampering, role refusal, escaped payload | **built** (SEC-4) — see §Runtime probes |
-| Secrets in the repo | not built (SEC-5) |
+| Secrets in the repo | **built** (SEC-5) — see §Secrets scan |
 | `security-result` schema | **built** (SEC-2, experimental) |
 | Security gate: GATES column, order, manifest enums | not built (SEC-6) |
 
@@ -72,6 +72,20 @@ then delete the record. A `security-result` with `scope: runtime`; DEV only.
 What it does not establish: anything on URLs, links or pages it was not given; that the right
 role *is* let in (a refusal proves only the refusal); payloads other than the one stored;
 anything an attacker would try beyond these four probes.
+
+## Secrets scan
+
+`python3 scripts/secrets-scan.py [--app X] [--task <id>] [<path>…]` — with no path, every file
+git tracks. `SEC-NO-SECRETS` FAILs on a tracked `.env`, a wallet or key store, a private key, a
+password or token assigned a literal, a connect string with credentials, or a known token
+format; the finding names file, line and kind, never the value. Placeholders (`<…>`, `${VAR}`,
+`$VAR`, `***`, stock examples such as `scott/tiger`) are not secrets; a line that must keep a
+lookalike carries `secrets-scan: allow <reason>` on it or the line above. A `security-result`
+with `scope: secrets`. A finding means rotate the secret, not only delete the line: it is in the
+history already.
+
+What it does not establish: anything in git history (use gitleaks for that), in ignored or
+untracked files, in formats it does not know, or whether an allowed line really holds no secret.
 
 ## Threat model
 
