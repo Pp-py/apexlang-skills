@@ -107,7 +107,7 @@ upper_v() {
 # installed, on a file that may hold nothing but testUser/runtimeUrl.
 # tests/integration/config-parity.sh holds both readers to the same fixtures.
 RE_APP_ALIAS='^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
-APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl|uiGate|publicPages|lowPrivUser'
+APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl|uiGate|securityGate|publicPages|lowPrivUser'
 JSON_TOOL=()            # probed by RUNNING it: the Microsoft Store python3 stub only looks present
 if command -v jq >/dev/null 2>&1 && jq -e . <<<'{}' >/dev/null 2>&1; then
   JSON_TOOL=(jq)

@@ -300,11 +300,11 @@
    "rule": "common.schema.json#/$defs/runtimeUrl",
    "why": "a session id in shared evidence is a credential"},
   {"name": "manifest: a UI PASS on the static scan alone", "fixture": "fixtures/verification-manifest/pass.json",
-   "set": {"gates.4.results": [{"kind": "ui-result", "path": ".apex-evidence/T-42/ui-hr-static.json", "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}]},
+   "set": {"gates.5.results": [{"kind": "ui-result", "path": ".apex-evidence/T-42/ui-hr-static.json", "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}]},
    "rule": "verification-manifest.schema.json#/$defs/gate/allOf/4",
    "why": "focus, rendered names and axe run only in the browser: the UI gate needs a runtime result too"},
   {"name": "manifest: a UI PASS citing another gate's result", "fixture": "fixtures/verification-manifest/pass.json",
-   "set": {"gates.4.results.1.kind": "runtime-result"},
+   "set": {"gates.5.results.1.kind": "runtime-result"},
    "rule": "verification-manifest.schema.json#/$defs/gate/allOf/4",
    "why": "sentinel's runtime-result says the page works, not that its UI holds"},
   {"name": "security: a PASS with no criterion exercised", "fixture": "fixtures/security-result/static-pass.json", "set": {"criteria": []}, "rule": "security-result.schema.json#/allOf/0", "why": "a scan that judged nothing is not a PASS"},
@@ -320,5 +320,7 @@
   {"name": "security: an advisory without its criterion", "fixture": "fixtures/security-result/plsql-fail.json", "unset": ["advisories.0.id"], "rule": "security-result.schema.json#/properties/advisories/items/allOf/1", "why": "an advisory names the ADVISE criterion it reports"},
   {"name": "security: a runtime verdict without the app it ran against", "fixture": "fixtures/security-result/runtime-fail.json", "unset": ["context.target"], "rule": "security-result.schema.json#/allOf/3", "why": "a probe on no named runtime cannot be re-checked"},
   {"name": "security: a secrets finding that quotes the secret", "fixture": "fixtures/security-result/secrets-fail.json", "set": {"criteria.0.findings.1.detail": "password=hunter2 in deploy.sh"}, "rule": "common.schema.json#/$defs/safeText", "why": "a finding says where the secret is, never what it is: the result would leak it again"},
-  {"name": "security: a secrets PASS that scanned no file", "fixture": "fixtures/security-result/secrets-pass.json", "set": {"files": []}, "rule": "security-result.schema.json#/allOf/2", "why": "nothing read, nothing cleared"}
+  {"name": "security: a secrets PASS that scanned no file", "fixture": "fixtures/security-result/secrets-pass.json", "set": {"files": []}, "rule": "security-result.schema.json#/allOf/2", "why": "nothing read, nothing cleared"},
+  {"name": "manifest: a Security PASS on three scopes", "fixture": "fixtures/verification-manifest/pass.json", "set": {"gates.4.results": [{"kind": "security-result", "path": ".apex-evidence/T-42/security-hr-static.json", "sha256": "1111111111111111111111111111111111111111111111111111111111111111"}, {"kind": "security-result", "path": ".apex-evidence/T-42/security-hr-plsql.json", "sha256": "2222222222222222222222222222222222222222222222222222222222222222"}, {"kind": "security-result", "path": ".apex-evidence/T-42/security-hr-secrets.json", "sha256": "3333333333333333333333333333333333333333333333333333333333333333"}]}, "rule": "verification-manifest.schema.json#/$defs/gate/allOf/5", "why": "without the runtime probes a Security PASS says nothing about what the running app refuses"},
+  {"name": "manifest: a Security PASS citing another gate's result", "fixture": "fixtures/verification-manifest/pass.json", "set": {"gates.4.results.3.kind": "runtime-result"}, "rule": "verification-manifest.schema.json#/$defs/gate/allOf/5", "why": "sentinel's runtime-result says the page works, not that it refuses"}
 ]

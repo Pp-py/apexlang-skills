@@ -6,22 +6,22 @@ establishes is how "validate passed" turns into "it works" (P5).
 
 ## The gates
 
-| | Architecture | Validation | Sync | Runtime | UI |
-|---|---|---|---|---|---|
-| **Owner** | apexlang-architecture | Oracle (`apexlang-compile`) — consumed, not reimplemented | apex-sync-guard | apex-sentinel | apex-ux |
-| **Producer** | the agent | `validate-apex-app.sh` | `apex-sync-check.sh` | the agent, through `pw.sh` | `ux-scan.py` (static) and `ux-check.py` (runtime, through `pw.sh`) |
-| **Checks** | every write has one owning package; every rule sits where procedures A/B put it; the source carries no red flag | the `.apx` compiles for that APEXlang version | `check-import`: the Builder holds no work the import would destroy · `check-export`: LOCAL holds no uncommitted work the export would destroy | the archetype's pass criteria, on the running page, as the verified test user, with the data side read back through SQLcl | apex-ux's `FAIL` criteria: statically over the `.apx`, and at runtime on each page the change touched, with axe-core and each dialog's focus |
-| **PASS establishes** | the design of this change, each decision tied to the code that implements it | grammar and component properties are valid for that SQLcl + APEXlang pair | for this app, through this connection, the operation destroys nothing — for 10 minutes | the change does what its recipe promises, for every required criterion exercised | every `FAIL` criterion the runs exercised held: the static scan over those files, and each page and dialog checked |
-| **PASS does NOT establish** | that anything compiles, renders or is synchronized | that the PL/SQL compiles or the packages it calls exist; anything at runtime; anything the 26.1 lint says | that the import's payload is right (it is reported, not judged); other apps; other environments; that the Builder stays untouched afterwards | criteria not exercised; other pages; security; performance | WCAG conformance; the `ADVISE` and `manual` criteria; pages, dialogs or states not checked; that the page works (Runtime) |
-| **Evidence** | `architecture-result`: decisions with evidence, the red-flag scan's command | the script's command, exit code and output (`Validation successful`) | `sync-result`: the export, the comparison, changes, payload; the marker | `runtime-result`: per criterion, evidence files (sha256) and SQL | `ui-result` per scope: findings with file and line, or axe rule and selectors, never node HTML; axe's raw output (sha256) |
-| **Statuses** | PASS · FAIL · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED | PASS · FAIL · CONFLICT · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED · UNKNOWN |
-| **Holds back** | calling the build done — decided before it, passed on the built code | the import | `apex import`/`export`, the deploy script, `apexctl` roundtrip | any "it works" claim | calling the UI done |
-| **Enforced by** | discipline | nothing on the deploy lane — Oracle's deploy script does not validate (GAP-3) | the `PreToolUse` hook (Claude Code); discipline elsewhere | discipline | discipline; opt-in per app (`uiGate`) until 1.0.0 |
+| | Architecture | Validation | Sync | Runtime | Security | UI |
+|---|---|---|---|---|---|---|
+| **Owner** | apexlang-architecture | Oracle (`apexlang-compile`) — consumed, not reimplemented | apex-sync-guard | apex-sentinel | apex-security | apex-ux |
+| **Producer** | the agent | `validate-apex-app.sh` | `apex-sync-check.sh` | the agent, through `pw.sh` | `sec-scan.py` (`.apx`), `plsql-scan.py` (packages), `secrets-scan.py` (tracked files), `sec-probe.py` (runtime, through `pw.sh`) | `ux-scan.py` (static) and `ux-check.py` (runtime, through `pw.sh`) |
+| **Checks** | every write has one owning package; every rule sits where procedures A/B put it; the source carries no red flag | the `.apx` compiles for that APEXlang version | `check-import`: the Builder holds no work the import would destroy · `check-export`: LOCAL holds no uncommitted work the export would destroy | the archetype's pass criteria, on the running page, as the verified test user, with the data side read back through SQLcl | apex-security's `FAIL` criteria: authorization, public pages, checksums, escaping, safe URLs, bound SQL, no secrets; at runtime anonymous access, tampering, role refusal, escaped payloads | apex-ux's `FAIL` criteria: statically over the `.apx`, and at runtime on each page the change touched, with axe-core and each dialog's focus |
+| **PASS establishes** | the design of this change, each decision tied to the code that implements it | grammar and component properties are valid for that SQLcl + APEXlang pair | for this app, through this connection, the operation destroys nothing — for 10 minutes | the change does what its recipe promises, for every required criterion exercised | every `FAIL` criterion the four scopes exercised held, on the source and the URLs probed | every `FAIL` criterion the runs exercised held: the static scan over those files, and each page and dialog checked |
+| **PASS does NOT establish** | that anything compiles, renders or is synchronized | that the PL/SQL compiles or the packages it calls exist; anything at runtime; anything the 26.1 lint says | that the import's payload is right (it is reported, not judged); other apps; other environments; that the Builder stays untouched afterwards | criteria not exercised; other pages; security; performance | resistance to an attacker (not a pentest); git history; database grants; what an authorization scheme's PL/SQL decides; pages, URLs or roles not probed; the instance's settings | WCAG conformance; the `ADVISE` and `manual` criteria; pages, dialogs or states not checked; that the page works (Runtime) |
+| **Evidence** | `architecture-result`: decisions with evidence, the red-flag scan's command | the script's command, exit code and output (`Validation successful`) | `sync-result`: the export, the comparison, changes, payload; the marker | `runtime-result`: per criterion, evidence files (sha256) and SQL | `security-result` per scope: findings by file and line, never a value; probes by URL without session or checksum | `ui-result` per scope: findings with file and line, or axe rule and selectors, never node HTML; axe's raw output (sha256) |
+| **Statuses** | PASS · FAIL · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED | PASS · FAIL · CONFLICT · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED · UNKNOWN |
+| **Holds back** | calling the build done — decided before it, passed on the built code | the import | `apex import`/`export`, the deploy script, `apexctl` roundtrip | any "it works" claim | calling a change safe to deploy | calling the UI done |
+| **Enforced by** | discipline | nothing on the deploy lane — Oracle's deploy script does not validate (GAP-3) | the `PreToolUse` hook (Claude Code); discipline elsewhere | discipline | discipline; opt-in per app (`securityGate`) until 1.0.0 | discipline; opt-in per app (`uiGate`) until 1.0.0 |
 
 ## Order
 
 ```text
-Architecture → build (.apx + package) → Validation → Sync → import → record-sync → Runtime → UI
+Architecture → build (.apx + package) → Validation → Sync → import → record-sync → Runtime → Security → UI
 ```
 
 Architecture is decided before the build and passed after it: the decisions are made first (a
@@ -30,9 +30,18 @@ built `.apx` and package, so its result is written once they exist. Sync goes la
 import because it is the perishable one: its PASS lapses in 10 minutes, and it speaks only for
 the LOCAL it compared. `record-sync` right after the import
 is part of the import, not an optional step — skipping it poisons the next comparison.
-Runtime comes after the import because it measures what the Builder now serves. UI comes
-after Runtime: a page's UI is judged once it works. Its static scan can run any time after the
+Runtime comes after the import because it measures what the Builder now serves. Security
+comes after Runtime — its probes need the app imported and working — and before UI, the graver
+of the two: a consumer stops at the first that does not PASS. UI comes last: a page's UI is
+judged once it works and is safe. Its static scan can run any time after the
 build as feedback; the gate's results are the ones written in the task after Runtime.
+
+**The Security gate.** Required for an app whose `apex-sync.json` sets `"securityGate": true` (a
+top-level default, or the app's own); otherwise `required: false` with a `notApplicableReason`.
+It passes on four scopes, each a `security-result` PASS: `static` (`sec-scan.py`), `plsql`
+(`plsql-scan.py`), `secrets` (`secrets-scan.py`) and `runtime` (`sec-probe.py`, at least one probe
+exercised). Its status is the worst of those results. Its three scans can run any time after the
+build as feedback. Opt-in until 1.0.0.
 
 **The UI gate.** Required for an app whose `apex-sync.json` sets `"uiGate": true` (a top-level
 default, or the app's own); otherwise the consumer records it `required: false` with a
@@ -90,7 +99,7 @@ may not do. It orchestrates the gates; it adds no rule of its own (P2, P6).
 
 ## Adding a gate
 
-Phase 3 brings UI/UX (added: the UI gate above) and Security as gates. A new gate needs the
+Phase 3 brought UI/UX and Security as gates (both above). A new gate needs the
 following — and changes none of the existing gates:
 
 1. an owning skill and a producer — a script where possible, the agent where not;

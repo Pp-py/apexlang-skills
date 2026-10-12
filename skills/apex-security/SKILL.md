@@ -12,7 +12,7 @@ description: Use when an APEXlang app or page is designed, changed or reviewed f
 - **Decides:** whether each criterion holds — never where logic lives (`apexlang-architecture`), never whether the page works (`apex-sentinel`), never grammar (Oracle's compiler).
 - **Output:** a `security-result` (`framework/schemas/security-result.schema.json`, experimental) per run: per criterion `PASS` · `FAIL` · `NOT_RUN`, plus advisories that never change the verdict.
 - **Evidence:** per criterion, the file and line it rests on, or the saved browser output with its sha256 under the task's evidence dir (`framework/EVIDENCE.md`).
-- **Gate:** Security — not in `framework/GATES.md` yet (SEC-6).
+- **Gate:** Security (`framework/GATES.md`), after Runtime and before UI — required for an app with `"securityGate": true` in `apex-sync.json`, opt-in until 1.0.0; it passes on four `security-result` PASSes: static, plsql, secrets, runtime.
 - **Interface:** the criteria in `criteria.md`; `python3 scripts/sec-scan.py [--app X] [--task <id>] <file-or-dir>…` for the `.apx`, `scripts/plsql-scan.py` (same arguments) for the packages; `scripts/sec-probe.py` for the runtime probes; `scripts/secrets-scan.py` for secrets. Config: `publicPages` and `lowPrivUser` per app in `apex-sync.json` (`apex-sync-guard/setup.md` §1).
 
 ## Status — what exists
@@ -25,9 +25,9 @@ description: Use when an APEXlang app or page is designed, changed or reviewed f
 | Runtime probes through `pw.sh`: anonymous access, checksum tampering, role refusal, escaped payload | **built** (SEC-4) — see §Runtime probes |
 | Secrets in the repo | **built** (SEC-5) — see §Secrets scan |
 | `security-result` schema | **built** (SEC-2, experimental) |
-| Security gate: GATES column, order, manifest enums | not built (SEC-6) |
+| Security gate: GATES column, order, manifest enums, `securityGate` | **built** (SEC-6) |
 
-Until the scripts exist, a review cites the criterion IDs it checked and says which it did not. A criterion nobody exercised is `NOT_RUN`, never PASS.
+A review cites the criterion IDs it checked and says which it did not; the `manual` and `ADVISE` ones are read by a person. A criterion nobody exercised is `NOT_RUN`, never PASS.
 
 ## Static scan
 

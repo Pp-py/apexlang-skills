@@ -34,7 +34,7 @@ Verified against Oracle's skills at the revision in [`oracle-skills.lock.json`](
 | Security package scan (`plsql-scan.py`): dynamic SQL, `AUTHID` | yes (version-independent) | same | [plsql-scan](../tests/integration/plsql-scan.sh) in CI: near-misses, `fail.expected`, `.apx` blocks, the examples |
 | Security runtime probes (`sec-probe.py`): anonymous, checksum, role, XSS | yes (version-independent) | same | [sec-probe](../tests/integration/sec-probe.sh) in CI: Playwright CLI stubbed, a local HTTP server for the anonymous fetch |
 | Security secrets scan (`secrets-scan.py`) over tracked files | yes (version-independent) | same | [secrets-scan](../tests/integration/secrets-scan.sh) in CI: planted secrets in a scratch repo, and this repository itself |
-| Security gate: GATES column, order, manifest enums | not built (Phase 3, SEC-6) | same | — |
+| Security gate (`security-result`, `securityGate` opt-in) | yes (version-independent) | same | schema, fixtures and negatives in the [contract tier](../tests/contract/run.sh), the manifest's four-scope rule included; every `security-result` the suites emit validated there |
 | Windows (Git Bash) | yes — integration on `windows-latest` in CI | same | [ci.yml](../.github/workflows/ci.yml); first green 0.6.0 run: [38059670802](https://github.com/Pp-py/apexlang-skills/actions/runs/38059670802) |
 
 ## Recorded runs
