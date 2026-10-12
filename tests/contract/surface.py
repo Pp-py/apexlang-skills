@@ -406,7 +406,8 @@ def check_interface():
                          ("apex-ux/scripts/ux-check.py", "[--app <alias>] [--task <id>] [--dialog <selector>]..."),
                          ("apex-security/scripts/sec-scan.py", "[--app <alias>] [--task <id>]"),
                          ("apex-security/scripts/plsql-scan.py", "[--app <alias>] [--task <id>]"),
-                         ("apex-security/scripts/sec-probe.py", "[--app <alias>] [--task <id>] [--anon <url>]... [--tamper]")):
+                         ("apex-security/scripts/sec-probe.py", "[--app <alias>] [--task <id>] [--anon <url>]... [--tamper]"),
+                         ("apex-security/scripts/secrets-scan.py", "[--app <alias>] [--task <id>] [<path>...]")):
         if args not in read(f"skills/{script}"):
             missing.append(f"{script} usage: {args}")
     hooks = json.loads(read("hooks/hooks.json"))

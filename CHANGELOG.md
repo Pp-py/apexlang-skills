@@ -3,8 +3,8 @@
 ## Unreleased
 
 Phase 3, UX-5: the UI gate. apex-ux's two scripts now write a `ui-result`, and the gate takes its
-place after Runtime, opt-in per app. SEC-1 to SEC-4 open the Security block: a fifth skill,
-`apex-security`, with its criteria, two scans (`.apx`, packages) and runtime probes, each writing a `security-result`.
+place after Runtime, opt-in per app. SEC-1 to SEC-5 open the Security block: a fifth skill,
+`apex-security`, with its criteria, two scans (`.apx`, packages), runtime probes and a secrets scan, each writing a `security-result`.
 
 ### Behavior changes — read before upgrading
 
@@ -34,7 +34,7 @@ place after Runtime, opt-in per app. SEC-1 to SEC-4 open the Security block: a f
 - `apex-sync.json` takes `uiGate` (a boolean; anything else is BLOCKED). The guard and `pw.sh`
   accept it per app; neither acts on it.
 
-**apex-security (new skill) — Phase 3, SEC-1 to SEC-4**
+**apex-security (new skill) — Phase 3, SEC-1 to SEC-5**
 - A fifth skill, `skills/apex-security/`: a threat model, what a Security PASS does not establish
   (it is not a pentest), and 22 criteria with IDs in `criteria.md` — `FAIL` only for what a
   machine can establish (authorization on every page and destructive action, public pages
@@ -65,6 +65,14 @@ place after Runtime, opt-in per app. SEC-1 to SEC-4 open the Security block: a f
   - **role:** the app's `lowPrivUser` in its own session, password only through the environment;
   - **XSS:** the agent stores a payload, and the probe checks how it renders.
   `pw.sh` is unchanged, and its runner now lives in `framework/lib/pw.py`, shared with `ux-check.py`.
+- **Secrets scan (SEC-5):** `secrets-scan.py [<path>…]` runs over git's tracked files by default
+  and writes a `security-result` with `scope: secrets`.
+  - It finds a tracked `.env`, wallets and key stores, private keys, passwords or tokens
+    assigned a literal, connect strings with credentials, and GitHub/AWS/Slack tokens.
+  - A finding gives the file, line and kind, never the value.
+  - Placeholders pass. An exception needs `secrets-scan: allow <reason>`; a bare `allow` excuses
+    nothing.
+  - This repository passes; the two fake passwords in `pw-wrapper-smoke.sh` are marked.
 - `SEC-ACTION-AUTHZ` now needs a role scheme (`@<static-id>`) on the action or its page:
   `mustNotBePublicUser` does not count, because every page already requires it.
 - Run over Oracle's own 26.1 scaffold, the scan finds its Home page without an
@@ -86,6 +94,8 @@ place after Runtime, opt-in per app. SEC-1 to SEC-4 open the Security block: a f
   (KC-7).
 
 ### Tests
+- `tests/integration/secrets-scan.sh` (8) in CI. Its secrets are assembled at run time, so the
+  test file holds none. Contract: 2 secrets fixtures, 2 negatives.
 - `tests/integration/sec-probe.sh` (20) in CI: each probe's mapping, a failing control, the low
   password kept out of argv and output, redaction. Contract: 2 runtime fixtures, 1 negative.
 - `tests/integration/plsql-scan.sh` (13) in CI; contract: 2 `plsql` fixtures, 3 negatives, and

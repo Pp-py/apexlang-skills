@@ -93,7 +93,7 @@ check "broken jq + closed session -> open" '^-s apex open '
 # is world-readable through /proc/<pid>/cmdline, so "did the secret stay out of argv"
 # is the assertion this whole section exists for.
 export PATH="$PATH_OK"                  # step back off the broken-jq PATH
-SECRET='S3cr3tV4lue'
+SECRET='S3cr3tV4lue'   # secrets-scan: allow a fake password this test proves never leaks
 # The snippet answers with a verdict; LOGIN-OK carries the APP_USER APEX reported.
 export PW_FAKE_URL='LOGIN-OK|TEST_QA|https://apex.example/r/ws/APP/home?session=8808821264318'
 export APEX_TEST_FILE="$WORK/external.json"
@@ -157,7 +157,7 @@ unset APEX_TEST_PASSWORD
 
 # No .env in the project: fall back to the json outside the repo.
 rm -f "$WORK/proj/.env"
-printf '{ "user": "EXT_USER", "password": "ExtP4ssw0rd" }\n' > "$WORK/external.json"
+printf '{ "user": "EXT_USER", "password": "ExtP4ssw0rd" }\n' > "$WORK/external.json"   # secrets-scan: allow a fake password for the external-file lane
 run "$OPEN" login
 check_in "login: falls back to the json outside the repo" "$WORK/snip" 'ExtP4ssw0rd'
 
