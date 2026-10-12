@@ -1,0 +1,57 @@
+{
+  "kind": "security-result",
+  "schemaVersion": 1,
+  "status": "PASS",
+  "reasons": [
+    {
+      "code": "SECURITY_CRITERIA_HELD",
+      "message": "every probe asked for was refused or escaped"
+    }
+  ],
+  "app": {
+    "appAlias": "hr"
+  },
+  "context": {
+    "task": "T-42",
+    "repo": {
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "dirty": false
+    },
+    "frameworkVersion": "0.6.1",
+    "timestamp": "2026-10-11T13:10:00Z",
+    "producer": {
+      "skill": "apex-security",
+      "method": "tool"
+    },
+    "target": {
+      "runtimeUrl": "https://apex.example/ords/r/ws/app/orders"
+    }
+  },
+  "scope": "runtime",
+  "criteria": [
+    {
+      "id": "SEC-ANON-REDIRECT",
+      "status": "NOT_RUN",
+      "findings": [],
+      "notApplicableReason": "not asked for (no --anon)"
+    },
+    {
+      "id": "SEC-CHECKSUM-TAMPER",
+      "status": "PASS",
+      "findings": []
+    },
+    {
+      "id": "SEC-ROLE-REFUSED",
+      "status": "NOT_RUN",
+      "findings": [],
+      "notApplicableReason": "not asked for (no --role)"
+    },
+    {
+      "id": "SEC-XSS-ESCAPED",
+      "status": "NOT_RUN",
+      "findings": [],
+      "notApplicableReason": "not asked for (no --xss)"
+    }
+  ],
+  "advisories": []
+}

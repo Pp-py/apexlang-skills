@@ -183,6 +183,38 @@
           }
         }
       }
+    },
+    {
+      "description": "a runtime verdict names the app it ran against",
+      "if": {
+        "properties": {
+          "scope": {
+            "const": "runtime"
+          },
+          "status": {
+            "enum": [
+              "PASS",
+              "FAIL"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "context": {
+            "required": [
+              "target"
+            ],
+            "properties": {
+              "target": {
+                "required": [
+                  "runtimeUrl"
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {

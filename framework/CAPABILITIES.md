@@ -32,7 +32,8 @@ Verified against Oracle's skills at the revision in [`oracle-skills.lock.json`](
 | Security criteria (`apex-security/criteria.md`), threat model | yes (version-independent; Oracle's security lint is 26.1 only) | same | `surface.py` checks every criterion row; the examples pass Oracle's security lint (below) |
 | Security static scan (`sec-scan.py`, `security-result`) | yes (version-independent) | same | [sec-scan](../tests/integration/sec-scan.sh) in CI: fixtures, near-misses and the examples; schema, fixtures and negatives in the contract tier |
 | Security package scan (`plsql-scan.py`): dynamic SQL, `AUTHID` | yes (version-independent) | same | [plsql-scan](../tests/integration/plsql-scan.sh) in CI: near-misses, `fail.expected`, `.apx` blocks, the examples |
-| Security gate: runtime probes, secrets, GATES column | not built (Phase 3, SEC-4 to SEC-6) | same | — |
+| Security runtime probes (`sec-probe.py`): anonymous, checksum, role, XSS | yes (version-independent) | same | [sec-probe](../tests/integration/sec-probe.sh) in CI: Playwright CLI stubbed, a local HTTP server for the anonymous fetch |
+| Security gate: secrets scan, GATES column | not built (Phase 3, SEC-5, SEC-6) | same | — |
 | Windows (Git Bash) | yes — integration on `windows-latest` in CI | same | [ci.yml](../.github/workflows/ci.yml); first green 0.6.0 run: [38059670802](https://github.com/Pp-py/apexlang-skills/actions/runs/38059670802) |
 
 ## Recorded runs
@@ -59,6 +60,8 @@ What CI does not run, recorded when it was run. Re-run after updating Oracle's s
 | 2026-10-11 | `sec-scan.py` over Oracle's 26.1 scaffold (`templates/base-app-structure/scaffold-example`, copied into a scratch repo) | `apexlang-generation` 26.1 at `014cdb2` | FAIL, as found — `SEC-PAGE-AUTHZ` on `p00001-home.apx`: the scaffold's Home page has no `authorizationScheme`, which Oracle's own baseline requires of every non-login page. Every other criterion PASS (`SEC-APP-SSP` included); the parser first could not read `file "…" (` in `static-files.apx`, now fixed |
 | 2026-10-11 | `sec-scan.py` over `skills/apexlang-architecture/examples` | — | FAIL at first: four destructive actions (Delete employee, Reject absence: button and process) under no role scheme. Fixed with `@administration-rights` (the scaffold's scheme); PASS, `SEC-APP-SSP` NOT_RUN (no `application.apx`); lint PASS, compiler the same 7 errors (KC-7) |
 | 2026-10-11 | `plsql-scan.py` over `skills/apexlang-architecture/examples` | — | PASS on `SEC-SQL-BIND` (no dynamic SQL); four packages without `AUTHID` (advisory) — now `AUTHID DEFINER`, stated |
+| 2026-10-11 | `sec-probe.py --anon <home> --tamper` on Oracle's UX Pattern Catalog (lab, public by design, read only) | `@playwright/cli` 0.1.17, bundled Chromium (WSL) | FAIL, as it must on a public app — `SEC-ANON-REDIRECT`: page 1 served with no login; `SEC-CHECKSUM-TAMPER` NOT_RUN on four pages (no `cs=` link) |
+| 2026-10-11 | `sec-probe.py --tamper` and `--xss` on a local page that imitates APEX's checksum check (127.0.0.1) | same | tamper PASS when the target checks `cs`, FAIL (both variants) when it does not; XSS PASS on escaped text, FAIL on markup. The first run found that `run-code`'s sandbox has no global `URL` — the stubbed suite could not; the URLs are now built in the page. `--role` not exercised against a real login (no app with a second user in the lab) |
 
 ## Known conflicts
 

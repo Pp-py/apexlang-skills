@@ -88,6 +88,7 @@ puts it back whenever it is missing.
 | ui-result, static (with `--task`) | `<evidenceDir>/<task>/ui-<alias>-static.json` | `ux-scan.py` (apex-ux) |
 | security-result, static (with `--task`) | `<evidenceDir>/<task>/security-<alias>-static.json` | `sec-scan.py` (apex-security) |
 | security-result, plsql (with `--task`) | `<evidenceDir>/<task>/security-<alias>-plsql.json` | `plsql-scan.py` (apex-security) |
+| security-result, runtime (with `--task`) | `<evidenceDir>/<task>/security-<alias>-runtime.json` | `sec-probe.py` (apex-security) |
 | ui-result, runtime (with `--task`) | `<evidenceDir>/<task>/ui-<alias>-runtime-<page>.json`, axe's output in `raw/ui-<alias>/` | `ux-check.py` (apex-ux) |
 | raw evidence (snapshots, eval output, logs) | `<evidenceDir>/<task>/raw/<gate>-<alias>/` | whoever produced the result citing it |
 | verification-manifest | `<evidenceDir>/<task>/manifest.json` | the orchestrator (future `apexlang-delivery`) |
@@ -106,7 +107,9 @@ entry; removing any of it, a major one.
   otherwise the Playwright CLI's own). `skills/apex-ux/scripts/ux-scan.py [--app <alias>]
   [--task <id>] <file-or-dir>…` and `skills/apex-ux/scripts/ux-check.py [--app <alias>]
   [--task <id>] [--dialog <selector>]… [--raw <file>]`, `skills/apex-security/scripts/sec-scan.py
-  [--app <alias>] [--task <id>] <file-or-dir>…` and `plsql-scan.py` with the same arguments (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
+  [--app <alias>] [--task <id>] <file-or-dir>…` and `plsql-scan.py` with the same arguments,
+  `sec-probe.py [--app <alias>] [--task <id>] [--anon <url>]… [--tamper] [--role <url>]…
+  [--xss <token>]` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
   3 UNKNOWN). They share `framework/lib/` (the `.apx` reader and the result envelope).
 - **State.** `refs/apex-sync/<alias>`; `.git/apex-sync/<alias>/` holding `state.json`,
   `check-ok.import`, `check-ok.export`, `last-<operation>.json`.
@@ -116,7 +119,7 @@ entry; removing any of it, a major one.
 - **Configuration.** `apex-sync.json` keys `appId`, `appAlias`, `apexlangDir`,
   `sqlclConnection`, `ignorePaths`, `testUser`, `runtimeUrl`, `uiGate`, `publicPages`, `lowPrivUser`, `evidenceDir`, `apps` — the
   canonical specification is `skills/apex-sync-guard/setup.md` §1. Environment:
-  `APEX_TEST_USER[_<ALIAS>]`, `APEX_TEST_PASSWORD[_<ALIAS>]`, `APEX_TEST_FILE`, `APEX_TEST_ENV`,
+  `APEX_TEST_USER[_<ALIAS>]`, `APEX_TEST_PASSWORD[_<ALIAS>]`, `APEX_TEST_PASSWORD_LOW[_<ALIAS>]`, `APEX_TEST_FILE`, `APEX_TEST_ENV`,
   `PW_WORKSPACE`, `PW_SESSION`, `PW_INSECURE_TLS`.
 
 `tests/contract/surface.py` asserts the parts of this list a test can see.
