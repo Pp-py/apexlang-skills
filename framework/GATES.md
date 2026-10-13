@@ -16,7 +16,7 @@ establishes is how "validate passed" turns into "it works" (P5).
 | **Evidence** | `architecture-result`: decisions with evidence, the red-flag scan's command | the script's command, exit code and output (`Validation successful`) | `sync-result`: the export, the comparison, changes, payload; the marker | `runtime-result`: per criterion, evidence files (sha256) and SQL | `security-result` per scope: findings by file and line, never a value; probes by URL without session or checksum | `ui-result` per scope: findings with file and line, or axe rule and selectors, never node HTML; axe's raw output (sha256) |
 | **Statuses** | PASS · FAIL · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED | PASS · FAIL · CONFLICT · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED · UNKNOWN |
 | **Holds back** | calling the build done — decided before it, passed on the built code | the import | `apex import`/`export`, the deploy script, `apexctl` roundtrip | any "it works" claim | calling a change safe to deploy | calling the UI done |
-| **Enforced by** | discipline | nothing on the deploy lane — Oracle's deploy script does not validate (GAP-3) | the `PreToolUse` hook (Claude Code); discipline elsewhere | discipline | discipline; opt-in per app (`securityGate`) until 1.0.0 | discipline; opt-in per app (`uiGate`) until 1.0.0 |
+| **Enforced by** | discipline | `apexlang-delivery`'s import lane and manifest (Validation before the import, required); nothing on Oracle's deploy script, which does not validate (GAP-3) | the `PreToolUse` hook (Claude Code); discipline elsewhere | discipline | discipline; opt-in per app (`securityGate`) until 1.0.0 | discipline; opt-in per app (`uiGate`) until 1.0.0 |
 
 ## Order
 

@@ -24,6 +24,10 @@ sixth skill, `apexlang-delivery`, the orchestrator the Phase 2 contracts were wr
   fresh; invalid → UNKNOWN, missing or stale → NOT_RUN; Security and UI are required only on
   opt-in; `--skip <gate>:<reason>`; stderr names the next gate or where to stop. Exit 0 PASS ·
   1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN · 4 NOT_RUN.
+- D-2: who runs each gate, with which command and what it leaves in the task dir, in the skill.
+  GAP-3 (no Validation before Oracle's deploy script) is **mitigated, not closed** — by the
+  documented lane and the manifest's required Validation gate; an import outside the lane still
+  goes unvalidated (the user chose documentation over a script).
 - `evidence.py capture --gate validation`: the compiler's output, and beside every capture a
   `<name>.exit.json` with the command (redacted), its exit code, the task and the working tree.
 
