@@ -64,3 +64,5 @@ jobs:
         run: bash tests/integration/secrets-scan.sh
       - name: apexlang-delivery aggregator (stamped results, a real Validation capture)
         run: bash tests/integration/delivery.sh
+      - name: the CI example's scan step, verbatim, over the examples
+        run: bash tests/integration/ci-example.sh

@@ -69,6 +69,14 @@ is now (`GATES.md` §Freshness). Invalid → `UNKNOWN`. Missing or stale → `NO
 any tracked or untracked file — `apex-sync.json` included — makes the earlier results stale, and
 they are run again. Security and UI are required only when the app opts in (until 1.0.0).
 
+## A pipeline
+
+[`docs/examples/ci/apexlang-static-gates.yml`](../../docs/examples/ci/apexlang-static-gates.yml)
+is a GitHub Actions workflow to copy into a project: on each pull request it runs the five
+static scans at a pinned release and uploads their results. Validation, Sync, Runtime and the
+runtime scopes need SQLcl, the Builder or a browser, so they stay in this loop; a green
+pipeline is the static scopes holding, never a verified task.
+
 ## What a PASS here does not establish
 
 Anything its gates do not (each gate's "PASS does NOT establish" row); that a gate the user

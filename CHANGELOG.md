@@ -24,6 +24,10 @@ sixth skill, `apexlang-delivery`, the orchestrator the Phase 2 contracts were wr
   fresh; invalid → UNKNOWN, missing or stale → NOT_RUN; Security and UI are required only on
   opt-in; `--skip <gate>:<reason>`; stderr names the next gate or where to stop. Exit 0 PASS ·
   1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN · 4 NOT_RUN.
+- D-4: a pipeline example, `docs/examples/ci/apexlang-static-gates.yml` — copy it into a
+  project: on each pull request it runs the five static scans at a pinned release and uploads
+  their results; the gates that need SQLcl, the Builder or a browser stay in the agent's loop.
+  Not active in this repository.
 - D-3: `delivery.py --exit <gate>:<code>` — a gate that just ran and left no fresh result is
   `BLOCKED` (exit 2) or `UNKNOWN`, and a single producer whose exit disagrees with its result is
   `UNKNOWN` (GATES.md's MUST). **`verification-manifest` is stable** (its producer is a script);
@@ -236,6 +240,8 @@ sixth skill, `apexlang-delivery`, the orchestrator the Phase 2 contracts were wr
   It now does, and reported the 8 gaps this fixes.
 
 ### Tests
+- D-4: `tests/integration/ci-example.sh` (13) in CI — the example's scan step, read from the
+  file and run as written over the examples; a planted defect fails it.
 - D-3: `delivery.sh` (+23): the orchestration contract rule by rule; 11 fail without `--exit`.
 - D-1: `tests/integration/delivery.sh` (40) in CI; the contract tier validates every manifest it
   makes `delivery.py` write (jsonschema there, its own checks on the integration runners).

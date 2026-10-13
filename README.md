@@ -67,7 +67,7 @@ producer's verdict: a consumer assigns it to a gate that did not run (a runtime 
 criterion it did not exercise the same way). **PASS ≠ NOT_RUN ≠ UNKNOWN ≠ "the agent says it worked."** Results are JSON validated by
 [`framework/schemas/`](framework/schemas/) — `sync-result` is stable and written by the guard on
 every run; `runtime-result`, `architecture-result`, `ui-result` and `security-result` are experimental;
-the task-level `verification-manifest` is stable, written by `apexlang-delivery`'s `delivery.py`. The Security and UI gates are opt-in per app (`securityGate`, `uiGate`) until 1.0.0. [`apexlang-delivery`](skills/apexlang-delivery/SKILL.md) orchestrates the gates for one task and `delivery.py` writes its manifest from those files, under
+the task-level `verification-manifest` is stable, written by `apexlang-delivery`'s `delivery.py`. The Security and UI gates are opt-in per app (`securityGate`, `uiGate`) until 1.0.0. [`apexlang-delivery`](skills/apexlang-delivery/SKILL.md) orchestrates the gates for one task and `delivery.py` writes its manifest from those files (a CI example for the static scans: [`docs/examples/ci/`](docs/examples/ci/apexlang-static-gates.yml)), under
 a contract that lets it add no rule of its own ([`GATES.md` §The orchestration contract](framework/GATES.md#the-orchestration-contract)).
 
 ## Install
