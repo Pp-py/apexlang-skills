@@ -1,0 +1,76 @@
+# apexlang-skills — the static gates on every pull request (an EXAMPLE to copy, D-4).
+#
+# Copy this file to your APEXlang project as .github/workflows/apexlang-static-gates.yml and set
+# the three variables under `env`. It is not active in the apexlang-skills repository itself.
+#
+# What it runs: the scans that need only the source — apexlang-architecture's red-flag scan,
+# apex-security's .apx, PL/SQL and secrets scans, and apex-ux's static scan. Each is the same
+# script the agent runs, at the release pinned below; each writes its result into the run's
+# task dir (.apex-evidence/ci-<run id>/), uploaded as an artifact.
+#
+# What it does NOT run, and why: Validation (needs SQLcl), Sync (needs the Builder), Runtime and
+# the runtime scopes of Security and UI (need the running app and a browser). Those stay in the
+# agent's loop (skills/apexlang-delivery/SKILL.md), which is also where the task's
+# verification-manifest is written. A green run here is the static scopes holding — never
+# "the change is verified".
+#
+# Exit: the job fails when any scan is not PASS (FAIL, BLOCKED or UNKNOWN). No secret is needed.
+
+name: apexlang static gates
+
+on:
+  pull_request:
+    paths: ["apex/**", "db/**", "apex-sync.json", ".github/workflows/apexlang-static-gates.yml"]
+
+permissions:
+  contents: read
+
+env:
+  APEX_APP: hr                 # the app's alias in apex-sync.json (--app)
+  APEX_SRC: apex/hr            # its APEXlang source dir (<apexlangDir>/<appAlias>)
+  PLSQL_SRC: db                # where its packages live (.sql .pks .pkb .pls)
+
+jobs:
+  static-gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: apexlang-skills, at a pinned release
+        uses: actions/checkout@v5
+        with:
+          repository: Pp-py/apexlang-skills
+          ref: v0.7.0           # pin a tag; update it on purpose, after reading the CHANGELOG
+          path: .apexlang-skills
+
+      - name: the five static scans (every one runs; the job fails if any is not PASS)
+        shell: bash
+        run: |
+          set -u
+          K=.apexlang-skills/skills
+          TASK="ci-${GITHUB_RUN_ID}"
+          mkdir -p ".apex-evidence/$TASK"
+          worst=0
+          scan() {  # $1 = label, rest = the command; 0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN
+            local rc=0
+            "${@:2}" > /dev/null || rc=$?
+            echo "$1: exit $rc"
+            (( rc > worst )) && worst=$rc
+            return 0
+          }
+          # arch-scan writes no result file: keep its JSON beside the others
+          scan arch-scan   bash -c "python3 $K/apexlang-architecture/scripts/arch-scan.py '$APEX_SRC' '$PLSQL_SRC' > '.apex-evidence/$TASK/arch-scan.json'"
+          scan sec-scan    python3 "$K/apex-security/scripts/sec-scan.py"     --app "$APEX_APP" --task "$TASK" "$APEX_SRC"
+          scan plsql-scan  python3 "$K/apex-security/scripts/plsql-scan.py"   --app "$APEX_APP" --task "$TASK" "$PLSQL_SRC" "$APEX_SRC"
+          scan secrets     python3 "$K/apex-security/scripts/secrets-scan.py" --app "$APEX_APP" --task "$TASK"
+          scan ux-scan     python3 "$K/apex-ux/scripts/ux-scan.py"            --app "$APEX_APP" --task "$TASK" "$APEX_SRC"
+          exit "$worst"
+
+      - name: the results, as evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apexlang-static-gates
+          path: .apex-evidence/
+          include-hidden-files: true
