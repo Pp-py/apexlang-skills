@@ -85,7 +85,7 @@ puts it back whenever it is missing.
 | sync-result (with `--task`) | `<evidenceDir>/<task>/sync-<alias>-<operation>.json` | `apex-sync-check.sh` |
 | runtime-result | `<evidenceDir>/<task>/runtime-<alias>.json` | the agent (apex-sentinel), through `evidence.py write` |
 | architecture-result | `<evidenceDir>/<task>/architecture.json` | the agent (apexlang-architecture), through `evidence.py write` |
-| raw evidence | `<evidenceDir>/<task>/raw/<gate>-<alias>/<name>` | `evidence.py capture` |
+| raw evidence | `<evidenceDir>/<task>/raw/<gate>-<alias>/<name>`, and `<name>.exit.json` (the command, its exit code, the task and the tree) | `evidence.py capture` |
 | ui-result, static (with `--task`) | `<evidenceDir>/<task>/ui-<alias>-static.json` | `ux-scan.py` (apex-ux) |
 | security-result, static (with `--task`) | `<evidenceDir>/<task>/security-<alias>-static.json` | `sec-scan.py` (apex-security) |
 | security-result, plsql (with `--task`) | `<evidenceDir>/<task>/security-<alias>-plsql.json` | `plsql-scan.py` (apex-security) |
@@ -93,7 +93,7 @@ puts it back whenever it is missing.
 | security-result, secrets (with `--task`) | `<evidenceDir>/<task>/security-<alias>-secrets.json` | `secrets-scan.py` (apex-security) |
 | ui-result, runtime (with `--task`) | `<evidenceDir>/<task>/ui-<alias>[.<env>]-runtime-<page>.json`, axe's output in `raw/ui-<alias>[.<env>]/` | `ux-check.py` (apex-ux) |
 | raw evidence (snapshots, eval output, logs) | `<evidenceDir>/<task>/raw/<gate>-<alias>/` | whoever produced the result citing it |
-| verification-manifest | `<evidenceDir>/<task>/manifest.json` | the orchestrator (future `apexlang-delivery`) |
+| verification-manifest | `<evidenceDir>/<task>/manifest.json` | `delivery.py` (apexlang-delivery), from the task's results |
 
 ## The frozen interface (0.6.x)
 
@@ -114,12 +114,15 @@ entry; removing any of it, a major one.
   [--role <url>]… [--xss <token>]`, `secrets-scan.py [--app <alias>] [--task <id>] [<path>…]` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
   3 UNKNOWN). `skills/apexlang-architecture/scripts/arch-scan.py <file-or-dir>…` (python3; JSON on
   stdout, no result file; exit 0 no red flag · 1 red flags · 2 BLOCKED · 3 UNKNOWN).
-  `framework/scripts/evidence.py capture --gate runtime|architecture [--app <alias>] [--env <name>]
+  `framework/scripts/evidence.py capture --gate runtime|architecture|validation [--app <alias>] [--env <name>]
   --task <id> <name> -- <command>…` (exit 0 saved · 2 refused · 3 not run or not saved) and `evidence.py write
   --kind runtime|architecture [--app <alias>] [--env <name>] --task <id> <draft.json>` (exit the derived status
   0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN; a refused draft 2, nothing written); `evidence.py fresh
-  --task <id> <result.json>…` (exit 0 fresh · 1 stale · 2 not a result · 3 no tree). They share
-  `framework/lib/` (the `.apx` reader, the PL/SQL lexer and the result envelope).
+  --task <id> <result.json>…` (exit 0 fresh · 1 stale · 2 not a result · 3 no tree).
+  `skills/apexlang-delivery/scripts/delivery.py --task <id> [--app <alias>] [--env <name>]
+  [--skip <gate>:<reason>]…` (python3; the manifest on stdout and in the task dir; exit 0 PASS ·
+  1 FAIL or CONFLICT · 2 BLOCKED · 3 UNKNOWN · 4 NOT_RUN). They share `framework/lib/` (the `.apx`
+  reader, the PL/SQL lexer and the result envelope).
 - **State.** `refs/apex-sync/<alias>` and `<git-common-dir>/apex-sync/<alias>/state.json`, shared by
   every worktree; `<git-dir>/apex-sync/<alias>/` holding `check-ok.import`, `check-ok.export`,
   `last-<operation>.json`, one per worktree. In a plain clone both dirs are `.git/`.
