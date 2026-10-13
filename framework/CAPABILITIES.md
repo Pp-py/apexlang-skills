@@ -86,6 +86,7 @@ What CI does not run, recorded when it was run. Re-run after updating Oracle's s
 | 2026-10-13 | `apex-sync-check.sh doctor` with SQLcl 26.2.0 and 26.3.0 | the same app (26.2.0+3479 source) | 26.2.0: FAIL, "cannot read the source's APEXlang"; 26.3.0: OK |
 | 2026-10-13 | `validate-examples.sh --lint`, and `--compiler` with SQLcl 26.2.0 and 26.3.0, after the R-8 changes | `apexlang-generation` 26.1 at `014cdb2` | PASS all three |
 | 2026-10-13 | the three `tests/integration/` guard suites, after R-8 | bash 3.2.57 — macOS's bash, not in CI (docker, with git, jq, python3) | PASS — e2e 323 (the unwritable-state case is skipped as root), smoke 67, config-parity 60 |
+| 2026-10-13 | R-9: the user's Windows install upgraded with `claude plugin marketplace update` / `claude plugin update` (user and project scopes): apexlang-toolkit 0.3.0 → `main` 6067d9a, Oracle's five plugins 3967851 → 014cdb2 (the lock); then, in the real project from Git Bash, `doctor`, `status` and the three static scans through the installed copy | Claude Code 2.1.223, Git for Windows 2.55.0, SQLcl 26.2.0, APEX 26.1.0 (the user's DEV), Python 3.14 through a `~/bin/python3` shim (Git Bash's `python3` was the Microsoft Store stub) | PASS — `doctor` all OK (SQLcl reads the source's 26.1.0+3102), `status` reads the syncpoint; the scans run and exit by their verdicts. Rollback: the JSON backups under `~/.claude/backups/r9-*`, the 0.3.0 cache kept, delete the shim |
 
 ## Known conflicts
 
