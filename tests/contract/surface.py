@@ -408,11 +408,12 @@ def check_interface():
                          ("apex-security/scripts/sec-scan.py", "[--app <alias>] [--task <id>]"),
                          ("apex-security/scripts/plsql-scan.py", "[--app <alias>] [--task <id>]"),
                          ("apex-security/scripts/sec-probe.py", "[--app <alias>] [--env <name>] [--task <id>] [--anon <url>]... [--tamper]"),
-                         ("apex-security/scripts/secrets-scan.py", "[--app <alias>] [--task <id>] [<path>...]")):
+                         ("apex-security/scripts/secrets-scan.py", "[--app <alias>] [--task <id>] [<path>...]"),
+                         ("apexlang-delivery/scripts/delivery.py", "--task <id> [--app <alias>] [--env <name>] [--skip <gate>:<reason>]...")):
         if args not in read(f"skills/{script}"):
             missing.append(f"{script} usage: {args}")
     ev = read("framework/scripts/evidence.py")
-    for args in ("capture --gate runtime|architecture [--app <alias>] [--env <name>] --task <id> <name> -- <command>...",
+    for args in ("capture --gate runtime|architecture|validation [--app <alias>] [--env <name>] --task <id> <name> -- <command>...",
                  "write --kind runtime|architecture [--app <alias>] [--env <name>] --task <id> <draft.json>",
                  "fresh --task <id> <result.json>..."):
         if args not in ev:

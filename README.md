@@ -32,6 +32,7 @@ Oracle Official Skills    apex@oracle-skills — the language, inventory, genera
         │                 compile, import/export        (verified revision: framework/oracle-skills.lock.json)
         ▼
 apexlang-skills           apexlang-architecture · apex-sync-guard · apex-sentinel · apex-ux
+        │                 · apex-security · apexlang-delivery
         │                 + framework/: principles, contracts, gates, evidence, capability matrix
         ▼
 Engineering guardrails    single write path · fail-closed gates · evidence, not claims
@@ -45,6 +46,7 @@ Engineering guardrails    single write path · fail-closed gates · evidence, no
 | import / deploy and export | **the gates, their statuses and their evidence** — [`framework/`](framework/README.md) |
 | Universal Theme, and a UX Pattern Catalog app as an example | **whether the UI is usable and accessible** — [`apex-ux`](skills/apex-ux/SKILL.md): criteria with IDs from WCAG 2.2 AA and Oracle's policies, per archetype; a static scan of the `.apx` and runtime checks in the browser (axe-core, dialog focus) for the FAIL criteria, as the UI gate (opt-in per app, `uiGate`) |
 | security policies and a lint (26.1, advisory) | **whether the app refuses what it must** — [`apex-security`](skills/apex-security/SKILL.md): a threat model and security criteria with IDs from Oracle's policies and OWASP ASVS 5.0; scans of the `.apx`, the packages and the tracked files, and runtime probes, as the Security gate (opt-in per app, `securityGate`) |
+| a deploy script that imports without validating (GAP-3) | **whether a task is verified** — [`apexlang-delivery`](skills/apexlang-delivery/SKILL.md): the gates in order for one task, the import lane with Validation before it, and `delivery.py`, which writes the task's `verification-manifest` from the results and adds no rule |
 
 This repo never duplicates what Oracle's skills do. Where its guidance and Oracle's meet, the
 precedence is explicit — SQLcl `apex validate` > Oracle's 26.1 lint > Oracle's inventory, policies
@@ -65,7 +67,7 @@ producer's verdict: a consumer assigns it to a gate that did not run (a runtime 
 criterion it did not exercise the same way). **PASS ≠ NOT_RUN ≠ UNKNOWN ≠ "the agent says it worked."** Results are JSON validated by
 [`framework/schemas/`](framework/schemas/) — `sync-result` is stable and written by the guard on
 every run; `runtime-result`, `architecture-result`, `ui-result` and the task-level
-`verification-manifest` are experimental, and so is `security-result`. The Security and UI gates are opt-in per app (`securityGate`, `uiGate`) until 1.0.0. A future `apexlang-delivery` orchestrates the gates by reading those files, under
+`verification-manifest` are experimental, and so is `security-result`. The Security and UI gates are opt-in per app (`securityGate`, `uiGate`) until 1.0.0. [`apexlang-delivery`](skills/apexlang-delivery/SKILL.md) orchestrates the gates for one task and `delivery.py` writes its manifest from those files, under
 a contract that lets it add no rule of its own ([`GATES.md` §The orchestration contract](framework/GATES.md#the-orchestration-contract)).
 
 ## Install
@@ -91,7 +93,7 @@ Each skill also works on its own.
 | Oracle APEXlang version (`mmdVersion`) | Oracle's skills you get | Notes |
 |---|---|---|
 | 26.1 | generation (policies, local lint, `apexctl`), compile, deploy, inventory | the version Oracle's router defaults to |
-| 26.2 | compile, deploy, inventory | SQLcl 26.2.0 refuses 26.2 apps (UP-2) — Validation is BLOCKED until a newer SQLcl |
+| 26.2 | compile, deploy, inventory | SQLcl 26.2.0 refuses 26.2 apps (UP-2); SQLcl 26.3.0 reads them (measured on APEX 26.2, R-8) — `doctor` says which you have |
 
 - **SQLcl** for compile, import/export and the data-side reads.
 - **apex-sync-guard:** `git`, `jq` *or* `python3`. Check a machine with
@@ -134,7 +136,7 @@ with only the diagnostics documented where they occur, and the compiler — SQLc
 |---|---|---|
 | 1 — Capabilities | architecture, sync safety, runtime verification | done |
 | 2 — Engineering framework | principles, contracts, gates, evidence, capability matrix, testing model; contracts ready for an `apexlang-delivery` that orchestrates the gates and adds no rules | done — 0.6.0 |
-| 3 — Application quality | **UI/UX**, then **Security**, as new gates; the known conflicts, environments per app and the remaining gaps; last, `apexlang-delivery` — the orchestrator the Phase 2 contracts were written for | in progress — 0.6.1: UI/UX points 1–4 (`apex-ux`) |
+| 3 — Application quality | **UI/UX**, then **Security**, as new gates; the known conflicts, environments per app and the remaining gaps; last, `apexlang-delivery` — the orchestrator the Phase 2 contracts were written for | in progress — 0.6.1 released; on `main`: UI/UX, Security, the known conflicts, environments, the live run, and `apexlang-delivery` |
 | 4 — Benchmark & continuous verification | showing that the framework makes an agent better, measured | later |
 
 ## Development

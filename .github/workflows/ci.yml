@@ -62,3 +62,5 @@ jobs:
         run: bash tests/integration/sec-probe.sh
       - name: apex-security secrets scan (a scratch repo, and this one)
         run: bash tests/integration/secrets-scan.sh
+      - name: apexlang-delivery aggregator (stamped results, a real Validation capture)
+        run: bash tests/integration/delivery.sh

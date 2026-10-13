@@ -5,7 +5,7 @@
   "plugins": [
     {
       "name": "apexlang-toolkit",
-      "description": "Architecture, sync-guard, runtime-verification, UX and security skills for Oracle APEX apps in APEXlang (.apx), with fail-closed gates and JSON evidence.",
+      "description": "Architecture, sync-guard, runtime-verification, UX, security and delivery skills for Oracle APEX apps in APEXlang (.apx), with fail-closed gates and JSON evidence.",
       "version": "0.6.1",
       "source": "./",
       "author": { "name": "Pablo Portillo", "email": "pabloportillo095@gmail.com" }

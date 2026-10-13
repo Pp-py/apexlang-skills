@@ -1,27 +1,26 @@
 # Agent instructions — apexlang-skills
 
 This repository is an engineering framework for Oracle APEX applications written as APEXlang
-declarative source (`.apx`): five skills on top of Oracle's official APEXlang skills, plus the
+declarative source (`.apx`): six skills on top of Oracle's official APEXlang skills, plus the
 contracts that make them one system (`framework/`). If you are a coding agent (Claude Code,
 Codex, opencode, Cursor, aider, …) working on an APEXlang app, load the relevant skill file below
 **before** designing, changing, or verifying anything.
 
-## The five skills
+## The six skills
 
 1. **`skills/apexlang-architecture/SKILL.md`** — read it when deciding WHERE business logic,
    validation, or DML belongs. Core rule: every write goes through a PL/SQL package (single
    write-path); never region-bound Automatic Row Processing (DML). Which layer owns an operation
    (entity / multi-entity flow / external-system integration), and when the answer is no package
    at all, is in `skills/apexlang-architecture/package-boundaries.md`; recipes in `recipes/`,
-   backend conventions in `back-end-conventions.md`, the read-side data contract in `ui-contracts.md`.
+   backend conventions in `back-end-conventions.md`, the read-side contract in `ui-contracts.md`.
 
 2. **`skills/apex-sync-guard/SKILL.md`** — read it BEFORE running any `apex import` or
    `apex export` (Oracle's `deploy-apex-app.sh` included: it runs `apex import` inside). Both are
    total silent overwrites; the skill gates them behind a sync-check against the opposite replica,
    keyed to a recorded syncpoint. Never assume the Builder is clean because "the flow is
-   source-first" — verify. Wiring (config + the Claude Code hook) is in
-   `skills/apex-sync-guard/setup.md`; other agents call `skills/apex-sync-guard/scripts/apex-sync-check.sh`
-   directly.
+   source-first" — verify. Wiring (config + the Claude Code hook): `skills/apex-sync-guard/setup.md`;
+   other agents call `scripts/apex-sync-check.sh` directly.
 
 3. **`skills/apex-sentinel/SKILL.md`** — read it after importing or changing a page, before
    claiming the change works. The running app in a real browser is the ONLY verification gate;
@@ -37,6 +36,9 @@ Codex, opencode, Cursor, aider, …) working on an APEXlang app, load the releva
    Criteria with IDs (`criteria.md`); `scripts/sec-scan.py`, `plsql-scan.py`, `secrets-scan.py`,
    `sec-probe.py` each write a `security-result`; the gate runs when `"securityGate": true`.
 
+6. **`skills/apexlang-delivery/SKILL.md`** — read it to deliver a change: it runs the loop below
+   for one task and `scripts/delivery.py` writes its `verification-manifest`.
+
 They form one loop: **architect → build (`.apx` + package) → validate → sync-check → import →
 record-sync → verify in the browser → security probes → UI checks** (plus sync-check before any export).
 
@@ -48,13 +50,11 @@ record-sync → verify in the browser → security probes → UI checks** (plus 
   not exercise. PASS ≠ NOT_RUN ≠ UNKNOWN ≠ "it seemed to work".
 - Results are JSON (`framework/schemas/`): the guard writes `.git/apex-sync/<alias>/last-<op>.json`
   on every run, and with `--task <id>` a copy under the evidence dir (`.apex-evidence/` by default,
-  never committed); apex-ux's two scripts do the same with `--task` (`ui-result`). Runtime and
-  architecture verdicts go through `framework/scripts/evidence.py` (`references/runtime-result.md`,
-  `references/decision-record.md` in those skills).
+  never committed); so do the apex-ux and apex-security scripts. Runtime and architecture
+  verdicts go through `framework/scripts/evidence.py`.
 - Never write a marker, a ref under `refs/apex-sync/` or a result by hand, and never run
   `record-sync --force`: those are the user's calls.
-- What each gate establishes and what it does not, and how an orchestrator may use them:
-  `framework/GATES.md`.
+- What each gate establishes and does not, and how an orchestrator may use them: `framework/GATES.md`.
 
 ## Hard requirements (apex-sync-guard)
 

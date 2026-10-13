@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://pp-py.github.io/apexlang-skills/schemas/1/verification-manifest.schema.json",
   "title": "verification-manifest (EXPERIMENTAL, schemaVersion 1)",
-  "description": "One task's gates, as a consumer (a future apexlang-delivery, or a person) records them: per gate, whether it was required, its status, and the result files it read (with their sha256). The manifest adds no rule of its own — each status comes from a result file or, for Validation, from Oracle's compile script — and its own status is the aggregation of the required gates: FAIL > CONFLICT > UNKNOWN > BLOCKED > NOT_RUN > PASS; with no required gate it is NOT_RUN. Written to <evidenceDir>/<task>/manifest.json.",
+  "description": "One task's gates, as a consumer (apexlang-delivery's delivery.py, or a person) records them: per gate, whether it was required, its status, and the result files it read (with their sha256). The manifest adds no rule of its own — each status comes from a result file or, for Validation, from Oracle's compile script — and its own status is the aggregation of the required gates: FAIL > CONFLICT > UNKNOWN > BLOCKED > NOT_RUN > PASS; with no required gate it is NOT_RUN. Written to <evidenceDir>/<task>/manifest.json.",
   "type": "object",
   "additionalProperties": false,
   "required": ["kind", "schemaVersion", "status", "context", "gates"],
@@ -16,7 +16,11 @@
         { "description": "a manifest belongs to a task", "properties": { "task": { "$ref": "common.schema.json#/$defs/taskId" } } }
       ]
     },
-    "gates": { "type": "array", "items": { "$ref": "#/$defs/gate" } }
+    "gates": { "type": "array", "items": { "$ref": "#/$defs/gate" } },
+    "schemaCheck": {
+      "description": "How the consumer validated the results it read: with jsonschema against these schemas, or — jsonschema not installed — by apexlang-delivery's own checks of what a verdict rests on (kind, status vocabulary, task, criteria against status).",
+      "enum": ["jsonschema", "structural"]
+    }
   },
   "allOf": [
     { "$ref": "#/$defs/aggregation" }

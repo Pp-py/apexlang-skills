@@ -30,8 +30,8 @@ if ! SYNC_RESULT_CAPTURE_DIR="$CAP/results" bash "$REPO/tests/integration/sync-g
 fi
 tail -1 "$CAP/e2e.log"
 
-echo "== apex-ux, apex-security and evidence suites, capturing every result they make the scripts emit"
-for t in ux-scan ux-check sec-scan plsql-scan sec-probe secrets-scan evidence; do
+echo "== apex-ux, apex-security, evidence and delivery suites, capturing every result they make the scripts emit"
+for t in ux-scan ux-check sec-scan plsql-scan sec-probe secrets-scan evidence delivery; do
   if ! RESULT_CAPTURE_DIR="$CAP/results" bash "$REPO/tests/integration/$t.sh" > "$CAP/$t.log" 2>&1; then
     tail -30 "$CAP/$t.log"
     echo "contract: FAIL — $t itself failed, so its results prove nothing"

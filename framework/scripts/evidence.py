@@ -3,9 +3,11 @@
 the raw evidence they cite, so neither is hand-written JSON. Standard library only.
 
 Usage:
-  evidence.py capture --gate runtime|architecture [--app <alias>] [--env <name>] --task <id> <name> -- <command>...
+  evidence.py capture --gate runtime|architecture|validation [--app <alias>] [--env <name>] --task <id> <name> -- <command>...
       Runs the command and saves its stdout, redacted, to
-      <evidenceDir>/<task>/raw/<gate>-<alias>/<name>. Prints {evidence: {kind: file, path, sha256},
+      <evidenceDir>/<task>/raw/<gate>-<alias>/<name>, and beside it <name>.exit.json: the command
+      (redacted), its exit code, the task and the working tree — what apexlang-delivery reads for
+      the Validation gate, which has no result file of its own. Prints {evidence: {kind: file, path, sha256},
       exitCode (the command's), redacted (how many values were removed)}.
   evidence.py write --kind runtime|architecture [--app <alias>] [--env <name>] --task <id> <draft.json>
       The draft holds only what the agent observed — runtime: check, backend, login, criteria,
@@ -74,7 +76,8 @@ def sha256(path):
 def where(a):
     """(alias, task dir, settings, key): key is the alias, or alias.env for an environment.
     A runtime run on an app with environments names the one it verified (R-1)."""
-    if "architecture" in (getattr(a, "gate", None), getattr(a, "kind", None)):   # one decision for every environment
+    # an architecture decision, and the compile of the source, hold for every environment
+    if {"architecture", "validation"} & {getattr(a, "gate", None), getattr(a, "kind", None)}:
         alias, task_dir, settings = target(a.app, a.task, a.env)
         return alias, task_dir, settings, alias + (f".{a.env}" if a.env else "")
     return runtime_target(a.app, a.task, a.env)
@@ -91,16 +94,22 @@ def capture(a, rest):
         p = subprocess.run(rest, stdout=subprocess.PIPE, timeout=600)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise Stop("UNKNOWN", "COMMAND_DID_NOT_RUN", f"the command did not run: {e.__class__.__name__}")
-    text, n = clean(p.stdout.decode("utf-8", "replace")), 0
-    for rx in SECRET:
-        text, k = rx.subn(lambda m: (m.group(1) if m.re is SECRET[0] else "") + "<redacted>", text)
-        n += k
+    def redact(s):
+        s, n = clean(s), 0
+        for rx in SECRET:
+            s, k = rx.subn(lambda m: (m.group(1) if m.re is SECRET[0] else "") + "<redacted>", s)
+            n += k
+        return s, n
+    text, n = redact(p.stdout.decode("utf-8", "replace"))
+    command, _ = redact(" ".join(rest))
     path = os.path.join(raw, a.name)
     try:
         os.makedirs(raw, exist_ok=True)
         with open(path + ".tmp", "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
         os.replace(path + ".tmp", path)
+        with open(path + ".exit.json", "w", encoding="utf-8", newline="\n") as fh:
+            json.dump({"command": command, "exitCode": p.returncode, "task": a.task, "tree": tree()}, fh)
     except OSError as e:
         raise Stop("UNKNOWN", "STATE_UNWRITABLE", f"could not save the evidence: {e.__class__.__name__}")
     print(json.dumps({"evidence": {"kind": "file", "path": rel(path), "sha256": sha256(path)},
@@ -277,7 +286,7 @@ def main(argv):
     ap = argparse.ArgumentParser(description="write the runtime and architecture results, and their raw evidence")
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("capture")
-    c.add_argument("--gate", required=True, choices=["runtime", "architecture"])
+    c.add_argument("--gate", required=True, choices=["runtime", "architecture", "validation"])
     c.add_argument("--app")
     c.add_argument("--env")
     c.add_argument("--task", required=True)

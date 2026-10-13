@@ -75,7 +75,7 @@ invalid.
 
 ## The orchestration contract
 
-What a consumer — the future `apexlang-delivery`, a CI pipeline, an agent loop — may and
+What a consumer — `apexlang-delivery` (`delivery.py`), a CI pipeline, an agent loop — may and
 may not do. It orchestrates the gates; it adds no rule of its own (P2, P6).
 
 **MUST**

@@ -10,9 +10,22 @@ R-2 closes the last three known conflicts (KC-4, KC-5, KC-7): the examples compi
 four of Architecture's red flags into a script. R-4 writes the two results an agent judged by
 hand until now. R-7 closes GAP-7 (worktrees) and GAP-8 (stale results). R-6 binds
 the sync marker to the source it checked (GAP-9) and halves its TTL. R-1 models environments per
-app (GAP-6). R-8 runs all of it against a live APEX 26.2 and fixes what that found.
+app (GAP-6). R-8 runs all of it against a live APEX 26.2 and fixes what that found. D-1 adds the
+sixth skill, `apexlang-delivery`, the orchestrator the Phase 2 contracts were written for.
 
 ### Behavior changes — read before upgrading
+
+**apexlang-delivery (new skill) — D-1**
+- `skills/apexlang-delivery/`: the loop for one task — each gate run by the agent with its own
+  skill, in `GATES.md`'s order, the import lane (Validation → `check-import` → import → `record-sync`,
+  each step only on the previous one's exit 0) — and `scripts/delivery.py`, which reads what the
+  task holds and writes `<evidenceDir>/<task>/manifest.json`. Each result is validated (jsonschema
+  when installed, else its own checks — the manifest's new `schemaCheck` says which) and must be
+  fresh; invalid → UNKNOWN, missing or stale → NOT_RUN; Security and UI are required only on
+  opt-in; `--skip <gate>:<reason>`; stderr names the next gate or where to stop. Exit 0 PASS ·
+  1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN · 4 NOT_RUN.
+- `evidence.py capture --gate validation`: the compiler's output, and beside every capture a
+  `<name>.exit.json` with the command (redacted), its exit code, the task and the working tree.
 
 **R-8: what a live APEX 26.2 found** (recorded in `CAPABILITIES.md`, 2026-10-13)
 - **apexlang-architecture — page processes run at `processing`, not `afterSubmit` (KC-8).** In
@@ -215,6 +228,8 @@ app (GAP-6). R-8 runs all of it against a live APEX 26.2 and fixes what that fou
   It now does, and reported the 8 gaps this fixes.
 
 ### Tests
+- D-1: `tests/integration/delivery.sh` (40) in CI; the contract tier validates every manifest it
+  makes `delivery.py` write (jsonschema there, its own checks on the integration runners).
 - R-8: e2e (+5: an app with environments named by id, `doctor`'s SQLcl check), `sec-probe.sh`
   (+10: APEX's error page, a control on one, the cookie loop, the `.env` and per-environment low
   password, `--env`), `ux-check.sh` (+8: `oracle-owned.json`, `--env`), `sec-scan.sh` (+3: 26.1 and
