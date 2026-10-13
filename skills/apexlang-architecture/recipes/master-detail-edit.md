@@ -70,7 +70,7 @@ process save-members (
             p_row_status  => :APEX$ROW_STATUS,
             p_employee_id => :EMPLOYEE_ID,
             p_sector_id   => :SECTOR_ID);``` }
-    execution { sequence: 20  point: afterSubmit }
+    execution { sequence: 20  point: processing }
 )
 ```
 

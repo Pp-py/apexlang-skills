@@ -54,6 +54,12 @@ elif grep -q 'apex-sync-appcount' <<<"$stmts"; then
   printf '%s\n' "${FAKE_REMOTE_APP_COUNT-1}"
 elif grep -q 'apex-sync-doctor' <<<"$stmts"; then
   echo "apex-sync-doctor ${FAKE_APP_COUNT:-1}"
+elif grep -q 'apex-release' <<<"$stmts"; then
+  echo "apex-release ${FAKE_APEX_RELEASE:-26.2.0}"
+elif grep -q 'apex validate' <<<"$stmts"; then
+  # what SQLcl 26.2.0 answered on APEX 26.2's own export (R-8)
+  if [[ -n "${FAKE_SQLCL_TOO_OLD:-}" ]]; then echo "APEXlang version 26.2.0+3479 is not supported by this SQLcl version. Upgrade SQLcl to a version compatible with your APEX version."
+  else echo "Validation successful"; fi
 fi
 EOF
 chmod +x "$WORK/bin/sql"
@@ -345,6 +351,12 @@ expect_out "doctor names the resolved JSON parser"                 'JSON parser 
 expect     "doctor fails when the app is invisible to the connection" 1 \
            env FAKE_APP_COUNT=0 "$CHK" doctor
 expect_out "doctor reports the platform"                           'bash .* on ' "$CHK" doctor
+# SQLcl must read the APEXlang version this APEX exports (R-8: SQLcl 26.2.0 refused 26.2's own)
+mkdir -p src/demo/.apex && printf '{ "mmdVersion" : "26.2.0+3479" }\n' > src/demo/.apex/apexlang.json
+expect_out "doctor: SQLcl reads the source's APEXlang version"     "SQLcl reads the source's APEXlang 26.2.0\+3479 \(APEX 26.2.0\)" "$CHK" doctor
+expect     "doctor: a SQLcl that cannot read it fails"             1 env FAKE_SQLCL_TOO_OLD=1 "$CHK" doctor
+expect_out "doctor: and says to upgrade SQLcl"                     'upgrade SQLcl before importing' env FAKE_SQLCL_TOO_OLD=1 "$CHK" doctor
+rm -rf src/demo/.apex
 
 # --- the registered matcher. Every payload below is piped straight into the script,
 # which bypasses Claude Code's own matcher dispatch entirely — so a matcher regression

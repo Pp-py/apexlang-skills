@@ -90,7 +90,7 @@ process save-vigency (
     parameter p_valid_from ( parameter { dataType: date }
         value { type: expression  plsqlExpression: to_date(:P101_VALID_FROM, 'DD/MM/YYYY') }
         advanced { displaySequence: 3 } )
-    execution { point: afterSubmit }
+    execution { point: processing }
 )
 ```
 

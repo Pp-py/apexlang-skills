@@ -57,15 +57,17 @@ injection; anything at runtime.
 
 ## Runtime probes
 
-After `pw.sh [--app X] login` and `pw.sh goto <page>`, as the test user:
-`python3 scripts/sec-probe.py [--app X] [--task <id>] [--anon <url>]… [--tamper] [--role <url>]… [--xss <token>]`.
+After `pw.sh [--app X] [--env E] login` and `pw.sh goto <page>`, as the test user:
+`python3 scripts/sec-probe.py [--app X] [--env E] [--task <id>] [--anon <url>]… [--tamper] [--role <url>]… [--xss <token>]`.
 Each probe runs only when asked; one not asked is `NOT_RUN`. A refusal is read from the page id
-APEX renders (`#pFlowStepId`) against a control — the same URL loaded by the test user — so a
-broken link is `UNKNOWN`, never a PASS. `--anon` fetches over plain HTTP with no cookie;
-`--tamper` takes the first `cs=` link of the held page into a new tab (intact, without `cs`, with
-a value changed); `--role` logs the app's `lowPrivUser` into its own session (password from
-`$APEX_TEST_PASSWORD_LOW[_<ALIAS>]`, never argv) and closes it after. For `--xss`, first save a
-test record through the page's normal form with a text field holding
+APEX renders (`#pFlowStepId`), or its error page — APEX refuses a checksum or an authorization
+under the requested page's id — against a control: the same URL loaded by the test user, in its
+session, must render without an error, so a broken link is `UNKNOWN`, never a PASS. `--anon`
+fetches over plain HTTP with an empty cookie jar; `--tamper` takes the first `cs=` link of the
+held page, a modal page's link included, into a new tab (intact, without `cs`, with a value
+changed); `--role` logs the app's `lowPrivUser` into its own session (password from
+`$APEX_TEST_PASSWORD_LOW[_<ALIAS>[_<ENV>]]` or the `.env`, never argv) and closes it after.
+For `--xss`, first save a test record through the page's normal form with a text field holding
 `<b data-xss-probe="TOKEN">x</b>` (a fresh token), open the page that shows it, run the probe,
 then delete the record. A `security-result` with `scope: runtime`; DEV only.
 
@@ -101,9 +103,9 @@ What this skill defends against, for an APEX app built from this repo's source:
 | A credential leaks through the repo | `SEC-NO-SECRETS` |
 
 The test users come from `apex-sentinel`: `testUser` (a normal user) and, optionally,
-`lowPrivUser` — a user without the app's roles, password in `$APEX_TEST_PASSWORD_LOW` or
-`$APEX_TEST_PASSWORD_LOW_<ALIAS>`, never in `apex-sync.json`. Without it, `SEC-ROLE-REFUSED` is
-`NOT_RUN`. Probes run against DEV only, and leave no test record behind.
+`lowPrivUser` — a user without the app's roles, password in `$APEX_TEST_PASSWORD_LOW`,
+`$APEX_TEST_PASSWORD_LOW_<ALIAS>[_<ENV>]` or the `.env`, never in `apex-sync.json`. Without it,
+`SEC-ROLE-REFUSED` is `NOT_RUN`. Probes run against DEV only, and leave no test record behind.
 
 ## A Security PASS is not a pentest
 

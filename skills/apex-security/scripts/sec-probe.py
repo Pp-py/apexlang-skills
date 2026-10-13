@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """sec-probe — apex-security's runtime probes, through apex-sentinel's pw.sh (never a copy).
 
-Usage: python3 sec-probe.py [--app <alias>] [--task <id>] [--anon <url>]... [--tamper] [--role <url>]... [--xss <token>]
+Usage: python3 sec-probe.py [--app <alias>] [--env <name>] [--task <id>] [--anon <url>]... [--tamper] [--role <url>]... [--xss <token>]
 
-Run it after `pw.sh [--app X] login` and `pw.sh goto <page>`, as the test user. Each probe is
+Run it after `pw.sh [--app X] [--env E] login` and `pw.sh goto <page>`, as the test user. Each probe is
 asked for; one not asked is NOT_RUN. What APEX rendered is read from the page id
 (#pFlowStepId) and its error page — APEX refuses on an error page that keeps the requested id —
 against a CONTROL: the same URL loaded by the test user must render that page without an error,
@@ -22,7 +22,7 @@ or the probe is UNKNOWN — never a PASS on a broken link.
                        agent stores the payload through the UI first and removes it after.
 
 Output: a security-result (scope runtime) on stdout, and with --task in
-<evidenceDir>/<task>/security-<alias>-runtime.json. URLs are kept without session and checksum.
+<evidenceDir>/<task>/security-<alias>[.<env>]-runtime.json. URLs are kept without session and checksum.
 Exit:   0 PASS · 1 FAIL · 2 BLOCKED (nothing asked, pw.sh refused, the low user's login failed,
         a login page held) · 3 UNKNOWN (a control did not render, dead session, no verdict).
 """
@@ -38,8 +38,9 @@ import urllib.request
 from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
+import pw as pwlib  # noqa: E402
 from pw import pw, redact, run_code  # noqa: E402
-from result import ROOT, Stop, context, scrub, target, write  # noqa: E402
+from result import ROOT, Stop, context, runtime_target, scrub, write  # noqa: E402
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sec-probe.js")
 TIMEOUT = int(os.environ.get("SEC_PROBE_TIMEOUT", "300"))
@@ -101,17 +102,21 @@ def dotenv(key):
     return None
 
 
-def low_env(alias, user):
+def low_env(alias, user, envname=None):
     sfx = "_" + re.sub(r"[^A-Z0-9]", "_", (alias or "").upper()) if alias else ""
-    keys = [f"APEX_TEST_PASSWORD_LOW{sfx}", "APEX_TEST_PASSWORD_LOW"] if sfx else ["APEX_TEST_PASSWORD_LOW"]
+    esfx = sfx + "_" + re.sub(r"[^A-Z0-9]", "_", envname.upper()) if sfx and envname else ""
+    keys = [k for k in (f"APEX_TEST_PASSWORD_LOW{esfx}" if esfx else "", f"APEX_TEST_PASSWORD_LOW{sfx}" if sfx else "",
+                        "APEX_TEST_PASSWORD_LOW") if k]
     # as pw.sh does: per app first, then shared; the environment before the .env
     pwd = next((v for k in keys for v in (os.environ.get(k), dotenv(k)) if v), None)
     if not pwd:
         return None
     env = dict(os.environ, PW_SESSION=os.environ.get("PW_SESSION", "apex") + "-low")
-    for k in {"APEX_TEST_USER", f"APEX_TEST_USER{sfx}"}:
+    # every name pw.sh tries before these (per app and environment) is overridden, or it
+    # would log in the test user from the inherited environment or the .env
+    for k in {"APEX_TEST_USER", f"APEX_TEST_USER{sfx}", f"APEX_TEST_USER{esfx}"}:
         env[k] = user
-    for k in {"APEX_TEST_PASSWORD", f"APEX_TEST_PASSWORD{sfx}"}:
+    for k in {"APEX_TEST_PASSWORD", f"APEX_TEST_PASSWORD{sfx}", f"APEX_TEST_PASSWORD{esfx}"}:
         env[k] = pwd                                   # through the environment, never argv
     return env
 
@@ -151,7 +156,7 @@ def probe(a, alias, settings, crit, add):
     if a.role:
         user = (settings or {}).get("lowPrivUser")
         # the alias pw.sh keys the password on: --app, else the config's one app
-        env = low_env(alias or (settings or {}).get("appAlias"), user) if user else None
+        env = low_env(alias or (settings or {}).get("appAlias"), user, a.env) if user else None
         if not env:
             crit["SEC-ROLE-REFUSED"] = ("no lowPrivUser for the app in apex-sync.json" if not user
                                         else "no $APEX_TEST_PASSWORD_LOW for the low-privilege user (environment or .env)")
@@ -182,6 +187,7 @@ def probe(a, alias, settings, crit, add):
 def main(argv):
     ap = argparse.ArgumentParser(description="apex-security runtime probes through pw.sh")
     ap.add_argument("--app")
+    ap.add_argument("--env")
     ap.add_argument("--task")
     ap.add_argument("--anon", action="append", default=[])
     ap.add_argument("--tamper", action="store_true")
@@ -190,7 +196,7 @@ def main(argv):
     a = ap.parse_args(argv)
     result = {"kind": "security-result", "schemaVersion": 1, "status": "UNKNOWN", "reasons": [],
               "context": context(a.task, "apex-security"), "scope": "runtime", "criteria": [], "advisories": []}
-    task_dir = None
+    task_dir, key = None, None
     asked = {"SEC-ANON-REDIRECT": a.anon, "SEC-CHECKSUM-TAMPER": a.tamper, "SEC-ROLE-REFUSED": a.role, "SEC-XSS-ESCAPED": a.xss}
     crit = {k: None if v else "not asked for (no --" + {"SEC-ANON-REDIRECT": "anon", "SEC-CHECKSUM-TAMPER": "tamper",
             "SEC-ROLE-REFUSED": "role", "SEC-XSS-ESCAPED": "xss"}[k] + ")" for k, v in asked.items()}
@@ -198,9 +204,10 @@ def main(argv):
     try:
         if a.xss is not None and not re.fullmatch(r"[A-Za-z0-9_-]{4,40}", a.xss):
             raise Stop("BLOCKED", "BAD_TOKEN", "--xss takes a token of 4-40 letters, digits, '_' or '-'")
-        alias, task_dir, settings = target(a.app, a.task)
+        alias, task_dir, settings, key = runtime_target(a.app, a.task, a.env)
+        pwlib.ENV = a.env
         if alias:
-            result["app"] = {"appAlias": alias}
+            result["app"] = {"appAlias": alias, **({"environment": a.env} if a.env else {})}
         if not any(asked.values()):
             raise Stop("BLOCKED", "NOTHING_TO_PROBE", "ask for at least one probe: --anon, --tamper, --role, --xss")
         m = probe(a, alias, settings, crit, lambda cid, held, detail: outcomes[cid].append((held, detail)))
@@ -225,7 +232,7 @@ def main(argv):
             result["status"], result["reasons"] = "UNKNOWN", [{"code": "NOTHING_EXERCISED", "message": "no probe found anything to exercise"}]
     except Stop as s:
         result["status"], result["reasons"] = s.status, [{"code": s.code, "message": s.message}]
-    return write(result, task_dir, f"security-{result.get('app', {}).get('appAlias', 'app')}-runtime.json")
+    return write(result, task_dir, f"security-{key or 'app'}-runtime.json")
 
 
 if __name__ == "__main__":

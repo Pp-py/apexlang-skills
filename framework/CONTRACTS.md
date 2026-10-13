@@ -89,9 +89,9 @@ puts it back whenever it is missing.
 | ui-result, static (with `--task`) | `<evidenceDir>/<task>/ui-<alias>-static.json` | `ux-scan.py` (apex-ux) |
 | security-result, static (with `--task`) | `<evidenceDir>/<task>/security-<alias>-static.json` | `sec-scan.py` (apex-security) |
 | security-result, plsql (with `--task`) | `<evidenceDir>/<task>/security-<alias>-plsql.json` | `plsql-scan.py` (apex-security) |
-| security-result, runtime (with `--task`) | `<evidenceDir>/<task>/security-<alias>-runtime.json` | `sec-probe.py` (apex-security) |
+| security-result, runtime (with `--task`) | `<evidenceDir>/<task>/security-<alias>[.<env>]-runtime.json` | `sec-probe.py` (apex-security) |
 | security-result, secrets (with `--task`) | `<evidenceDir>/<task>/security-<alias>-secrets.json` | `secrets-scan.py` (apex-security) |
-| ui-result, runtime (with `--task`) | `<evidenceDir>/<task>/ui-<alias>-runtime-<page>.json`, axe's output in `raw/ui-<alias>/` | `ux-check.py` (apex-ux) |
+| ui-result, runtime (with `--task`) | `<evidenceDir>/<task>/ui-<alias>[.<env>]-runtime-<page>.json`, axe's output in `raw/ui-<alias>[.<env>]/` | `ux-check.py` (apex-ux) |
 | raw evidence (snapshots, eval output, logs) | `<evidenceDir>/<task>/raw/<gate>-<alias>/` | whoever produced the result citing it |
 | verification-manifest | `<evidenceDir>/<task>/manifest.json` | the orchestrator (future `apexlang-delivery`) |
 
@@ -108,10 +108,10 @@ entry; removing any of it, a major one.
   [--env <name>] <subcommand>` (exit 0 · 2 refused or login unverified · 3 recovered on a logged-out page ·
   otherwise the Playwright CLI's own). `skills/apex-ux/scripts/ux-scan.py [--app <alias>]
   [--task <id>] <file-or-dir>…` and `skills/apex-ux/scripts/ux-check.py [--app <alias>]
-  [--task <id>] [--dialog <selector>]… [--raw <file>]`, `skills/apex-security/scripts/sec-scan.py
+  [--env <name>] [--task <id>] [--dialog <selector>]… [--raw <file>]`, `skills/apex-security/scripts/sec-scan.py
   [--app <alias>] [--task <id>] <file-or-dir>…` and `plsql-scan.py` with the same arguments,
-  `sec-probe.py [--app <alias>] [--task <id>] [--anon <url>]… [--tamper] [--role <url>]…
-  [--xss <token>]`, `secrets-scan.py [--app <alias>] [--task <id>] [<path>…]` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
+  `sec-probe.py [--app <alias>] [--env <name>] [--task <id>] [--anon <url>]… [--tamper]
+  [--role <url>]… [--xss <token>]`, `secrets-scan.py [--app <alias>] [--task <id>] [<path>…]` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
   3 UNKNOWN). `skills/apexlang-architecture/scripts/arch-scan.py <file-or-dir>…` (python3; JSON on
   stdout, no result file; exit 0 no red flag · 1 red flags · 2 BLOCKED · 3 UNKNOWN).
   `framework/scripts/evidence.py capture --gate runtime|architecture [--app <alias>] [--env <name>]

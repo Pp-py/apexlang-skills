@@ -39,7 +39,7 @@ page 10 (
         }
         execution {
             sequence: 20
-            point: afterSubmit
+            point: processing
         }
     )
 

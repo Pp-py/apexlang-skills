@@ -37,7 +37,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
-from result import RE_TASK, ROOT, Stop, context, rel, scrub, target, tree  # noqa: E402
+from result import RE_TASK, ROOT, Stop, context, rel, runtime_target, scrub, target, tree  # noqa: E402
 
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 SESSION = [(re.compile(r"([?&])session=[0-9]+&?"), r"\1"), (re.compile(r"(f\?p=[^:\s]*:[^:\s]*:)[0-9]{6,}"), r"\1"),
@@ -74,12 +74,10 @@ def sha256(path):
 def where(a):
     """(alias, task dir, settings, key): key is the alias, or alias.env for an environment.
     A runtime run on an app with environments names the one it verified (R-1)."""
-    alias, task_dir, settings = target(a.app, a.task, a.env)
-    envs = (settings or {}).get("environments")
-    if a.env is None and isinstance(envs, dict) and envs and getattr(a, "gate", None) != "architecture" \
-            and getattr(a, "kind", None) != "architecture":
-        raise Stop("BLOCKED", "ENV_REQUIRED", f"app '{alias}' declares environments ({', '.join(envs)}): name the one verified with --env")
-    return alias, task_dir, settings, alias + (f".{a.env}" if a.env else "")
+    if "architecture" in (getattr(a, "gate", None), getattr(a, "kind", None)):   # one decision for every environment
+        alias, task_dir, settings = target(a.app, a.task, a.env)
+        return alias, task_dir, settings, alias + (f".{a.env}" if a.env else "")
+    return runtime_target(a.app, a.task, a.env)
 
 
 def capture(a, rest):

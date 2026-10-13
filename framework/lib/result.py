@@ -152,6 +152,16 @@ def target(app, task, env=None):
     return app, os.path.join(base, task), settings
 
 
+def runtime_target(app, task, env):
+    """target() for a check that ran against one Builder: (alias, task dir, settings, key) — key
+    is the alias, or alias.env. An app with environments needs the one it ran against (R-1)."""
+    alias, task_dir, settings = target(app, task, env)
+    envs = (settings or {}).get("environments")
+    if env is None and isinstance(envs, dict) and envs:
+        raise Stop("BLOCKED", "ENV_REQUIRED", f"app '{alias or app}' declares environments ({', '.join(envs)}): name the one verified with --env")
+    return alias, task_dir, settings, (alias + f".{env}" if alias and env else alias)
+
+
 def app_settings(cfg, app):
     """The settings apex-sync.json gives one app: its own entry over the top-level defaults
     (the guard's reading, setup.md §1). A named app the file does not declare is a Stop."""

@@ -104,5 +104,7 @@ async (page, AXE, OPTS) => {
     await unmark();
   }
 
-  return JSON.stringify({ verdict: 'OK', url: page.url(), runs, dialogs, errors });
+  // the APEX version that rendered the page: oracle-owned.json entries are per version
+  const apexVersion = await page.evaluate(() => (window.apex && apex.env && apex.env.APEX_BASE_VERSION) || null).catch(() => null);
+  return JSON.stringify({ verdict: 'OK', url: page.url(), apex: apexVersion, runs, dialogs, errors });
 }

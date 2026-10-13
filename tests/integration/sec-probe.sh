@@ -31,7 +31,7 @@ for a in "$@"; do
 done
 case " $* " in
   *" run-code "*)
-    if grep -q "LOGIN-OK" "$snip"; then printf '"LOGIN-OK|QA_LOW|https://apex.example/ords/r/ws/app/home?session=99"\n'
+    if grep -q "LOGIN-OK" "$snip"; then grep -oE 'L0wD3v|TesterDev' "$snip" >> "$PW_PASS_LOG" || true; printf '"LOGIN-OK|QA_LOW|https://apex.example/ords/r/ws/app/home?session=99"\n'
     elif [[ " $* " == *" -s apex-low "* ]]; then cat "$PW_FAKE_LOW"
     else cat "$PW_FAKE_OUT"; fi ;;
 esac
@@ -40,7 +40,7 @@ STUB
 chmod +x "$WORK/bin/playwright-cli"
 printf '{"browsers":[{"name":"apex","workspace":"/x","status":"open"},{"name":"apex-low","workspace":"/x","status":"open"}]}\n' > "$WORK/state.json"
 export PATH="$WORK/bin:$PATH" PW_STATE="$WORK/state.json" PW_WORKSPACE="$WORK/ws" PW_ARGV_LOG="$WORK/argv.log" \
-       TMPDIR="$WORK/tmp" TMP="$WORK/tmp" TEMP="$WORK/tmp" PW_FAKE_OUT="$WORK/main.json" PW_FAKE_LOW="$WORK/low.json"
+       TMPDIR="$WORK/tmp" TMP="$WORK/tmp" TEMP="$WORK/tmp" PW_FAKE_OUT="$WORK/main.json" PW_FAKE_LOW="$WORK/low.json" PW_PASS_LOG="$WORK/pass.log"
 
 # The cookie-less side: a page that sends you to login, one that serves itself, one neither.
 cat > "$WORK/srv.py" <<'SRV'
@@ -153,6 +153,24 @@ main "" ',"xss":{"elements":0,"text":true}'
 rc=0; "$PY" "$PROBE" --task T-1 --xss T0KEN1 > "$WORK/out.json" 2>/dev/null || rc=$?
 if [[ $rc -eq 0 ]] && cmp -s "$WORK/out.json" .apex-evidence/T-1/security-demo-runtime.json; then
   ok "--task writes .apex-evidence/T-1/security-demo-runtime.json"; else bad "--task: exit $rc, or no file"; fi
+
+# An app with environments (R-1): the probes name the one they ran against.
+config '{ "appId": 100, "appAlias": "demo", "testUser": "QA", "lowPrivUser": "QA_LOW", "environments": { "dev": { "sqlclConnection": "x", "runtimeUrl": "https://apex.example/ords/r/ws/app/" } } }'
+main "" ',"xss":{"elements":0,"text":true}'
+check "env: no --env → BLOCKED" 2 "" --xss T0KEN1
+rc=0; "$PY" "$PROBE" --env dev --task T-2 --xss T0KEN1 > "$WORK/out.json" 2>/dev/null || rc=$?
+if [[ $rc -eq 0 ]] && cmp -s "$WORK/out.json" .apex-evidence/T-2/security-demo.dev-runtime.json \
+   && grep -q '"environment": "dev"' "$WORK/out.json"; then ok "env: --env dev writes security-demo.dev-runtime.json"
+else bad "env: exit $rc, or not the environment's result"; fi
+export APEX_TEST_PASSWORD_LOW_DEMO_DEV='L0wD3v' APEX_TEST_PASSWORD_DEMO_DEV='TesterDev'   # secrets-scan: allow fake passwords this test proves never leak
+: > "$WORK/argv.log"
+low "$(O "$R" '"9999"')"
+main "$(O "$R" '"20"')"
+check "env: the environment's low password → PASS" 0 "c['SEC-ROLE-REFUSED'] == 'PASS'" --env dev --role "$R"
+if grep -qx 'L0wD3v' "$WORK/pass.log" 2>/dev/null && ! grep -q 'TesterDev' "$WORK/pass.log"; then
+  ok "env: the low login used the environment's low password, never the test user's"
+else bad "env: the low login used the wrong password"; fi
+unset APEX_TEST_PASSWORD_LOW_DEMO_DEV APEX_TEST_PASSWORD_DEMO_DEV
 
 echo "sec-probe: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

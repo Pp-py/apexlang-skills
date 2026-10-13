@@ -79,4 +79,12 @@ page 71 (
             slot: next
         }
     )
+
+    region donut (
+        name: Donut
+        type: chart
+        legend {
+            fontColor: #ff0000
+        }
+    )
 )

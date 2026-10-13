@@ -203,6 +203,6 @@ validation, which would be the pre-check this section forbids.
 | Entity package `pkg_<entity>` | one entity's business rules; the only DML on its table and its satellites; friendly `-20xxx` errors |
 | Flow package `pkg_<flow>_flow` | the order of a multi-entity operation and the invariant spanning it — no DML of its own |
 | Integration package `pkg_<system>_api` | one external system's protocol — no business rule, no entity DML |
-| `.apx` process (`afterSubmit`) | normalize input, call the package, surface errors |
+| `.apx` process (`processing`, after validations — `afterSubmit` runs before them) | normalize input, call the package, surface errors |
 | `.apx` validation / column hints | field-shape only (required, maxLength) — plus, optionally, a duplicate pre-check that never replaces the package's (§2) |
 | `v_*` views / inline SQL | all reads |

@@ -17,7 +17,7 @@ description: Use when about to run `apex import` or `apex export` on an APEXlang
 
 ## Overview
 
-`apex import` replaces the **entire app** in the Builder with the working tree. `apex export` replaces the **working tree** with the Builder. Both are total, silent overwrites: whichever side held unsynchronized changes loses them, irreversibly. Git and the Builder are two replicas of the same app with no built-in record of their last common state — this skill maintains that record (the **syncpoint**) and gates both directions.
+`apex import` replaces the **entire app** in the Builder with the working tree. `apex export` writes the Builder over the **working tree**. Both are total, silent overwrites: whichever side held unsynchronized changes loses them, irreversibly. Git and the Builder are two replicas of the same app with no built-in record of their last common state — this skill maintains that record (the **syncpoint**) and gates both directions.
 
 **Principle: cleanliness is verified, never assumed. No `apex import` or `apex export` runs until a sync-check against the opposite replica has PASSED in this session.**
 
@@ -44,6 +44,8 @@ All operations go through `scripts/apex-sync-check.sh` in this skill's directory
 
 **Pre-export** — `apex-sync-check.sh check-export`:
 Fails if the APEXlang source dir has uncommitted or untracked changes (other apps' dirs excluded) — the export would clobber them. Commit or stash first, then re-run.
+
+**Export into an empty dir.** On its PASS the app's source dir is committed, so remove it and export into `apexlangDir`: SQLcl 26.2 writes `<file>_1.apx` beside every file already there, and with `-overwrite-files` keeps the files the Builder no longer has. After an import, one export the same way adopts the Builder's canonical form (it reorders and drops defaults); until then LOCAL and BASE differ in form only.
 
 **After every successful import or export** — `apex-sync-check.sh record-sync`:
 Updates the syncpoint (tree + timestamps). Skipping this poisons every future comparison — treat import/export as unfinished until `record-sync` ran.

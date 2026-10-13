@@ -7,7 +7,7 @@
 ## Shape
 
 1. A **master** page: an `interactiveReport` over a view/SQL, with a link column opening the modal and passing the PK.
-2. A **modal** page (`pageMode: modalDialog`): form items + page-level validations + a single `afterSubmit` process that calls the package.
+2. A **modal** page (`pageMode: modalDialog`): form items + page-level validations + a single `processing` process that calls the package.
 3. The package exposes intent-named procedures (`create_row`, `update_row`, `approve`, `new_vigency`) — **not** raw DML.
 
 ## Master → modal link
@@ -79,7 +79,7 @@ page 81 (
         -- OUT: the new PK lands in the hidden item for the caller to use
         parameter p_sector_id ( parameter { direction: out  dataType: number  ignoreOutput: false }
             value { item: P81_SECTOR_ID }  advanced { displaySequence: 3 } )
-        execution { sequence: 10  point: afterSubmit }
+        execution { sequence: 10  point: processing }
         serverSideCondition { type: itemIsNull  item: P81_SECTOR_ID }
     )
 
@@ -93,7 +93,7 @@ page 81 (
         parameter p_active_flag ( value { type: staticValue  staticValue: Y }  advanced { displaySequence: 4 } )
         parameter p_row_version ( parameter { direction: inOut  dataType: number  ignoreOutput: false }
             value { item: P81_ROW_VERSION }  advanced { displaySequence: 5 } )
-        execution { sequence: 20  point: afterSubmit }
+        execution { sequence: 20  point: processing }
         serverSideCondition { type: itemIsNotNull  item: P81_SECTOR_ID }
     )
 

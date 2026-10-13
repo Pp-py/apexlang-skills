@@ -10,9 +10,45 @@ R-2 closes the last three known conflicts (KC-4, KC-5, KC-7): the examples compi
 four of Architecture's red flags into a script. R-4 writes the two results an agent judged by
 hand until now. R-7 closes GAP-7 (worktrees) and GAP-8 (stale results). R-6 binds
 the sync marker to the source it checked (GAP-9) and halves its TTL. R-1 models environments per
-app (GAP-6).
+app (GAP-6). R-8 runs all of it against a live APEX 26.2 and fixes what that found.
 
 ### Behavior changes — read before upgrading
+
+**R-8: what a live APEX 26.2 found** (recorded in `CAPABILITIES.md`, 2026-10-13)
+- **apexlang-architecture — page processes run at `processing`, not `afterSubmit` (KC-8).** In
+  APEXlang `afterSubmit` is the Builder's *After Submit* point, before computations and
+  validations: the examples' and recipes' package calls ran before the page's validations. The
+  editable-IG recipe claimed its per-row binds exist only at `afterSubmit`; measured, they work at
+  `processing`, PK and version write-back included. **If you copied a recipe, move its processes.**
+- **apexlang-architecture — examples:** the sectors IG declares `htmlDomId: sectors` (what
+  `apex.region('sectors')` finds); the absences IR declares its primary saved report, which APEX
+  otherwise creates on first render — the guard then saw a Builder change nobody made (UP-7).
+- **apex-sync-guard:** the hook blocked an import naming an app with environments by its id
+  (`-id`) as "not declared exactly once" — an R-1 bug, fixed. `doctor` asks SQLcl to validate
+  the source and fails when it cannot read its APEXlang version (SQLcl 26.2.0 cannot read what
+  APEX 26.2 exports: UP-2). `SKILL.md`: export into an empty dir — SQLcl writes `_1` copies
+  beside existing files, and `-overwrite-files` keeps files the Builder dropped (UP-5).
+- **apex-sentinel:** `pw.sh login` asks the server before trusting the page it holds: an app
+  import ends every session, and it handed back a dead one (UP-8).
+- **apex-security:** `sec-scan.py` reads `pageAccessProtection` and Session State Protection by the
+  app's `mmdVersion`: a page that leaves the first out is checksummed from 26.2 and unrestricted
+  in 26.1 (unknown version → 26.1); an app with no `sessionStateProtection` block has it enabled.
+  Only `enabled: false` fails `SEC-APP-SSP` now — a 26.2 export read as 7 FAILs before.
+  `sec-probe.py` gives its control the held session, reads APEX's error page under the requested
+  page id as a refusal (UP-6) and a control on one as UNKNOWN, decodes modal links for `--tamper`,
+  keeps a cookie jar for `--anon`, and reads the low-privilege password from the `.env` too.
+- **apex-ux:** `UX-ORACLE-OWNED`, an advisory: a finding in markup APEX itself renders, listed per
+  APEX version in `oracle-owned.json` (OO-1: the IG grid view's `aria-required-children` on 26.2;
+  OO-2: focus return after Tab cycles in APEX's modal on 26.2). Anything else still FAILs.
+  `ux-scan.py` no longer reads a report's print formatting (`page`, `pageHeader`, … groups) as an
+  inline colour.
+- **`--env` everywhere R-1 missed it:** `ux-check.py` and `sec-probe.py` take `--env` (required for
+  an app with environments); results are keyed `<alias>.<env>`; the low user's password
+  `APEX_TEST_PASSWORD_LOW_<ALIAS>_<ENV>` comes first.
+- **framework:** `evidence.py` also strips the session id from `p_context=`, `p_instance=`,
+  `session%3D` and APEX's `pageSubmissionId`. `result.runtime_target()` is the one rule for
+  "an app with environments names one". Docs: the marker's TTL is 5 minutes (GATES, CONTRACTS
+  and `setup.md` still said 10).
 
 **apex-ux**
 - `ux-scan.py` and `ux-check.py` print a **`ui-result`** (`framework/schemas/ui-result.schema.json`,
@@ -179,6 +215,11 @@ app (GAP-6).
   It now does, and reported the 8 gaps this fixes.
 
 ### Tests
+- R-8: e2e (+5: an app with environments named by id, `doctor`'s SQLcl check), `sec-probe.sh`
+  (+10: APEX's error page, a control on one, the cookie loop, the `.env` and per-environment low
+  password, `--env`), `ux-check.sh` (+8: `oracle-owned.json`, `--env`), `sec-scan.sh` (+3: 26.1 and
+  26.2 defaults), `ux-scan.sh` (print formatting near-miss, a chart's colour), `evidence.sh` (+2:
+  the session forms of a submit). Each new case fails without its fix.
 - R-1: e2e (+21), config-parity (+16: one valid fixture with environments, three both readers
   refuse), the `pw.sh` smoke (+8), `evidence.sh` (+7).
 - e2e (+15): GAP-9 — edit after the PASS, undo, a new file, an edit outside the source, export,

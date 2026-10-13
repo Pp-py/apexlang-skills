@@ -48,8 +48,9 @@ ok()  { echo "ok   $1"; pass=$((pass + 1)); }
 bad() { echo "FAIL $1"; fail=$((fail + 1)); [[ -s "$WORK/out.json" ]] && sed 's/^/       | /' "$WORK/out.json" | head -20; return 0; }
 
 check() {  # $1 = label, $2 = fixture, $3 = expected exit, $4 = python assertion on d, rest = args
-  local label=$1 fx=$2 want=$3 assert=$4 rc=0; shift 4
-  PW_FAKE_OUT="$FIX/$fx.json" "$PY" "$CHECK" "$@" > "$WORK/out.json" 2>/dev/null || rc=$?
+  local label=$1 fx=$2 want=$3 assert=$4 rc=0 out; shift 4
+  out="$FIX/$fx.json"; [[ "$fx" == /* ]] && out=$fx      # a fixture name, or a file the test wrote
+  PW_FAKE_OUT="$out" "$PY" "$CHECK" "$@" > "$WORK/out.json" 2>/dev/null || rc=$?
   if [[ $rc -ne $want ]]; then bad "$label: exit $rc, expected $want"; return 0; fi
   if [[ -n "$assert" ]] && ! "$PY" -c "import json,sys
 d = json.load(open(sys.argv[1]))
@@ -78,6 +79,20 @@ check "opener not found → BLOCKED, focus NOT_RUN" not-found 2 \
 check "login page → BLOCKED" not-logged-in 2 "d['status'] == 'BLOCKED'"
 check "axe ran in no frame → UNKNOWN" no-runs 3 "d['status'] == 'UNKNOWN'"
 check "no verdict in the output → UNKNOWN" garbage 3 "d['status'] == 'UNKNOWN'"
+
+# Markup APEX itself renders (oracle-owned.json): an advisory on the version an entry names,
+# a FAIL on any other version, with any other target, or with another dialog step failing.
+check "APEX 26.2's IG grid markup and dialog focus return → UX-ORACLE-OWNED, PASS" oracle-owned 0 \
+  "d['status'] == 'PASS' and sorted(a['detail'].split()[1] for a in d['advisories'] if a['id'] == 'UX-ORACLE-OWNED') == ['OO-1', 'OO-2']" --dialog '#open'
+sed 's/"apex": "26.2"/"apex": "26.3"/' "$FIX/oracle-owned.json" > "$WORK/oo-263.json"
+sed 's/#orders_ig_grid_vc/#orders_grid/' "$FIX/oracle-owned.json" > "$WORK/oo-target.json"
+sed 's/"tabStays": true/"tabStays": false/' "$FIX/oracle-owned.json" > "$WORK/oo-steps.json"
+sed 's/, "apex": "26.2"//' "$FIX/oracle-owned.json" > "$WORK/oo-none.json"
+for v in 263:"another APEX version" target:"another target" steps:"another dialog step too" none:"no APEX version reported"; do
+  check "oracle-owned, ${v#*:} → FAIL" "$WORK/oo-${v%%:*}.json" 1 "d['status'] == 'FAIL'" --dialog '#open'
+done
+printf '{ not json' > "$WORK/owned-bad.json"
+UX_ORACLE_OWNED="$WORK/owned-bad.json" check "an unreadable oracle-owned.json → BLOCKED, never 'no entry'" oracle-owned 2 "d['status'] == 'BLOCKED'" --dialog '#open'
 
 # pw.sh found the browser dead and reopened it: whatever ran measured a logged-out page.
 echo "$SHUT" > "$PW_STATE"
@@ -116,6 +131,18 @@ printf '{ "apps": [ { "appId": 1, "appAlias": "a" }, { "appId": 2, "appAlias": "
 rc=0; (cd "$P" && PW_FAKE_OUT="$FIX/clean.json" "$PY" "$CHECK" --task T-1 >/dev/null 2>&1) || rc=$?
 if [[ $rc -eq 2 ]]; then ok "--task with several apps and no --app → BLOCKED (exit 2)"
 else bad "--task with several apps and no --app: exit $rc, expected 2"; fi
+
+# An app with environments (R-1): the page belongs to one of them, named with --env.
+printf '{ "appId": 100, "appAlias": "demo", "evidenceDir": "ev", "environments": { "dev": { "sqlclConnection": "x" } } }\n' > "$P/apex-sync.json"
+rc=0; (cd "$P" && PW_FAKE_OUT="$FIX/clean.json" "$PY" "$CHECK" --task T-2 >/dev/null 2>&1) || rc=$?
+if [[ $rc -eq 2 ]]; then ok "environments and no --env → BLOCKED (exit 2)"
+else bad "environments and no --env: exit $rc, expected 2"; fi
+rc=0; (cd "$P" && PW_FAKE_OUT="$FIX/item-name.json" "$PY" "$CHECK" --env dev --task T-2 > "$WORK/out.json" 2>/dev/null) || rc=$?
+if [[ $rc -eq 1 ]] && cmp -s "$WORK/out.json" "$P/ev/T-2/ui-demo.dev-runtime-orders.json" && "$PY" -c "import json,sys
+d = json.load(open(sys.argv[1])); assert d['app'] == {'appAlias': 'demo', 'environment': 'dev'}, d['app']
+assert d['evidence'][0]['path'] == 'ev/T-2/raw/ui-demo.dev/axe-orders.json', d['evidence']" "$WORK/out.json"; then
+  ok "--env dev: ui-demo.dev-runtime-orders.json, the environment in the result"
+else bad "--env dev: exit $rc, or the result is not the environment's"; fi
 
 # The snippet: the pinned engine and the dialogs went in; nothing is left behind.
 PW_FAKE_OUT="$FIX/clean.json" "$PY" "$CHECK" --dialog '#open' >/dev/null 2>&1 || true

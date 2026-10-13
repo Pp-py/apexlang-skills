@@ -9,7 +9,7 @@ Checks (criteria/common.md):
   UX-CONTROL-NAME         buttons have a label; link/button HTML is never icon-only
   UX-DESTRUCTIVE-CONFIRM  a delete/reject/remove/cancel-a-record button or action that
                           submits carries a `confirmation { message }`
-  UX-NO-INLINE-STYLE      no style= attribute, no literal colour
+  UX-NO-INLINE-STYLE      no style= attribute, no literal colour (a report's print/PDF formatting excepted)
   UX-NO-COMPOSED-CLASS    no class built from pieces (substitution glued into a class,
                           or 'prefix-' || ... in SQL)
 
@@ -45,6 +45,11 @@ RE_SUBST = re.compile(r"&[\w$]+\.|#[\w$]+#")
 RE_SQL_CONCAT = re.compile(r"'[a-z][\w-]*-'\s*\|\||\|\|\s*'-[a-z][\w-]*'")
 COMMENT = re.compile(r"^\s*(--|//|/\*|\*)")
 CSS_JS_FENCE = re.compile(r"^```\s*(css|javascript|js|html)\b", re.I)
+# A report's print/download (PDF) formatting: a colour there styles the document, not the page
+# (Oracle's inventory, region: page, pageHeader, columnHeadings, columns, pageFooter).
+PRINT_GROUPS = {"page", "pageHeader", "columnHeadings", "columns", "pageFooter"}
+RE_GROUP_OPEN = re.compile(r"^\s*(\w+)\s*:?\s*\{\s*$")
+RE_HEX_PROP = re.compile(r"^\s*\w+\s*:\s*#[0-9a-fA-F]{3,8}\s*$")
 
 
 def composed(token):
@@ -53,7 +58,7 @@ def composed(token):
 
 def scan_text(lines, add):
     """Line checks over the raw source: inline style, colours, composed classes, icon-only links."""
-    fence_lang = None
+    fence_lang, groups = None, []
     for no, raw in enumerate(lines, 1):
         s = raw.strip()
         if RE_FENCE.match(s):
@@ -62,9 +67,17 @@ def scan_text(lines, add):
             continue
         if COMMENT.match(raw):
             continue
+        if fence_lang is None:                  # property groups: `name {` … `}`
+            g = RE_GROUP_OPEN.match(raw)
+            if g:
+                groups.append(g.group(1))
+            elif s == "}" and groups:
+                groups.pop()
         if RE_STYLE.search(raw):
             add("UX-NO-INLINE-STYLE", no, "style= attribute")
-        if RE_HEX.search(raw) or RE_FUNC_COLOUR.search(raw):
+        if fence_lang is None and groups and groups[-1] in PRINT_GROUPS and RE_HEX_PROP.match(raw):
+            pass                                # the print document's formatting
+        elif RE_HEX.search(raw) or RE_FUNC_COLOUR.search(raw):
             add("UX-NO-INLINE-STYLE", no, "literal colour")
         elif (fence_lang or "<" in raw) and RE_CSS_NAMED.search(raw):
             add("UX-NO-INLINE-STYLE", no, "named colour in CSS")
