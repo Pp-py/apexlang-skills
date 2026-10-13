@@ -42,6 +42,21 @@ Committed at the **project repo root**. Everything the guard needs to know about
 - `check-export` of one app ignores dirty files in the other apps' dirs: exporting that app does not write there.
 - The hook requires the check of the app a command acts on, read from the command: `-input`/`-i`, `--app-path` or the deploy script's argument (a source dir, or a file in one), `-id`/`-applicationid` (an app id). What it cannot trace to one app — a bare `apex import` (the current directory), the shared parent dir, a `.zip`, a path computed at run time — is blocked, with the dirs and ids that would make it traceable. An export with no app id (`export-all-applications`, a `-workspaceid` export) needs every app's check.
 
+**Environments of one app.** When one app's source deploys to more than one Builder — DEV and PROD, or QA, UAT and PROD, as many as your way of working has — declare them in the app's `environments` (inside each app of `apps[]`, or at the top level in the one-app shape). Each takes `sqlclConnection` (required: its own Builder), and optionally `appId` (when the id differs there), `runtimeUrl`, `testUser` and `protected`; what it does not set comes from the app:
+
+```json
+{ "appId": 100, "appAlias": "rrhh", "apexlangDir": "apex/apexlang",
+  "environments": {
+    "dev":  { "sqlclConnection": "dev_rrhh",  "runtimeUrl": "https://<host-dev>/ords/r/<workspace>/rrhh/" },
+    "prod": { "sqlclConnection": "prod_rrhh", "protected": true } } }
+```
+
+- Every gate command names the environment — `check-import --env dev` (with `--app` when there are several apps) — and is BLOCKED without it: nothing is checked against, or deploys to, an environment nobody named. `pw.sh` and `evidence.py` take `--env` the same way.
+- Each environment keeps its own syncpoint, markers and results, keyed `<alias>.<env>`: ref `refs/apex-sync/rrhh.dev`, results `sync-rrhh.dev-check-import.json`, `"environment": "dev"` in each result. The source dir is the app's, shared by all its environments.
+- The hook reads the environment from the saved connection the command names (`sql -name dev_rrhh …`) and requires that environment's marker. A command that names none of them — a bare `apex import`, or a connect string such as Oracle's deploy script takes — is blocked: the guard cannot tell which Builder it reaches.
+- `"protected": true` — the hook blocks every import or export an agent runs into that environment, whatever the checks say; the user runs it, outside the agent. Checks and `record-sync` still work there (they only read the Builder). **Risk** without it: an agent holding a fresh check could import to production. **Rollback**: remove the key.
+- Moving an existing app to environments starts each environment from its first `check-import` (bootstrap). To keep today's syncpoint for one of them, copy the ref yourself — a write the guard never makes for you: `git update-ref refs/apex-sync/rrhh.dev refs/apex-sync/rrhh`.
+
 Dependencies: `git`, SQLcl on PATH, and `jq` *or* `python3` (JSON parsing falls back automatically). The scripts probe the parser by **running** it, so a `python3` that exists without executing — the Microsoft Store stub — is rejected with that named as the likely cause instead of failing mid-run.
 
 **Platform.** These are bash scripts: Linux and macOS natively; on **Windows they need Git Bash (Git for Windows) or WSL** — PowerShell and cmd cannot execute them, and Claude Code's Bash tool on Windows already uses Git Bash, so agent-driven use works out of the box. Paths handed to SQLcl (a Java program) are converted with `cygpath` automatically, and quoted when they hold spaces. If an export still fails with a path containing spaces, point `TMPDIR` at one that has none — how SQLcl tokenizes `-dir` there has not been confirmed. `apex-sync-check.sh doctor` validates all of this on a new machine in one command.

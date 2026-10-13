@@ -125,5 +125,20 @@ json.dump(d, open(sys.argv[2], 'w'))" "$A" "$WORK/old.json"   # paths as argumen
 run "fresh: a result without a tree is stale" 1 fresh --task T-1 "$WORK/old.json"
 run "fresh: a file that is not a result → 2" 2 fresh --task T-1 t.sql
 
+# --- environments (R-1): a runtime result names the environment it verified
+cp apex-sync.json "$WORK/cfg.saved"
+printf '%s\n' '{ "appId": 100, "appAlias": "hr", "runtimeUrl": "https://dev.example/ords/r/ws/hr/",
+  "environments": { "dev": { "sqlclConnection": "dev_hr" }, "uat": { "sqlclConnection": "uat_hr", "runtimeUrl": "https://uat.example/ords/r/ws/hr/" } } }' > apex-sync.json
+run "env: capture without --env is refused" 2 capture --gate runtime --task T-2 render -- printf 'rows=2\n'
+run "env: capture --env uat" 0 capture --gate runtime --env uat --task T-2 render -- printf 'rows=2\n'
+if q "assert d['evidence']['path'] == '.apex-evidence/T-2/raw/runtime-hr.uat/render'"; then ok "env: raw evidence under runtime-hr.uat/"; else bad "env: raw path"; fi
+draft "{$BASE,\"criteria\":[{\"id\":\"IG-RENDER\",\"required\":true,\"status\":\"PASS\",\"observed\":\"rows=2\",\"evidence\":[{\"kind\":\"file\",\"path\":\".apex-evidence/T-2/raw/runtime-hr.uat/render\"}]}]}"
+run "env: a runtime result without --env is refused" 2 write --kind runtime --task T-2 "$WORK/d.json"
+run "env: write --env uat → PASS" 0 write --kind runtime --env uat --task T-2 "$WORK/d.json"
+if q "assert d['app']['environment'] == 'uat' and d['context']['target']['runtimeUrl'].startswith('https://uat.example')" .apex-evidence/T-2/runtime-hr.uat.json; then
+  ok "env: runtime-hr.uat.json, with the environment and its runtimeUrl"; else bad "env: the written result"; fi
+run "env: an environment nobody declared is refused" 2 write --kind runtime --env prod --task T-2 "$WORK/d.json"
+cp "$WORK/cfg.saved" apex-sync.json
+
 echo "evidence: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

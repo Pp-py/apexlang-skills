@@ -171,7 +171,7 @@
       "additionalProperties": false,
       "required": ["ref", "commit", "recorded"],
       "properties": {
-        "ref": { "type": "string", "pattern": "^refs/apex-sync/[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+        "ref": { "type": "string", "pattern": "^refs/apex-sync/[A-Za-z0-9][A-Za-z0-9_-]{0,63}(\\.[A-Za-z0-9][A-Za-z0-9_-]{0,63})?$" },
         "commit": { "oneOf": [{ "$ref": "common.schema.json#/$defs/gitSha" }, { "type": "null" }] },
         "recorded": { "type": "boolean" }
       },

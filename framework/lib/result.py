@@ -72,7 +72,7 @@ def tree():
     env.pop("GIT_ATTR_NOSYSTEM", None)
     try:
         if os.path.isfile(os.path.join(gd, "index")):
-            shutil.copyfile(os.path.join(gd, "index"), idx)
+            shutil.copy2(os.path.join(gd, "index"), idx)   # its mtime kept: git judges racy entries by it
         for args in (["add", "-A"], ["write-tree"]):
             p = subprocess.run(["git", "-C", ROOT] + args, capture_output=True, text=True, env=env, timeout=120)
             if p.returncode != 0:
@@ -103,10 +103,11 @@ def context(task, skill):
             "producer": {"skill": skill, "method": "tool"}}
 
 
-def target(app, task):
+def target(app, task, env=None):
     """(alias or None, task dir or None, settings). The alias: --app, else apex-sync.json's one
-    app. settings: the app's own keys over the top-level defaults, {} when there is no config;
-    None when the config lists several apps and none was named."""
+    app. settings: the app's own keys over the top-level defaults — and, with env, that
+    environment's over both — {} when there is no config; None when the config lists several
+    apps and none was named. settings["environments"] lists the app's environments, if any."""
     if task is not None and not RE_TASK.match(task):
         raise Stop("BLOCKED", "BAD_TASK", f"--task must match {RE_TASK.pattern}")
     if app is not None and not RE_ALIAS.match(app):
@@ -121,6 +122,13 @@ def target(app, task):
         except ValueError as e:             # json's message: line and column, no path
             raise Stop("BLOCKED", "BAD_CONFIG", f"apex-sync.json is not valid JSON: {e}")
     settings = app_settings(cfg, app)
+    if env is not None:
+        if not RE_ALIAS.match(env):
+            raise Stop("BLOCKED", "BAD_ENV", f"--env must match {RE_ALIAS.pattern}")
+        envs = (settings or {}).get("environments")
+        if not isinstance(envs, dict) or not isinstance(envs.get(env), dict):
+            raise Stop("BLOCKED", "ENV_UNKNOWN", f"apex-sync.json declares no environment '{env}' for this app")
+        settings = {**settings, **envs[env]}
     if task is None:
         return app, None, settings
     if app is None:

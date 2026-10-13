@@ -2,12 +2,14 @@
 # apex-sentinel — idempotent Playwright CLI entry point for runtime verification.
 #
 # Usage (from anywhere; every call is self-contained):
-#   pw.sh [--app <alias>] <subcommand> …
+#   pw.sh [--app <alias>] [--env <name>] <subcommand> …
 #                           --app picks the app when apex-sync.json declares several
 #                           (apps[]): its test user, URL, password and its own browser.
 #                           Required then, except for list / close-all / kill-all, which
-#                           cover every app, and install*.
-#   pw.sh apps              the apps apex-sync.json declares: alias, testUser, runtimeUrl
+#                           cover every app, and install*. --env picks the environment of
+#                           an app that declares `environments` — required the same way.
+#   pw.sh apps              the apps apex-sync.json declares (alias, or alias.env, per
+#                           environment): testUser, runtimeUrl
 #   pw.sh open <url>        open the browser session on <url>, or reuse+navigate if already open
 #   pw.sh goto <url>        navigate the held session
 #   pw.sh login [url]       log the test user into the APEX runtime app; prints the
@@ -68,9 +70,11 @@ native_path() {  # $1 = a path → NP
   if command -v cygpath >/dev/null 2>&1; then NP=$(cygpath -m "$1"); else NP=$1; fi
 }
 
-OPT_APP=""
+OPT_APP=""; OPT_ENV=""
 while (( $# )); do      # pw.sh's own options come BEFORE the subcommand; after it, all is the CLI's
   case "$1" in
+    --env)   [[ -n "${2:-}" ]] || die "--env needs an environment name"; OPT_ENV=$2; shift 2 ;;
+    --env=*) OPT_ENV=${1#--env=}; [[ -n "$OPT_ENV" ]] || die "--env needs an environment name"; shift ;;
     --app)   [[ -n "${2:-}" ]] || die "--app needs an app alias"; OPT_APP=$2; shift 2 ;;
     --app=*) OPT_APP=${1#--app=}; [[ -n "$OPT_APP" ]] || die "--app needs an app alias"; shift ;;
     *) break ;;
@@ -107,7 +111,8 @@ upper_v() {
 # installed, on a file that may hold nothing but testUser/runtimeUrl.
 # tests/integration/config-parity.sh holds both readers to the same fixtures.
 RE_APP_ALIAS='^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
-APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl|uiGate|securityGate|publicPages|lowPrivUser'
+APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl|uiGate|securityGate|publicPages|lowPrivUser|environments'
+ENV_KEYS='sqlclConnection|appId|runtimeUrl|testUser|protected'
 JSON_TOOL=()            # probed by RUNNING it: the Microsoft Store python3 stub only looks present
 if command -v jq >/dev/null 2>&1 && jq -e . <<<'{}' >/dev/null 2>&1; then
   JSON_TOOL=(jq)
@@ -188,7 +193,28 @@ pa_keys() {  # $1 = JSON path → PK: the keys of its direct members, in file or
 }
 
 raw_str() { sed -n 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -1 | strip_cr; }   # no parser at all
-PA_ALIAS=(); PA_USER=(); PA_URL=(); PA_ERR=()
+PA_ALIAS=(); PA_USER=(); PA_URL=(); PA_ENV=(); PA_ERR=()
+# One entry per app — or, for an app with `environments`, one per environment, each with
+# its own runtimeUrl and testUser over the app's (the guard's lib/sync-config.sh reads
+# them the same way; config-parity.sh holds the two to it).
+pa_push() {  # $1 = app path, $2 = alias, $3 = its testUser, $4 = its runtimeUrl
+  local ep="$1.environments" e k
+  pa_get "$ep"
+  if [[ -z "$PT" ]]; then PA_ALIAS+=("$2"); PA_USER+=("$3"); PA_URL+=("$4"); PA_ENV+=(""); return 0; fi
+  [[ "$PT" == object ]] || { PA_ERR+=("${2:-the app}: environments must be an object"); return 0; }
+  pa_keys "$ep"
+  (( ${#PK[@]} )) || { PA_ERR+=("${2:-the app}: environments is empty"); return 0; }
+  local names=("${PK[@]}")
+  for e in "${names[@]}"; do
+    [[ "$e" =~ $RE_APP_ALIAS ]] || { PA_ERR+=("${2:-the app}: environment name '$e' must match $RE_APP_ALIAS"); continue; }
+    pa_get "$ep.$e"; [[ "$PT" == object ]] || { PA_ERR+=("${2:-the app}: environments.$e must be an object"); continue; }
+    pa_keys "$ep.$e"
+    for k in ${PK[@]+"${PK[@]}"}; do [[ "$k" =~ ^($ENV_KEYS)$ ]] || PA_ERR+=("${2:-the app}: environments.$e: unknown key '$k'"); done
+    PA_ALIAS+=("$2"); PA_ENV+=("$e")
+    pa_get "$ep.$e.testUser";   if [[ "$PT" == string ]]; then PA_USER+=("$PV"); else PA_USER+=("$3"); fi
+    pa_get "$ep.$e.runtimeUrl"; if [[ "$PT" == string ]]; then PA_URL+=("$PV"); else PA_URL+=("$4"); fi
+  done
+}
 pa_load() {  # fills PA_* from the project's apex-sync.json (no file: no apps, no error)
   local cfg="$PROJECT_ROOT/apex-sync.json" t n i k a l la
   [[ -n "$PROJECT_ROOT" && -f "$cfg" ]] || return 0
@@ -205,14 +231,15 @@ pa_load() {  # fills PA_* from the project's apex-sync.json (no file: no apps, n
   if (( ! ${#JSON_TOOL[@]} )); then
     # No parser: the one-app shape only, by its top-level keys — how this always read it.
     if grep -q '"apps"' "$cfg"; then PA_ERR+=("reading apps[] needs jq or a python3 that runs"); return 0; fi
-    PA_ALIAS=("$(raw_str "$cfg" appAlias)"); PA_USER=("$(raw_str "$cfg" testUser)"); PA_URL=("$(raw_str "$cfg" runtimeUrl)")
+    if grep -q '"environments"' "$cfg"; then PA_ERR+=("reading environments needs jq or a python3 that runs"); return 0; fi
+    PA_ALIAS=("$(raw_str "$cfg" appAlias)"); PA_USER=("$(raw_str "$cfg" testUser)"); PA_URL=("$(raw_str "$cfg" runtimeUrl)"); PA_ENV=("")
   else
     json_flatten "$cfg" || { PA_ERR+=("apex-sync.json is not valid JSON"); return 0; }
     pa_index "$JF"
     pa_get '$'; [[ "$PT" == object ]] || { PA_ERR+=("apex-sync.json must hold a JSON object"); return 0; }
     pa_get '$.apps'; t=$PT
     if [[ -z "$t" ]]; then
-      fstr '$' appAlias; PA_ALIAS=("$FS"); fstr '$' testUser; PA_USER=("$FS"); fstr '$' runtimeUrl; PA_URL=("$FS")
+      fstr '$' appAlias; a=$FS; fstr '$' testUser; l=$FS; fstr '$' runtimeUrl; pa_push '$' "$a" "$l" "$FS"
     elif [[ "$t" != array ]]; then
       PA_ERR+=("apps must be an array of app objects")
     else
@@ -226,8 +253,7 @@ pa_load() {  # fills PA_* from the project's apex-sync.json (no file: no apps, n
           [[ -z "$k" || "$k" =~ ^($APP_KEYS)$ ]] || PA_ERR+=("apps.$i: unknown key '$k'")
         done
         pa_get "\$.apps.$i.appAlias"; [[ "$PT" == string ]] || PA_ERR+=("apps.$i: appAlias is missing")
-        PA_ALIAS+=("$PV")
-        fstr "\$.apps.$i" testUser; PA_USER+=("$FS"); fstr "\$.apps.$i" runtimeUrl; PA_URL+=("$FS")
+        a=$PV; fstr "\$.apps.$i" testUser; l=$FS; fstr "\$.apps.$i" runtimeUrl; pa_push "\$.apps.$i" "$a" "$l" "$FS"
       done
     fi
   fi
@@ -237,6 +263,7 @@ pa_load() {  # fills PA_* from the project's apex-sync.json (no file: no apps, n
     [[ "${PA_URL[$i]}" != *session=* ]] || PA_ERR+=("the runtimeUrl of '${a:-the app}' carries a session token (session=…): the file is committed")
     for (( k = i + 1; k < ${#PA_ALIAS[@]}; k++ )); do
       l=${PA_ALIAS[$k]}; upper_v "$l"
+      [[ "$a" == "$l" && -n "${PA_ENV[$i]}" ]] && continue   # two environments of one app
       [[ "$la" != "$UV" ]] || PA_ERR+=("appAlias '$a' and '$l' collide (case does not count)")
     done
   done
@@ -248,30 +275,50 @@ pa_load
 if [[ "$CMD" == apps ]]; then           # the resolved list — what --app and login will use
   (( ! ${#PA_ERR[@]} )) || die "apex-sync.json is invalid:$(printf '\n  - %s' "${PA_ERR[@]}")"
   for (( i = 0; i < ${#PA_ALIAS[@]}; i++ )); do
-    [[ -n "${PA_ALIAS[$i]}${PA_USER[$i]}${PA_URL[$i]}" ]] && printf '%s\t%s\t%s\n' "${PA_ALIAS[$i]}" "${PA_USER[$i]}" "${PA_URL[$i]}"
+    [[ -n "${PA_ALIAS[$i]}${PA_USER[$i]}${PA_URL[$i]}" ]] && printf '%s\t%s\t%s\n' "${PA_ALIAS[$i]}${PA_ENV[$i]:+.${PA_ENV[$i]}}" "${PA_USER[$i]}" "${PA_URL[$i]}"
   done
   exit 0
 fi
 
 # Which app this call acts on. With several declared, a browser-holding command
 # needs --app: guessing would log into one app with another's credentials.
-APP_ALIAS=""; APP_I=0; ALL_APPS=0
+APP_ALIAS=""; APP_KEY=""; APP_I=0; ALL_APPS=0
 case "$CMD" in
   install|install-browser) ;;
   *)
     (( ! ${#PA_ERR[@]} )) || die "apex-sync.json is invalid:$(printf '\n  - %s' "${PA_ERR[@]}")"
+    _al=(); _seen=" "
+    for a in ${PA_ALIAS[@]+"${PA_ALIAS[@]}"}; do [[ "$_seen" == *" $a "* ]] || { _seen+="$a "; _al+=("$a"); }; done
+    _app=""
     if [[ -n "$OPT_APP" ]]; then
-      APP_I=-1
-      for (( i = 0; i < ${#PA_ALIAS[@]}; i++ )); do [[ "${PA_ALIAS[$i]}" == "$OPT_APP" ]] && APP_I=$i; done
-      (( APP_I >= 0 )) || die "apex-sync.json declares no app '$OPT_APP'${PA_ALIAS[0]:+ — it declares: ${PA_ALIAS[*]}}"
-      APP_ALIAS=$OPT_APP
-    elif (( ${#PA_ALIAS[@]} > 1 )); then
+      [[ "$_seen" == *" $OPT_APP "* ]] || die "apex-sync.json declares no app '$OPT_APP'${_al[0]:+ — it declares: ${_al[*]}}"
+      _app=$OPT_APP
+    elif (( ${#_al[@]} > 1 )); then
       case "$CMD" in
         list|close-all|kill-all) ALL_APPS=1 ;;
-        *) die "apex-sync.json declares ${#PA_ALIAS[@]} apps — name one: $(basename "$0") --app <$(IFS='|'; echo "${PA_ALIAS[*]}")> $CMD …" ;;
+        *) die "apex-sync.json declares ${#_al[@]} apps — name one: $(basename "$0") --app <$(IFS='|'; echo "${_al[*]}")> $CMD …" ;;
       esac
     else
-      APP_ALIAS=${PA_ALIAS[0]:-}
+      _app=${_al[0]:-}
+    fi
+    # An app with environments: each has its own runtime, user and browser — named, never guessed.
+    _envs=""; for (( i = 0; i < ${#PA_ALIAS[@]}; i++ )); do [[ "${PA_ALIAS[$i]}" == "$_app" && -n "${PA_ENV[$i]}" ]] && _envs+="${_envs:+ }${PA_ENV[$i]}"; done
+    if [[ -n "$OPT_ENV" ]]; then
+      [[ -n "$_app" ]] || die "--env names an environment of one app: add --app <$(IFS='|'; echo "${_al[*]}")>"
+      [[ -n "$_envs" ]] || die "app '$_app' declares no environments — drop --env"
+      APP_I=-1
+      for (( i = 0; i < ${#PA_ALIAS[@]}; i++ )); do [[ "${PA_ALIAS[$i]}" == "$_app" && "${PA_ENV[$i]}" == "$OPT_ENV" ]] && APP_I=$i; done
+      (( APP_I >= 0 )) || die "app '$_app' declares no environment '$OPT_ENV' — it declares: $_envs"
+    elif [[ -n "$_envs" ]]; then
+      case "$CMD" in
+        list|close-all|kill-all) ALL_APPS=1 ;;
+        *) die "app '$_app' declares environments ($_envs) — name one: $(basename "$0")${OPT_APP:+ --app $_app} --env <${_envs// /|}> $CMD …" ;;
+      esac
+    else
+      for (( i = 0; i < ${#PA_ALIAS[@]}; i++ )); do [[ "${PA_ALIAS[$i]}" == "$_app" ]] && APP_I=$i; done
+    fi
+    if (( ! ALL_APPS )) && [[ -n "$_app" ]]; then
+      APP_ALIAS=$_app; APP_KEY=$_app${PA_ENV[$APP_I]:+.${PA_ENV[$APP_I]}}
     fi ;;
 esac
 
@@ -308,7 +355,7 @@ else
   [[ -O "$ws_base" ]] || die "$ws_base is not owned by you — refusing to use it (another user could plant files there)"
   chmod 700 "$ws_base" 2>/dev/null || true
   if [[ -n "$PROJECT_ROOT" ]]; then
-    ws_for "$APP_ALIAS"; PW_WORKSPACE=$WSF
+    ws_for "$APP_KEY"; PW_WORKSPACE=$WSF
   else
     PW_WORKSPACE="$ws_base/default"
     warn "not inside a project repo — using the shared workspace $PW_WORKSPACE. Run pw.sh from inside the APEX project."
@@ -433,16 +480,18 @@ env_str() {  # $1 = .env file, $2 = key -> the value, with one layer of quotes r
 }
 
 resolve_credentials() {  # sets SENTINEL_USER, SENTINEL_PASSWORD, SENTINEL_APP_URL
-  local ext=${APEX_TEST_FILE:-$HOME/.apex-sentinel.json} sfx="" v
+  local ext=${APEX_TEST_FILE:-$HOME/.apex-sentinel.json} sfx="" esfx="" v
   if [[ -n "$APP_ALIAS" ]]; then upper_v "$APP_ALIAS"; sfx="_${UV//[!ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789]/_}"; fi
+  # An environment's own variables first (APEX_TEST_PASSWORD_<ALIAS>_<ENV>), then the app's.
+  if [[ -n "$sfx" && -n "${PA_ENV[$APP_I]:-}" ]]; then upper_v "${PA_ENV[$APP_I]}"; esfx="${sfx}_${UV//[!ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789]/_}"; fi
 
-  v="APEX_TEST_USER$sfx"
+  v="APEX_TEST_USER$esfx"; [[ -n "$esfx" && -n "${!v:-}" ]] || v="APEX_TEST_USER$sfx"
   SENTINEL_USER=${!v:-${APEX_TEST_USER:-${PA_USER[$APP_I]:-}}}
   SENTINEL_APP_URL=${1:-${PA_URL[$APP_I]:-}}
 
   local envf=${APEX_TEST_ENV:-${PROJECT_ROOT:+$PROJECT_ROOT/.env}} k
   SENTINEL_PASSWORD=""
-  for k in ${sfx:+"APEX_TEST_PASSWORD$sfx"} APEX_TEST_PASSWORD; do   # the app's own, then the shared one
+  for k in ${esfx:+"APEX_TEST_PASSWORD$esfx"} ${sfx:+"APEX_TEST_PASSWORD$sfx"} APEX_TEST_PASSWORD; do   # the environment's, the app's, then the shared one
     [[ -n "$SENTINEL_PASSWORD" ]] && break
     SENTINEL_PASSWORD=${!k:-}
     [[ -z "$SENTINEL_PASSWORD" && -n "$envf" && -f "$envf" ]] && SENTINEL_PASSWORD=$(env_str "$envf" "$k")
@@ -454,9 +503,9 @@ resolve_credentials() {  # sets SENTINEL_USER, SENTINEL_PASSWORD, SENTINEL_APP_U
 
   [[ -n "$SENTINEL_APP_URL" ]] || die "no runtime URL — pass it (pw.sh login <url>) or add \"runtimeUrl\" to apex-sync.json"
   [[ -n "$SENTINEL_USER" ]] || die "no test user — add \"testUser\" to apex-sync.json, or set \$APEX_TEST_USER"
-  local which=""; [[ -n "$APP_ALIAS" ]] && which=" for app '$APP_ALIAS'"
+  local which=""; [[ -n "$APP_ALIAS" ]] && which=" for app '$APP_ALIAS'${PA_ENV[$APP_I]:+ (environment ${PA_ENV[$APP_I]})}"
   [[ -n "$SENTINEL_PASSWORD" ]] || die "no test password$which. Any one of:
-        \$APEX_TEST_PASSWORD$sfx${sfx:+ (or \$APEX_TEST_PASSWORD, shared by every app)}
+        ${esfx:+\$APEX_TEST_PASSWORD$esfx (this environment only), or }\$APEX_TEST_PASSWORD$sfx${sfx:+ (or \$APEX_TEST_PASSWORD, shared by every app)}
         APEX_TEST_PASSWORD$sfx= in the repo root's .env (gitignore it first)
         \"password\" in $ext
       If this project keeps its env file somewhere else, point \$APEX_TEST_ENV at it —
@@ -641,7 +690,7 @@ JS
     WSS=("$PW_WORKSPACE")
     if (( ALL_APPS )); then
       WSS=()
-      for a in "${PA_ALIAS[@]}"; do ws_for "$a"; w=$WSF; [[ -d "$w/.playwright" ]] && WSS+=("$w"); done
+      for (( i = 0; i < ${#PA_ALIAS[@]}; i++ )); do ws_for "${PA_ALIAS[$i]}${PA_ENV[$i]:+.${PA_ENV[$i]}}"; w=$WSF; [[ -d "$w/.playwright" ]] && WSS+=("$w"); done
     fi
     rc=0
     for w in "${WSS[@]:-}"; do

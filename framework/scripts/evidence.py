@@ -3,16 +3,17 @@
 the raw evidence they cite, so neither is hand-written JSON. Standard library only.
 
 Usage:
-  evidence.py capture --gate runtime|architecture [--app <alias>] --task <id> <name> -- <command>...
+  evidence.py capture --gate runtime|architecture [--app <alias>] [--env <name>] --task <id> <name> -- <command>...
       Runs the command and saves its stdout, redacted, to
       <evidenceDir>/<task>/raw/<gate>-<alias>/<name>. Prints {evidence: {kind: file, path, sha256},
       exitCode (the command's), redacted (how many values were removed)}.
-  evidence.py write --kind runtime|architecture [--app <alias>] --task <id> <draft.json>
+  evidence.py write --kind runtime|architecture [--app <alias>] [--env <name>] --task <id> <draft.json>
       The draft holds only what the agent observed — runtime: check, backend, login, criteria,
       evidence, target; architecture: decisions, redFlags, missingInputs, evidence. The script
       adds kind, schemaVersion, app and context (method: agent), hashes every cited file (a hash
       that no longer matches is refused), DERIVES the status, and writes runtime-<alias>.json or
-      architecture.json in the task dir.
+      architecture.json in the task dir. For an app with environments, --env is required
+      for a runtime result: it names the runtime verified, and keys the files by alias.env.
   evidence.py fresh --task <id> <result.json>...
       Whether each result still speaks for now (GATES.md §Freshness): it is stale when it was
       made for another task, records no working tree (context.repo.tree), or records another
@@ -66,13 +67,24 @@ def sha256(path):
     return h.hexdigest()
 
 
+def where(a):
+    """(alias, task dir, settings, key): key is the alias, or alias.env for an environment.
+    A runtime run on an app with environments names the one it verified (R-1)."""
+    alias, task_dir, settings = target(a.app, a.task, a.env)
+    envs = (settings or {}).get("environments")
+    if a.env is None and isinstance(envs, dict) and envs and getattr(a, "gate", None) != "architecture" \
+            and getattr(a, "kind", None) != "architecture":
+        raise Stop("BLOCKED", "ENV_REQUIRED", f"app '{alias}' declares environments ({', '.join(envs)}): name the one verified with --env")
+    return alias, task_dir, settings, alias + (f".{a.env}" if a.env else "")
+
+
 def capture(a, rest):
     if not NAME.match(a.name or ""):
         raise Stop("BLOCKED", "BAD_NAME", f"<name> must match {NAME.pattern}")
     if not rest:
         raise Stop("BLOCKED", "NO_COMMAND", "nothing to run: evidence.py capture … <name> -- <command>...")
-    alias, task_dir, _ = target(a.app, a.task)
-    raw = os.path.join(task_dir, "raw", f"{a.gate}-{alias}")
+    alias, task_dir, _, key = where(a)
+    raw = os.path.join(task_dir, "raw", f"{a.gate}-{key}")
     try:
         p = subprocess.run(rest, stdout=subprocess.PIPE, timeout=600)
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -189,7 +201,7 @@ def architecture_status(d):
 
 
 def write(a):
-    alias, task_dir, settings = target(a.app, a.task)
+    alias, task_dir, settings, key = where(a)
     try:
         with open(a.draft, encoding="utf-8") as fh:
             d = json.load(fh)
@@ -208,11 +220,13 @@ def write(a):
     if d.get("target"):
         ctx["target"] = d.pop("target")
     app = {"appAlias": alias, **{k: v for k, v in (d.pop("app", None) or {}).items() if k in ("appId", "mmdVersion")}}
+    if a.env:
+        app["environment"] = a.env
     if "appId" not in app and isinstance((settings or {}).get("appId"), int):
         app["appId"] = settings["appId"]
     out = {"kind": f"{a.kind}-result", "schemaVersion": 1, "status": status,
            "reasons": [{"code": code, "message": msg}], "app": app, "context": ctx, **d}
-    name = f"runtime-{alias}.json" if a.kind == "runtime" else "architecture.json"
+    name = f"runtime-{key}.json" if a.kind == "runtime" else "architecture.json"
     doc = json.dumps(out, indent=2)
     for dest in (task_dir, os.environ.get("RESULT_CAPTURE_DIR")):
         if dest:
@@ -263,11 +277,13 @@ def main(argv):
     c = sub.add_parser("capture")
     c.add_argument("--gate", required=True, choices=["runtime", "architecture"])
     c.add_argument("--app")
+    c.add_argument("--env")
     c.add_argument("--task", required=True)
     c.add_argument("name")
     w = sub.add_parser("write")
     w.add_argument("--kind", required=True, choices=["runtime", "architecture"])
     w.add_argument("--app")
+    w.add_argument("--env")
     w.add_argument("--task", required=True)
     w.add_argument("draft")
     f = sub.add_parser("fresh")

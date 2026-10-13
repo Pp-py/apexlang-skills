@@ -870,6 +870,17 @@ expect     "gap-9: ... and no marker"                             1 test -f "$MK
 cp "$WORK/p30.keep" src/demo/p30.apx
 expect_out "gap-9: the TTL is 5 minutes"                          '"ttlSeconds": 300' cat "$MK/last-check-import.json"
 
+# The tree hash copies the index; the copy keeps the index's mtime, by which git judges an
+# entry "racily clean". With a fresh mtime git trusted the stale stat data and hashed the
+# OLD content of a file rewritten, same size, in the second the index was written.
+RACY="$WORK/racy"; mkdir -p "$RACY/src" && git -C "$RACY" init -q
+printf 'AAAA\n' > "$RACY/src/f"; touch_at "$RACY/src/f" 1767225600
+git -C "$RACY" add -A && git -C "$RACY" -c user.email=r@example.com -c user.name=r commit -qm racy
+printf 'BBBB\n' > "$RACY/src/f"; touch_at "$RACY/src/f" 1767225600; touch_at "$RACY/.git/index" 1767225600
+# shellcheck source=skills/apex-sync-guard/scripts/lib/sync-config.sh
+racy_tree() { ( . "$SKILL_DIR/scripts/lib/sync-config.sh"; src_tree "$RACY" "$RACY/.git" src; git -C "$RACY" ls-tree "$ST" f | awk '{ print $3 }' ); }
+expect     "tree: a racily clean rewrite is hashed as it is now"  0 test "$(racy_tree)" = "$(git -C "$RACY" hash-object src/f)"
+
 # --- linked worktrees (GAP-7). There `.git` is a file, and the guard could not keep any
 # state. Now the syncpoint is shared (it goes with the shared ref) and each worktree keeps
 # its own markers and results: a check judges ITS LOCAL, so it authorizes only there.
@@ -895,6 +906,39 @@ cp .git/index "$WORK/idx" && GIT_INDEX_FILE="$WORK/idx" git add -A && want_tree=
 expect_out "tree: the sync-result records the working tree"       "\"tree\": \"$want_tree\"" cat "$MK/last-check-import.json"
 expect     "tree: hashing it left the real index alone"           0 git diff --cached --quiet
 git worktree remove --force "$WORK/wt"
+
+# --- environments per app (R-1): one source, a Builder per environment — how many and
+# what they are called is each project's. Each environment has its own syncpoint,
+# markers and results; a gate names the one it acts on; the hook reads the environment
+# from the saved connection a command names, and never lets an agent into a protected one.
+SINGLE_CFG=$(cat "$CFG_FILE")
+rm -rf "$WORK/remote/demo" && cp -r src/demo "$WORK/remote/demo" && rm -rf "$WORK/remote/demo/apex-exports"   # every Builder as LOCAL
+printf '%s\n' '{ "appId": 100, "appAlias": "demo", "apexlangDir": "src", "ignorePaths": ["apex-exports/"],
+  "environments": { "dev": { "sqlclConnection": "fake" }, "qa": { "sqlclConnection": "fake_qa", "runtimeUrl": "https://qa.example/ords/r/ws/demo/" },
+                    "prod": { "sqlclConnection": "fake_prod", "protected": true } } }' > "$CFG_FILE"
+EK="$WORK/proj/.git/apex-sync"
+expect     "env: a gate with no --env -> BLOCKED"                  2 "$CHK" check-import
+expect_out "env: and it names the environments"                    'ENV_REQUIRED|declares environments \(dev qa prod\)' "$CHK" check-import
+expect     "env: an environment nobody declared -> BLOCKED"        2 "$CHK" check-import --env uat
+expect     "env: check-import --env dev -> PASS"                   0 "$CHK" check-import --env dev
+expect     "env: its marker is dev's own"                          0 test -f "$EK/demo.dev/check-ok.import"
+expect     "env: its syncpoint is dev's own"                       0 git rev-parse -q --verify refs/apex-sync/demo.dev
+expect_out "env: the result names the environment"                 '"environment": "dev"' cat "$EK/demo.dev/last-check-import.json"
+expect     "env: the hook lets dev's import run"                   0 hook_cmd 'sql -name fake <<< \"apex import -input src/demo\"'
+expect     "env: but not qa's, which nobody checked"               2 hook_cmd 'sql -name fake_qa <<< \"apex import -input src/demo\"'
+expect_out "env: an import naming no connection blocks"            'names none of their connections' hook_cmd 'apex import -input src/demo'
+expect     "env: a connection of no environment blocks"            2 hook_cmd 'sql -name other <<< \"apex import -input src/demo\"'
+expect     "env: check-import --env prod runs (read-only)"         0 "$CHK" check-import --env prod
+expect_out "env: a protected environment is never the agent's"     'is protected' hook_cmd 'sql -name fake_prod <<< \"apex import -input src/demo\"'
+expect_out "env: apps lists one line per environment"              '^demo\.qa	100	src/demo	fake_qa		https://qa\.example' "$CHK" apps
+expect     "env: record-sync --env dev"                            0 "$CHK" record-sync --env dev
+expect     "env: environment without its connection -> BLOCKED"    2 with_config '{ "appId": 100, "appAlias": "demo", "apexlangDir": "src", "environments": { "dev": { } } }' "$CHK" apps
+expect_out "env: an unknown key inside an environment is named"    "environments.dev: unknown key 'sqlclConection'" with_config '{ "appId": 100, "appAlias": "demo", "apexlangDir": "src", "environments": { "dev": { "sqlclConection": "x" } } }' "$CHK" apps
+expect     "env: two environments on one Builder -> BLOCKED"       2 with_config '{ "appId": 100, "appAlias": "demo", "apexlangDir": "src", "environments": { "a": { "sqlclConnection": "x" }, "b": { "sqlclConnection": "x" } } }' "$CHK" apps
+expect     "env: environments at the top of apps[] -> BLOCKED"     2 with_config '{ "apexlangDir": "src", "sqlclConnection": "fake", "environments": {}, "apps": [ { "appId": 100, "appAlias": "demo" } ] }' "$CHK" apps
+expect     "env: one environment is enough"                        0 with_config '{ "appId": 100, "appAlias": "demo", "apexlangDir": "src", "environments": { "only": { "sqlclConnection": "fake" } } }' "$CHK" apps
+printf '%s\n' "$SINGLE_CFG" > "$CFG_FILE"
+expect     "env: --env on an app without environments -> BLOCKED"  2 "$CHK" check-import --env dev
 
 echo
 echo "$pass passed, $fail failed"

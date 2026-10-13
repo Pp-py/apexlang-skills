@@ -365,6 +365,43 @@ if [[ $RC -eq 0 && ! -e "$wh/.playwright-cli" && ! -e "$we/.playwright-cli" ]]; 
 else bad "multi: close-all left a workspace behind (exit $RC)" "$WORK/err"; fi
 unset PW_CWD_LOG
 
+# --- environments (R-1): an app with `environments` has a runtime, a test user and a
+# browser per environment, named with --env — never guessed.
+mkdir -p "$WORK/envs" && git -C "$WORK/envs" init -q
+printf '%s\n' '{ "appId": 100, "appAlias": "hr", "apexlangDir": "src", "testUser": "QA_HR", "runtimeUrl": "https://dev.example/r/ws/hr/",
+  "environments": { "dev": { "sqlclConnection": "dev_hr" },
+                    "uat": { "sqlclConnection": "uat_hr", "testUser": "QA_UAT", "runtimeUrl": "https://uat.example/r/ws/hr/" } } }' \
+  > "$WORK/envs/apex-sync.json"
+cd "$WORK/envs"
+run "$OPEN" eval '() => 1'
+if [[ $RC -eq 2 ]] && grep -q 'declares environments (dev uat) — name one' "$WORK/err"; then ok "env: a call without --env is refused"
+else bad "env: expected exit 2 asking for --env, got $RC" "$WORK/err"; fi
+run "$OPEN" --env qa eval '() => 1'
+if [[ $RC -eq 2 ]] && grep -q "declares no environment 'qa'" "$WORK/err"; then ok "env: an unknown --env is refused"
+else bad "env: expected exit 2 for --env qa, got $RC" "$WORK/err"; fi
+RC=0; "$PW" apps > "$WORK/out" 2>"$WORK/err" || RC=$?
+if [[ $RC -eq 0 ]] && grep -qx $'hr.uat\tQA_UAT\thttps://uat.example/r/ws/hr/' "$WORK/out" && grep -qx $'hr.dev\tQA_HR\thttps://dev.example/r/ws/hr/' "$WORK/out"; then
+  ok "env: apps lists each environment, the app's values as defaults"
+else bad "env: apps (exit $RC)" "$WORK/out" "$WORK/err"; fi
+export APEX_TEST_PASSWORD_HR_UAT='UatS3cret' APEX_TEST_PASSWORD_HR='HrS3cret' PW_FAKE_URL='LOGIN-OK|QA_UAT|https://uat.example/r/ws/hr/home?session=80'
+run "$OPEN" --env uat login
+check_in "env: login uses the environment's test user" "$WORK/snip" 'QA_UAT'
+check_in "env: ... its runtime URL"                     "$WORK/snip" 'https://uat\.example/r/ws/hr/'
+check_in "env: ... and \$APEX_TEST_PASSWORD_<ALIAS>_<ENV>" "$WORK/snip" 'UatS3cret'
+export PW_FAKE_URL='LOGIN-OK|QA_HR|https://dev.example/r/ws/hr/home?session=81'
+run "$OPEN" --env dev login
+check_in "env: an environment without its own password takes the app's" "$WORK/snip" 'HrS3cret'
+unset APEX_TEST_PASSWORD_HR_UAT APEX_TEST_PASSWORD_HR
+export PW_CWD_LOG="$WORK/cwdlog"
+# shellcheck disable=SC2030,SC2031
+ws_env() { : > "$PW_CWD_LOG"; printf '%s\n' "$OPEN" > "$PW_STATE"
+  ( unset PW_WORKSPACE && export TMPDIR="$WORK/tmp" PW_LOG="$WORK/log" && "$PW" --env "$1" eval '() => 1' ) >/dev/null 2>&1 || true
+  tail -1 "$PW_CWD_LOG"; }
+wd=$(ws_env dev); wu=$(ws_env uat)
+if [[ "$wd" == *"/envs-hr.dev-"* && "$wu" == *"/envs-hr.uat-"* ]]; then ok "env: each environment gets its own browser workspace"
+else bad "env: workspaces '$wd' / '$wu'"; fi
+unset PW_CWD_LOG
+
 cd /                                    # the EXIT trap removes $WORK
 
 echo

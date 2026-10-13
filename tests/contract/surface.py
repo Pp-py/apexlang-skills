@@ -395,13 +395,13 @@ def check_interface():
     chk = read("skills/apex-sync-guard/scripts/apex-sync-check.sh")
     usage = re.search(r'^USAGE="(.*)"$', chk, re.M)
     usage = usage.group(1) if usage else ""
-    want = ["check-import", "check-export", "record-sync", "status", "doctor", "apps", "--app", "--task", "--force"]
+    want = ["check-import", "check-export", "record-sync", "status", "doctor", "apps", "--app", "--env", "--task", "--force"]
     missing = [w for w in want if w not in usage]
     if "0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED" not in chk or "3 UNKNOWN" not in chk:
         missing.append("the exit-code line (0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN)")
     pw = read("skills/apex-sentinel/scripts/pw.sh")
-    if "pw.sh [--app <alias>] <subcommand>" not in pw:
-        missing.append("pw.sh usage: [--app <alias>] <subcommand>")
+    if "pw.sh [--app <alias>] [--env <name>] <subcommand>" not in pw:
+        missing.append("pw.sh usage: [--app <alias>] [--env <name>] <subcommand>")
     for script, args in (("apexlang-architecture/scripts/arch-scan.py", "arch-scan.py <file-or-dir>..."),
                          ("apex-ux/scripts/ux-scan.py", "[--app <alias>] [--task <id>]"),
                          ("apex-ux/scripts/ux-check.py", "[--app <alias>] [--task <id>] [--dialog <selector>]..."),
@@ -412,8 +412,8 @@ def check_interface():
         if args not in read(f"skills/{script}"):
             missing.append(f"{script} usage: {args}")
     ev = read("framework/scripts/evidence.py")
-    for args in ("capture --gate runtime|architecture [--app <alias>] --task <id> <name> -- <command>...",
-                 "write --kind runtime|architecture [--app <alias>] --task <id> <draft.json>",
+    for args in ("capture --gate runtime|architecture [--app <alias>] [--env <name>] --task <id> <name> -- <command>...",
+                 "write --kind runtime|architecture [--app <alias>] [--env <name>] --task <id> <draft.json>",
                  "fresh --task <id> <result.json>..."):
         if args not in ev:
             missing.append(f"framework/scripts/evidence.py usage: {args}")
