@@ -1,7 +1,7 @@
 {
   "name": "apexlang-toolkit",
   "description": "An engineering framework for Oracle APEX apps written as APEXlang (.apx), on top of Oracle's official APEXlang skills: apexlang-architecture decides WHERE business logic, validation and DML belong (single write-path PL/SQL packages -- entity, multi-entity flow or external-system integration -- not region-bound Automatic DML); apex-sync-guard gates every apex import/export (Oracle's deploy script included) behind a Builder↔git divergence check against a recorded syncpoint, for one or several apps; apex-sentinel drives the running page in a browser, as a verified test user, before a change is called working; apex-ux judges a page's UI against criteria with IDs from WCAG 2.2 AA and Oracle's policies; apex-security states what the app must refuse, as criteria with IDs from Oracle's security policies and OWASP ASVS. apexlang-delivery runs them in order for one task and writes its verification-manifest. Fail-closed gates with JSON results (framework/).",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "author": { "name": "Pablo Portillo", "email": "pabloportillo095@gmail.com" },
   "homepage": "https://github.com/Pp-py/apexlang-skills",
   "repository": "https://github.com/Pp-py/apexlang-skills",

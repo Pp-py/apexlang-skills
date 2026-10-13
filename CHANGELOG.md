@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 — 2026-10-13
 
-Phase 3, UX-5: the UI gate. apex-ux's two scripts now write a `ui-result`, and the gate takes its
+Closes Phase 3. Six skills now: `apex-security` and `apexlang-delivery` join the four, and every
+gate of the loop writes a JSON result the orchestrator reads. UX-5: the UI gate. apex-ux's two scripts now write a `ui-result`, and the gate takes its
 place after Runtime, opt-in per app. SEC-1 to SEC-6 build the Security block: a fifth skill,
 `apex-security`, with its criteria; scans of the `.apx`, the packages and the tracked files, and
 runtime probes, each writing a `security-result`; and the Security gate between Runtime and UI.
@@ -284,6 +285,26 @@ sixth skill, `apexlang-delivery`, the orchestrator the Phase 2 contracts were wr
   reports the release's version; the frozen interface lists the apex-ux scripts.
 - `ux-scan.sh` (+2) and `ux-check.sh` (+3) cover `--task` and path scrubbing; the e2e covers
   `uiGate` (+3). A real-browser run with `--task` is recorded in `CAPABILITIES.md`.
+
+### Upgrading from 0.6.1
+1. Update the plugin (`claude plugin marketplace update apexlang-toolkit-marketplace`, then
+   `claude plugin update apexlang-toolkit@apexlang-toolkit-marketplace`, per scope), and Oracle's
+   skills to the revision in `framework/oracle-skills.lock.json` (014cdb2).
+2. Run `apex-sync-check.sh doctor` in each project. On APEX 26.2 it now asks SQLcl to read the
+   source's APEXlang version: SQLcl 26.2.0 cannot (UP-2), 26.3.0 can.
+3. Markers written by 0.6.1 carry no tree hash and block: run the checks again. Nothing in the
+   syncpoints or `apex-sync.json` needs migrating; an app that adopts `environments` starts each
+   one from its first `check-import` (or keeps its syncpoint by the user's own `git update-ref`,
+   `setup.md` §1).
+4. If you copied a recipe, move its page processes from `afterSubmit` to `processing` (KC-8).
+5. On Windows, Git Bash needs a `python3` that runs (the Microsoft Store stub does not) for the
+   apex-ux, apex-security, evidence and delivery scripts.
+
+### Rollback
+Reinstall 0.6.1 (`5d0382b`) or disable the plugin. Results written by 0.7.0 (`context.repo.tree`,
+`app.environment`, `<alias>.<env>` file names) are not read back by 0.6.1; drop the task dirs.
+An app with `environments` must go back to one connection per app. The tag `v0.7.0` marks this
+release.
 
 ## 0.6.1 — 2026-10-11
 
