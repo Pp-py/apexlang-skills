@@ -191,6 +191,11 @@ def validation(reader, keys):
 
 
 def main(argv):
+    for stream in (sys.stdout, sys.stderr):     # Windows defaults to cp1252: the report is UTF-8
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
     ap = argparse.ArgumentParser(description="apexlang-delivery: the task's gates, as a verification-manifest")
     ap.add_argument("--task", required=True)
     ap.add_argument("--app")
