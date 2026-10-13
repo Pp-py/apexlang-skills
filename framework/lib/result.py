@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import sys
 
-FRAMEWORK_VERSION = "0.6.1"   # the apexlang-skills release (.claude-plugin/plugin.json)
+FRAMEWORK_VERSION = "0.7.0"   # the apexlang-skills release (.claude-plugin/plugin.json)
 RE_ALIAS = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")   # common.schema.json appAlias
 RE_TASK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")   # common.schema.json taskId
 

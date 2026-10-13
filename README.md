@@ -136,7 +136,7 @@ with only the diagnostics documented where they occur, and the compiler — SQLc
 |---|---|---|
 | 1 — Capabilities | architecture, sync safety, runtime verification | done |
 | 2 — Engineering framework | principles, contracts, gates, evidence, capability matrix, testing model; contracts ready for an `apexlang-delivery` that orchestrates the gates and adds no rules | done — 0.6.0 |
-| 3 — Application quality | **UI/UX**, then **Security**, as new gates; the known conflicts, environments per app and the remaining gaps; last, `apexlang-delivery` — the orchestrator the Phase 2 contracts were written for | in progress — 0.6.1 released; on `main`: UI/UX, Security, the known conflicts, environments, the live run, and `apexlang-delivery` |
+| 3 — Application quality | **UI/UX**, then **Security**, as new gates; the known conflicts, environments per app and the remaining gaps; last, `apexlang-delivery` — the orchestrator the Phase 2 contracts were written for | done — 0.7.0 |
 | 4 — Benchmark & continuous verification | showing that the framework makes an agent better, measured | later |
 
 ## Development
