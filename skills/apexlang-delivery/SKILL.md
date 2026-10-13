@@ -40,6 +40,21 @@ Pick a task id (`T-42`) and use it for every command. After each gate, run `deli
 7. **UI** — when the app sets `uiGate`: `ux-scan.py`, and `ux-check.py` on each page the change
    touched, each with `--task`.
 
+### Who does what
+
+| Gate | Run by | Command (with `--app`, `--env`, `--task`) | Leaves in the task dir |
+|---|---|---|---|
+| Architecture | the agent (judgment), `arch-scan.py` (four red flags) | `evidence.py write --kind architecture` | `architecture.json` |
+| Validation | Oracle's script, captured | `evidence.py capture --gate validation … validate -- <script> <dir>` | `raw/validation-<alias>/validate` and `.exit.json` |
+| Sync | script | `apex-sync-check.sh check-import` | `sync-<key>-check-import.json` |
+| Import | the agent, by the lane above; `record-sync` after | `apex import` / the deploy script; `apex-sync-check.sh record-sync` | `sync-<key>-record-sync.json` |
+| Runtime | the agent in the browser (`pw.sh`) | `evidence.py capture`, then `write --kind runtime` | `runtime-<key>.json`, `raw/runtime-<key>/` |
+| Security | scripts | `sec-scan.py`, `plsql-scan.py`, `secrets-scan.py`, `sec-probe.py` | `security-<alias>-{static,plsql,secrets}.json`, `security-<key>-runtime.json` |
+| UI | scripts | `ux-scan.py`, `ux-check.py` per page | `ui-<alias>-static.json`, `ui-<key>-runtime-<page>.json` |
+| The manifest | script | `delivery.py` | `manifest.json` |
+
+`<key>` is the alias, or `<alias>.<env>` for an app with environments.
+
 **Stop at the first required gate that is not PASS**, and report it with its result. What
 happens next — fix and re-run, or not — is the user's call (P9). A re-run replaces the old
 result; a gate skipped is `--skip <gate>:<reason>`, recorded as not required, never left out.
