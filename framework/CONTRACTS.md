@@ -69,7 +69,8 @@ repo never redefines them, and never promotes an advisory signal to a verdict.
 | **Producer** | the agent (`method: agent`) | the script (`method: tool`) | the agent through `pw.sh` (`method: agent`) |
 | **Schema** | `architecture-result` (experimental) | `sync-result` (**stable**) | `runtime-result` (experimental) |
 
-A **stable** schema changes only additively within `schemaVersion` 1. An **experimental**
+A **stable** schema changes only additively within `schemaVersion` 1: `sync-result`, and
+`verification-manifest` since D-3, when `delivery.py` became its producer. An **experimental**
 one may change in any minor release, until its producer is a script rather than an agent
 following prose.
 
@@ -120,7 +121,7 @@ entry; removing any of it, a major one.
   0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN; a refused draft 2, nothing written); `evidence.py fresh
   --task <id> <result.json>…` (exit 0 fresh · 1 stale · 2 not a result · 3 no tree).
   `skills/apexlang-delivery/scripts/delivery.py --task <id> [--app <alias>] [--env <name>]
-  [--skip <gate>:<reason>]…` (python3; the manifest on stdout and in the task dir; exit 0 PASS ·
+  [--skip <gate>:<reason>]… [--exit <gate>:<code>]…` (python3; the manifest on stdout and in the task dir; exit 0 PASS ·
   1 FAIL or CONFLICT · 2 BLOCKED · 3 UNKNOWN · 4 NOT_RUN). They share `framework/lib/` (the `.apx`
   reader, the PL/SQL lexer and the result envelope).
 - **State.** `refs/apex-sync/<alias>` and `<git-common-dir>/apex-sync/<alias>/state.json`, shared by

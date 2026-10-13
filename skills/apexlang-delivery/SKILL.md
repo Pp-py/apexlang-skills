@@ -13,7 +13,7 @@ description: Use when a change to an APEXlang app is to be delivered and called 
 - **Output:** `<evidenceDir>/<task>/manifest.json` (`framework/schemas/verification-manifest.schema.json`), its status the worst of the required gates.
 - **Evidence:** the manifest cites every result it read by path and sha256, and Validation by the compiler's command, exit code and words; nothing of its own.
 - **Gate:** none — it is the consumer of all six (`framework/GATES.md` §The orchestration contract); it may skip a gate only as `required: false` with a reason.
-- **Interface:** the agent runs each gate with its owning skill, passing `--app` (and `--env`) and `--task`; then `python3 scripts/delivery.py --task <id> [--app X] [--env E] [--skip <gate>:<reason>]…` writes the manifest and says the next step. Exit 0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN · 4 NOT_RUN.
+- **Interface:** the agent runs each gate with its owning skill, passing `--app` (and `--env`) and `--task`; then `python3 scripts/delivery.py --task <id> [--app X] [--env E] [--skip <gate>:<reason>]… [--exit <gate>:<code>]…` writes the manifest and says the next step. Exit 0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN · 4 NOT_RUN.
 
 ## The loop — one task
 
@@ -73,8 +73,9 @@ they are run again. Security and UI are required only when the app opts in (unti
 
 Anything its gates do not (each gate's "PASS does NOT establish" row); that a gate the user
 skipped did not matter; anything about another app, environment or task. `delivery.py` sees
-files, not commands: a gate run that left no result reads `NOT_RUN`, never `BLOCKED` — if a
-command exited 2 or 3, report that exit yourself.
+files, not commands: pass a gate's exit with `--exit <gate>:<code>` whenever you just ran it —
+a result it did not leave is then `BLOCKED` (exit 2) or `UNKNOWN`, and a result whose command's
+exit disagrees with it is `UNKNOWN`; without `--exit`, a missing result reads `NOT_RUN`.
 
 ## Red flags — stop
 

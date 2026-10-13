@@ -24,6 +24,10 @@ sixth skill, `apexlang-delivery`, the orchestrator the Phase 2 contracts were wr
   fresh; invalid → UNKNOWN, missing or stale → NOT_RUN; Security and UI are required only on
   opt-in; `--skip <gate>:<reason>`; stderr names the next gate or where to stop. Exit 0 PASS ·
   1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN · 4 NOT_RUN.
+- D-3: `delivery.py --exit <gate>:<code>` — a gate that just ran and left no fresh result is
+  `BLOCKED` (exit 2) or `UNKNOWN`, and a single producer whose exit disagrees with its result is
+  `UNKNOWN` (GATES.md's MUST). **`verification-manifest` is stable** (its producer is a script);
+  the other results stay experimental. Conformance tests of the orchestration contract, rule by rule.
 - D-2: who runs each gate, with which command and what it leaves in the task dir, in the skill.
   GAP-3 (no Validation before Oracle's deploy script) is **mitigated, not closed** — by the
   documented lane and the manifest's required Validation gate; an import outside the lane still
@@ -232,6 +236,7 @@ sixth skill, `apexlang-delivery`, the orchestrator the Phase 2 contracts were wr
   It now does, and reported the 8 gaps this fixes.
 
 ### Tests
+- D-3: `delivery.sh` (+23): the orchestration contract rule by rule; 11 fail without `--exit`.
 - D-1: `tests/integration/delivery.sh` (40) in CI; the contract tier validates every manifest it
   makes `delivery.py` write (jsonschema there, its own checks on the integration runners).
 - R-8: e2e (+5: an app with environments named by id, `doctor`'s SQLcl check), `sec-probe.sh`

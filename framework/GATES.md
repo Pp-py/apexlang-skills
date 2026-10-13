@@ -83,7 +83,8 @@ may not do. It orchestrates the gates; it adds no rule of its own (P2, P6).
   that task's directory;
 - validate each result against its schema before reading it — an invalid result is `UNKNOWN`;
 - read a missing result — or one whose `context.timestamp` predates the command it just ran,
-  left by an earlier run — as `BLOCKED` when the command exited 2, `UNKNOWN` otherwise;
+  left by an earlier run — as `BLOCKED` when the command exited 2, `UNKNOWN` otherwise
+  (`delivery.py --exit <gate>:<code>`: it sees files, the agent tells it the exit);
 - write the manifest with the aggregation rule above, citing each result by path and sha256;
 - stop at the first required gate that is not `PASS`, and report it — the user decides what
   happens next (P9).

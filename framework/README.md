@@ -33,7 +33,7 @@ Engineering guardrails    single write path · fail-closed gates · evidence, no
 | [GATES.md](GATES.md) | the gates — what each establishes and what it does not — their order, aggregation, freshness, and the orchestration contract |
 | [EVIDENCE.md](EVIDENCE.md) | what counts as evidence, what a result records about its context, redaction, where evidence lives |
 | [CAPABILITIES.md](CAPABILITIES.md) | what is verified, on which Oracle version, with a link to the proof — plus known conflicts with Oracle and declared gaps |
-| `schemas/` | JSON Schema (Draft 2020-12) for every result: `sync-result` (stable), `runtime-result`, `architecture-result`, `verification-manifest` (experimental), `common` |
+| `schemas/` | JSON Schema (Draft 2020-12) for every result: `sync-result` and `verification-manifest` (stable), `runtime-result`, `architecture-result`, `ui-result`, `security-result` (experimental), `common` |
 | `oracle-skills.lock.json` | the Oracle skills revision this repo was verified against |
 
 **Each skill still stands alone.** Installing one skill must keep working without the

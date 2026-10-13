@@ -155,6 +155,48 @@ run "--skip without a reason → BLOCKED" 2 --task T-1 --skip runtime
 run "--skip of no gate → BLOCKED" 2 --task T-1 --skip "deploy:x"
 run "a bad task id → BLOCKED" 2 --task "../x"
 
+# --- conformance: GATES.md §The orchestration contract, rule by rule
+# MUST read a missing result — or one left by an earlier run — as BLOCKED when the command exited
+# 2, UNKNOWN otherwise (delivery.py sees files, so the agent passes the exit with --exit).
+mv "$T/runtime-hr.json" "$WORK/runtime.keep"
+run "conformance: no result, the command exited 2 → BLOCKED" 2 --task T-1 --exit runtime:2
+if says "ran (exit 2) but runtime-hr.json: not in the task" && says "stop — the runtime gate is BLOCKED"; then ok "conformance: BLOCKED, and the stop names it"; else bad "conformance: exit 2 not read"; fi
+run "conformance: no result, the command exited 3 → UNKNOWN" 3 --task T-1 --exit runtime:3
+run "conformance: no result, the command exited 1 → UNKNOWN (never FAIL, never PASS)" 3 --task T-1 --exit runtime:1
+run "conformance: no result and no --exit → NOT_RUN" 4 --task T-1
+mv "$WORK/runtime.keep" "$T/runtime-hr.json"
+stamp runtime-result/editable-ig-pass runtime-hr.json T-0
+run "conformance: a result left by an earlier run, the command exited 2 → BLOCKED" 2 --task T-1 --exit runtime:2
+if q "g['runtime']['status'] == 'BLOCKED' and d['status'] == 'BLOCKED'"; then ok "conformance: the stale result is not read"; else bad "conformance: stale + exit 2"; fi
+stamp runtime-result/editable-ig-pass runtime-hr.json
+run "conformance: a PASS whose command exited 1 → UNKNOWN" 3 --task T-1 --exit runtime:1
+if says "but its command exited 1"; then ok "conformance: the disagreement is named"; else bad "conformance: disagreement not named"; fi
+run "conformance: a PASS whose command exited 0 → PASS" 0 --task T-1 --exit runtime:0
+mv "$T/raw/validation-hr" "$WORK/validation.keep"
+run "conformance: no Validation capture, it exited 2 → BLOCKED" 2 --task T-1 --exit validation:2
+if q "g['validation']['status'] == 'BLOCKED'"; then ok "conformance: Validation BLOCKED in the manifest"; else bad "conformance: validation exit 2"; fi
+mv "$WORK/validation.keep" "$T/raw/validation-hr"
+run "conformance: --exit without a code → BLOCKED" 2 --task T-1 --exit runtime
+run "conformance: --exit of no gate → BLOCKED" 2 --task T-1 --exit "deploy:0"
+if says "(BAD_EXIT)"; then ok "conformance: a bad --exit is refused by delivery itself"; else bad "conformance: bad --exit"; fi
+# MUST write the manifest with the aggregation rule: FAIL > CONFLICT > UNKNOWN > BLOCKED > NOT_RUN > PASS
+validate "Compile Errors: 1" 1
+stamp sync-result/check-import-conflict sync-hr-check-import.json
+run "conformance: FAIL beats CONFLICT" 1 --task T-1
+if q "d['status'] == 'FAIL' and g['sync']['status'] == 'CONFLICT'"; then ok "conformance: the worst required gate is the task's"; else bad "conformance: aggregation"; fi
+validate "Validation successful" 0
+run "conformance: CONFLICT beats a later UNKNOWN" 1 --task T-1 --exit runtime:1
+if q "d['status'] == 'CONFLICT'"; then ok "conformance: CONFLICT over UNKNOWN"; else bad "conformance: CONFLICT not kept"; fi
+stamp sync-result/check-import-pass sync-hr-check-import.json
+# MAY skip a gate only as required: false with a reason; with none required the task is NOT_RUN, never PASS
+run "conformance: every gate skipped → NOT_RUN, never PASS" 4 --task T-1 --skip "architecture:x" --skip "validation:x" --skip "sync:x" --skip "runtime:x" --skip "security:x" --skip "ui:x"
+if q "d['status'] == 'NOT_RUN' and not any(x['required'] for x in d['gates'])"; then ok "conformance: no required gate is NOT_RUN"; else bad "conformance: no required gate"; fi
+# MUST NOT turn a non-PASS into PASS: a FAIL gate not required does not lower the task
+stamp security-result/static-fail security-hr-static.json
+run "conformance: a FAIL in a skipped gate does not count — but is recorded as NOT_RUN" 0 --task T-1 --skip "security:reviewed by hand in T-0"
+if q "g['security']['status'] == 'NOT_RUN' and not g['security']['required']"; then ok "conformance: a skipped gate is NOT_RUN with its reason"; else bad "conformance: skipped gate"; fi
+stamp security-result/static-pass security-hr-static.json
+
 # --- an app with environments names the one verified
 config '{ "appId": 100, "appAlias": "hr", "apexlangDir": "src", "environments": { "dev": { "sqlclConnection": "dev" } } }'
 run "environments and no --env → BLOCKED" 2 --task T-1

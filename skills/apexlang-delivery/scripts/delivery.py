@@ -5,6 +5,7 @@ writes the verification-manifest — adding no rule of its own (GATES.md §The o
 contract).
 
 Usage: python3 delivery.py --task <id> [--app <alias>] [--env <name>] [--skip <gate>:<reason>]...
+                          [--exit <gate>:<code>]...
 
 Per gate, from <evidenceDir>/<task>/ (the app's key is <alias>, or <alias>.<env>):
   architecture  architecture.json                       (evidence.py write --kind architecture)
@@ -18,7 +19,9 @@ Per gate, from <evidenceDir>/<task>/ (the app's key is <alias>, or <alias>.<env>
 Each result is validated — with jsonschema when it is installed, else by this script's own
 checks of the rules a verdict rests on (the manifest's schemaCheck says which) — and must be
 fresh: made for this task, on the working tree as it is now. Invalid → UNKNOWN; stale or
-missing → NOT_RUN. A gate's status is the worst of its results. Security and UI are required
+missing → NOT_RUN — unless --exit says the gate's command just ran: then a result it did not
+leave is BLOCKED when it exited 2 and UNKNOWN otherwise (GATES.md §The orchestration contract),
+and a single producer's exit code that disagrees with its result's status is UNKNOWN. A gate's status is the worst of its results. Security and UI are required
 when the app sets securityGate / uiGate; --skip records any gate required: false, with why.
 
 Output: the manifest on stdout and in <evidenceDir>/<task>/manifest.json; on stderr, each gate
@@ -56,6 +59,11 @@ HINT = {
     "security": "sec-scan.py, plsql-scan.py, secrets-scan.py --app {alias} --task {task}; sec-probe.py --app {alias}{env} --task {task}",
     "ui": "ux-scan.py --app {alias} --task {task}; ux-check.py --app {alias}{env} --task {task} on each page the change touched",
 }
+
+
+def ran_without(code):
+    """A gate whose command ran and left no fresh result: what GATES.md's contract reads it as."""
+    return "BLOCKED" if code == 2 else "UNKNOWN"
 
 
 def worst(statuses):
@@ -201,6 +209,7 @@ def main(argv):
     ap.add_argument("--app")
     ap.add_argument("--env")
     ap.add_argument("--skip", action="append", default=[], metavar="GATE:REASON")
+    ap.add_argument("--exit", action="append", default=[], metavar="GATE:CODE", dest="exits")
     a = ap.parse_args(argv)
     manifest = {"kind": "verification-manifest", "schemaVersion": 1, "status": "UNKNOWN",
                 "context": context(a.task, "apexlang-delivery"), "gates": []}
@@ -213,6 +222,12 @@ def main(argv):
             if g not in ORDER or not sep or not why.strip():
                 raise Stop("BLOCKED", "BAD_SKIP", f"--skip takes <gate>:<reason>, gate one of {', '.join(ORDER)}")
             skips[g] = why.strip()
+        exits = {}
+        for s in a.exits:
+            g, sep, code = s.partition(":")
+            if g not in ORDER or not re.fullmatch(r"-?[0-9]{1,3}", code.strip()):
+                raise Stop("BLOCKED", "BAD_EXIT", f"--exit takes <gate>:<exit code>, gate one of {', '.join(ORDER)}")
+            exits[g] = int(code)
         alias, task_dir, settings, key = runtime_target(a.app, a.task, a.env)
         if not alias or not task_dir:
             raise Stop("BLOCKED", "APP_REQUIRED", "name the app (--app) or keep one app in apex-sync.json")
@@ -235,7 +250,10 @@ def main(argv):
             else:
                 entry["required"] = True
                 if gate == "validation":
-                    entry["status"], ev, note = validation(reader, list(dict.fromkeys([alias, key])))
+                    st, ev, note = validation(reader, list(dict.fromkeys([alias, key])))
+                    if st == "NOT_RUN" and gate in exits:
+                        st, note = ran_without(exits[gate]), f"the capture ran (exit {exits[gate]}) but {note}"
+                    entry["status"] = st
                     if ev:
                         entry["evidence"] = ev
                     seen = [note]
@@ -251,6 +269,12 @@ def main(argv):
                                  or [(f"ui-{key}-runtime-<page>.json", "ui-result")]),
                     }[gate]
                     got = [reader.result(n, k) for n, k in files]
+                    if gate in exits:
+                        c = exits[gate]
+                        got = [(ran_without(c), cite, f"ran (exit {c}) but {note}") if s == "NOT_RUN" else (s, cite, note)
+                               for s, cite, note in got]
+                        if len(got) == 1 and got[0][0] in EXIT and EXIT[got[0][0]] != c and got[0][1]:
+                            got = [("UNKNOWN", got[0][1], f"{got[0][2]}, but its command exited {c}")]
                     entry["status"] = worst(s for s, _, _ in got)
                     cites = [c for _, c, _ in got if c]
                     if cites:
