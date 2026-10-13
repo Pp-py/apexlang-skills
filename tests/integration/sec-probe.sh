@@ -3,7 +3,8 @@
 # pw.sh against a stubbed Playwright CLI that hands back canned browser verdicts, and a local
 # HTTP server (127.0.0.1) for the cookie-less probe —
 #   * each probe maps to its criterion: refused → PASS, rendered → FAIL, not asked → NOT_RUN;
-#   * a control that rendered no page is UNKNOWN, never a PASS;
+#   * a control that rendered no page, or an error page, is UNKNOWN, never a PASS; APEX's
+#     error page under the requested page id is a refusal (checksum, authorization);
 #   * the low-privilege user logs in in its own session, its password never in argv or output;
 #   * stdout carries no session id and no checksum; --task writes the result.
 set -euo pipefail
@@ -49,6 +50,13 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/ords/r/ws/app/orders":
             self.send_response(302); self.send_header("Location", "/ords/r/ws/app/login?session=123456789"); self.end_headers(); return
+        if self.path == "/ords/r/ws/app/cookied":   # APEX 26.2: redirects again until its cookie comes back
+            self.send_response(302)
+            if "ORA_WWV_APP=1" in (self.headers.get("Cookie") or ""):
+                self.send_header("Location", "/ords/r/ws/app/login?session=123456789")
+            else:
+                self.send_header("Set-Cookie", "ORA_WWV_APP=1; Path=/"); self.send_header("Location", "/ords/r/ws/app/cookied")
+            self.end_headers(); return
         body = {"/ords/r/ws/app/login?session=123456789": '<form><input type="password" name="p"></form>',
                 "/ords/r/ws/app/open": '<input type="hidden" name="p_flow_step_id" id="pFlowStepId" value="10">',
                 "/ords/r/ws/app/odd": '<p>maintenance</p>'}.get(self.path, "")
@@ -86,6 +94,8 @@ main "$(O "$BASE/orders" '"10"'),$(O "$BASE/open" '"10"'),$(O "$BASE/odd" '"10"'
 check "anon: redirected to the login → PASS" 0 "c['SEC-ANON-REDIRECT'] == 'PASS' and c['SEC-ROLE-REFUSED'] == 'NOT_RUN'" --anon "$BASE/orders"
 check "anon: the page served with no login → FAIL" 1 "c['SEC-ANON-REDIRECT'] == 'FAIL'" --anon "$BASE/open"
 check "anon: neither the page nor a login → UNKNOWN" 3 "d['status'] == 'UNKNOWN'" --anon "$BASE/odd"
+main "$(O "$BASE/cookied" '"10"')"
+check "anon: a login reached only by keeping APEX's cookie → PASS" 0 "c['SEC-ANON-REDIRECT'] == 'PASS'" --anon "$BASE/cookied"
 main "$(O "$BASE/orders" null)"
 check "anon: the control rendered no page → UNKNOWN, never PASS" 3 "c['SEC-ANON-REDIRECT'] == 'NOT_RUN' and d['status'] == 'UNKNOWN'" --anon "$BASE/orders"
 
@@ -96,6 +106,11 @@ if grep -q '3ABCDEF\|123456789' "$WORK/out.json"; then bad "stdout carries a che
 else ok "stdout carries neither the checksum nor the session id"; fi
 main "" ",\"tamper\":{\"link\":\"$L\",\"control\":$(O "$L" '"62"'),\"noChecksum\":$(O x '"62"'),\"altered\":$(O x null)}"
 check "tamper: rendered without its checksum → FAIL" 1 "c['SEC-CHECKSUM-TAMPER'] == 'FAIL'" --tamper
+E() { printf '{"url":"%s","step":%s,"login":false,"error":true}' "$1" "$2"; }   # APEX's error page
+main "" ",\"tamper\":{\"link\":\"$L\",\"control\":$(O "$L" '"62"'),\"noChecksum\":$(E x '"62"'),\"altered\":$(E x '"62"')}"
+check "tamper: APEX's error page, under the same page id → refused, PASS" 0 "c['SEC-CHECKSUM-TAMPER'] == 'PASS'" --tamper
+main "" ",\"tamper\":{\"link\":\"$L\",\"control\":$(E "$L" '"62"'),\"noChecksum\":$(E x '"62"'),\"altered\":null}"
+check "tamper: a control that is itself an error page → UNKNOWN" 3 "c['SEC-CHECKSUM-TAMPER'] == 'NOT_RUN'" --tamper
 main "" ',"tamper":{"link":null}'
 check "tamper: no cs= link → NOT_RUN, nothing exercised → UNKNOWN" 3 "c['SEC-CHECKSUM-TAMPER'] == 'NOT_RUN'" --tamper
 
@@ -112,9 +127,18 @@ if grep -q -- '-s apex-low run-code' "$WORK/argv.log" && grep -q -- '-s apex-low
   ok "role: the low user's own session, closed afterwards"; else bad "role: not in its own session, or not closed"; fi
 if grep -rq 'L0wS3cret' "$WORK/argv.log" "$WORK/out.json"; then bad "role: the low password reached argv or the result"
 else ok "role: the low password is in neither argv nor the result"; fi
+low "$(E "$R" '"20"')"
+check "role: APEX's authorization error, under the same page id → PASS" 0 "c['SEC-ROLE-REFUSED'] == 'PASS'" --role "$R"
 low "$(O "$R" '"20"')"
 check "role: rendered for the low user → FAIL" 1 "c['SEC-ROLE-REFUSED'] == 'FAIL'" --role "$R"
 unset APEX_TEST_PASSWORD_LOW_DEMO
+printf 'APEX_TEST_PASSWORD_LOW_DEMO=%s\n' 'L0wD0tenv' > .env   # secrets-scan: allow a fake password this test proves never leaks
+: > "$WORK/argv.log"
+low "$(O "$R" '"9999"')"
+check "role: the low password from the repo's .env, as pw.sh reads it → PASS" 0 "c['SEC-ROLE-REFUSED'] == 'PASS'" --role "$R"
+if grep -rq 'L0wD0tenv' "$WORK/argv.log" "$WORK/out.json"; then bad "role: the .env password reached argv or the result"
+else ok "role: the .env password is in neither argv nor the result"; fi
+rm -f .env
 
 main "" ',"xss":{"elements":0,"text":true}'
 check "xss: shown as text → PASS" 0 "c['SEC-XSS-ESCAPED'] == 'PASS'" --xss T0KEN1

@@ -52,7 +52,7 @@ repo never redefines them, and never promotes an advisory signal to a verdict.
 | BASE / syncpoint | the app's tree at the last synchronization: a git commit at `refs/apex-sync/<alias>`, snapshotted from a Builder export |
 | LOCAL | the app's source dir in the working tree: `<apexlangDir>/<appAlias>` |
 | BUILDER (REMOTE) | the app as the target workspace holds it, exported through the saved SQLcl connection |
-| marker | `<git-dir>/apex-sync/<alias>/check-ok.<direction>` (`.git/` in a clone, `.git/worktrees/<name>/` in a linked worktree): the hook's authorization for that worktree, written only by a check PASS, trusted for 10 minutes |
+| marker | `<git-dir>/apex-sync/<alias>/check-ok.<direction>` (`.git/` in a clone, `.git/worktrees/<name>/` in a linked worktree): the hook's authorization for that worktree, written only by a check PASS, trusted for 5 minutes and only while the source dir hashes to the tree it records |
 | app alias | how every script, ref, directory and result names an app (`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`) |
 | task | one unit of work an orchestrator verifies; its id names a directory under the evidence dir |
 | result | a producer's JSON verdict, validated by its schema in `schemas/` |

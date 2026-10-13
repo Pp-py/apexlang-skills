@@ -80,7 +80,7 @@ With no BASE yet, `check-import` cannot 3-way compare; it degrades to REMOTE-vs-
 
 ## 3. Enforcement hook (Claude Code)
 
-Layer 2 on top of process discipline: a `PreToolUse` hook that blocks an import or an export — in any of the lanes listed below — unless a fresh sync-check marker for that direction exists (TTL 10 min).
+Layer 2 on top of process discipline: a `PreToolUse` hook that blocks an import or an export — in any of the lanes listed below — unless a fresh sync-check marker for that direction exists (TTL 5 min) and the source dir still hashes to the tree it records.
 
 The matcher names **both** shell tools — `Bash|PowerShell` — because Claude Code exposes them as two separate tools (`PowerShell` is not an alias of `Bash`, so a `Bash`-only matcher never fires on a Windows-native session). Widening it is safe precisely because the hook is **shell-agnostic**: both tools carry the same `tool_input.command` field, and the hook reads that text and pattern-matches it. It executes nothing from the caller's shell, so there is no shell syntax for it to get wrong. A matcher of that shape (letters and pipes only) is compared by **exact tool name**, not as a loose regex — it matches those two tools and nothing else.
 

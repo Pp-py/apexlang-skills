@@ -925,6 +925,10 @@ expect     "env: its marker is dev's own"                          0 test -f "$E
 expect     "env: its syncpoint is dev's own"                       0 git rev-parse -q --verify refs/apex-sync/demo.dev
 expect_out "env: the result names the environment"                 '"environment": "dev"' cat "$EK/demo.dev/last-check-import.json"
 expect     "env: the hook lets dev's import run"                   0 hook_cmd 'sql -name fake <<< \"apex import -input src/demo\"'
+# An app's environments are one app: an import naming it by id was "not declared exactly
+# once" (found live, R-8) — the id is the app's in every environment.
+expect     "env: and with the app id too"                          0 hook_cmd 'sql -name fake <<< \"apex import -input src/demo -id 100\"'
+expect     "env: and with the app id alone"                        0 hook_cmd 'sql -name fake <<< \"apex import -id 100\"'
 expect     "env: but not qa's, which nobody checked"               2 hook_cmd 'sql -name fake_qa <<< \"apex import -input src/demo\"'
 expect_out "env: an import naming no connection blocks"            'names none of their connections' hook_cmd 'apex import -input src/demo'
 expect     "env: a connection of no environment blocks"            2 hook_cmd 'sql -name other <<< \"apex import -input src/demo\"'

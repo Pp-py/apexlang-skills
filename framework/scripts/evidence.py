@@ -40,7 +40,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from result import RE_TASK, ROOT, Stop, context, rel, scrub, target, tree  # noqa: E402
 
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-SESSION = [(re.compile(r"([?&])session=[0-9]+&?"), r"\1"), (re.compile(r"(f\?p=[^:\s]*:[^:\s]*:)[0-9]{6,}"), r"\1")]
+SESSION = [(re.compile(r"([?&])session=[0-9]+&?"), r"\1"), (re.compile(r"(f\?p=[^:\s]*:[^:\s]*:)[0-9]{6,}"), r"\1"),
+           (re.compile(r"(?i)(session%3D)[0-9]+"), r"\1"),                       # the same, url-encoded
+           (re.compile(r"(p_context=[^/\s&\"\\]+/[^/\s&\"\\]+/)[0-9]{6,}"), r"\1"),  # wwv_flow.accept?p_context=<app>/<page>/<session>
+           (re.compile(r"(p_instance=)[0-9]{6,}"), r"\1"),
+           (re.compile(r"(pageSubmissionId\\*\"\s*:\s*\\*\")[^\"]*?(\\*\")"), r"\1\2")]  # APEX's per-submit token
 SECRET = [re.compile(r"(?i)(password\s*[=:]\s*)\S+"), re.compile(r"[A-Za-z0-9_$#]+/[^\s/@]+@(//)?[A-Za-z0-9][A-Za-z0-9_.-]*")]
 DRAFT = {"runtime": {"check", "backend", "login", "criteria", "evidence", "target", "app"},
          "architecture": {"decisions", "redFlags", "missingInputs", "evidence", "app"}}

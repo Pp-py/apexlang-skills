@@ -5,16 +5,17 @@ Usage: python3 sec-probe.py [--app <alias>] [--task <id>] [--anon <url>]... [--t
 
 Run it after `pw.sh [--app X] login` and `pw.sh goto <page>`, as the test user. Each probe is
 asked for; one not asked is NOT_RUN. What APEX rendered is read from the page id
-(#pFlowStepId), against a CONTROL: the same URL loaded by the test user must render a page,
+(#pFlowStepId) and its error page — APEX refuses on an error page that keeps the requested id —
+against a CONTROL: the same URL loaded by the test user must render that page without an error,
 or the probe is UNKNOWN — never a PASS on a broken link.
-  SEC-ANON-REDIRECT    --anon <url>: fetched over plain HTTP with no cookie, redirects followed;
+  SEC-ANON-REDIRECT    --anon <url>: fetched over plain HTTP with an empty cookie jar, redirects followed;
                        PASS on a login page (a password field, /login, another host),
                        FAIL if the control's page is served
   SEC-CHECKSUM-TAMPER  --tamper: the first link with cs= on the held page, loaded in a new tab
                        intact (control), without cs, and with an item value changed: both
                        variants must not render the control's page
   SEC-ROLE-REFUSED     --role <url>: logged in as the app's lowPrivUser (apex-sync.json) in its
-                       own pw.sh session, password from $APEX_TEST_PASSWORD_LOW[_<ALIAS>] — the
+                       own pw.sh session, password from $APEX_TEST_PASSWORD_LOW[_<ALIAS>] or the .env — the
                        URL must not render the control's page. No lowPrivUser → NOT_RUN
   SEC-XSS-ESCAPED      --xss <token>: on the held page, an element [data-xss-probe="<token>"]
                        is FAIL, the payload shown as text is PASS, neither is NOT_RUN. The
@@ -26,6 +27,7 @@ Exit:   0 PASS · 1 FAIL · 2 BLOCKED (nothing asked, pw.sh refused, the low use
         a login page held) · 3 UNKNOWN (a control did not render, dead session, no verdict).
 """
 import argparse
+import http.cookiejar
 import json
 import os
 import re
@@ -37,7 +39,7 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
 from pw import pw, redact, run_code  # noqa: E402
-from result import Stop, context, scrub, target, write  # noqa: E402
+from result import ROOT, Stop, context, scrub, target, write  # noqa: E402
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sec-probe.js")
 TIMEOUT = int(os.environ.get("SEC_PROBE_TIMEOUT", "300"))
@@ -61,11 +63,15 @@ def browser(app, opts, env=None):
 
 
 def anonymous(url):
-    """(final url, html) of a cookie-less GET, redirects followed."""
+    """(final url, html) of an anonymous GET, redirects followed: no cookie of the test user's,
+    but a fresh jar of its own — APEX sets a session cookie on its redirect to the login page
+    and, refused it, redirects again until the client gives up (seen on 26.2, R-8)."""
     ctx = ssl._create_unverified_context() if os.environ.get("PW_INSECURE_TLS") == "1" else None
     req = urllib.request.Request(url, headers={"User-Agent": "apex-security sec-probe"})
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
+                                         urllib.request.HTTPSHandler(context=ctx))
     try:
-        with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+        with opener.open(req, timeout=30) as r:
             return r.geturl(), r.read(400000).decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
         return e.geturl() or url, e.read(400000).decode("utf-8", "replace")
@@ -75,14 +81,31 @@ def anonymous(url):
 
 def refused(control, probe):
     """None when the control rendered no page (UNKNOWN), else whether the probe was refused."""
-    if not control or control.get("step") in (None, "") or control.get("login"):
+    if not control or control.get("step") in (None, "") or control.get("login") or control.get("error"):
         return None
-    return probe is not None and probe.get("step") != control["step"]
+    return probe is not None and (probe.get("step") != control["step"] or bool(probe.get("error")))
+
+
+def dotenv(key):
+    """KEY=value from the repo root's .env (or $APEX_TEST_ENV), the way pw.sh reads it."""
+    path = os.environ.get("APEX_TEST_ENV") or (os.path.join(ROOT, ".env") if ROOT else "")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                k, sep, v = line.strip().partition("=")
+                if sep and k.strip() == key:
+                    v = v.strip()
+                    return v[1:-1] if len(v) > 1 and v[0] == v[-1] and v[0] in "'\"" else v
+    except OSError:
+        pass
+    return None
 
 
 def low_env(alias, user):
     sfx = "_" + re.sub(r"[^A-Z0-9]", "_", (alias or "").upper()) if alias else ""
-    pwd = os.environ.get(f"APEX_TEST_PASSWORD_LOW{sfx}") or os.environ.get("APEX_TEST_PASSWORD_LOW")
+    keys = [f"APEX_TEST_PASSWORD_LOW{sfx}", "APEX_TEST_PASSWORD_LOW"] if sfx else ["APEX_TEST_PASSWORD_LOW"]
+    # as pw.sh does: per app first, then shared; the environment before the .env
+    pwd = next((v for k in keys for v in (os.environ.get(k), dotenv(k)) if v), None)
     if not pwd:
         return None
     env = dict(os.environ, PW_SESSION=os.environ.get("PW_SESSION", "apex") + "-low")
@@ -131,7 +154,7 @@ def probe(a, alias, settings, crit, add):
         env = low_env(alias or (settings or {}).get("appAlias"), user) if user else None
         if not env:
             crit["SEC-ROLE-REFUSED"] = ("no lowPrivUser for the app in apex-sync.json" if not user
-                                        else "no $APEX_TEST_PASSWORD_LOW for the low-privilege user")
+                                        else "no $APEX_TEST_PASSWORD_LOW for the low-privilege user (environment or .env)")
         else:
             p = pw(a.app, ["login"], env, TIMEOUT)
             if p.returncode != 0:

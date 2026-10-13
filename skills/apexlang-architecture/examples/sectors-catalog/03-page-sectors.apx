@@ -52,6 +52,9 @@ page 30 (
             template: @/standard
             templateOptions: #DEFAULT#
         }
+        advanced {
+            htmlDomId: sectors
+        }
         edit {
             enabled: true
             allowedOperations: [
