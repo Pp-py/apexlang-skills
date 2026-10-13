@@ -171,6 +171,42 @@ page 60 (
                 dataType: STRING
             }
         )
+
+        savedReport primary (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn ABSENCE_ID (
+                sequence: 1
+            )
+
+            displayColumn EMPLOYEE_NO (
+                sequence: 2
+            )
+
+            displayColumn ABSENCE_TYPE (
+                sequence: 3
+            )
+
+            displayColumn DATE_FROM (
+                sequence: 4
+            )
+
+            displayColumn DATE_TO (
+                sequence: 5
+            )
+
+            displayColumn STATUS (
+                sequence: 6
+            )
+
+            displayColumn STATUS_CSS (
+                sequence: 7
+            )
+
+        )
     )
 
     dynamicAction refresh-requests (

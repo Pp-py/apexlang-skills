@@ -13,7 +13,7 @@ description: Use when an APEXlang page is designed, changed or reviewed for UI q
 - **Output:** a `ui-result` (`framework/schemas/ui-result.schema.json`) per run: per criterion `PASS` · `FAIL` · `NOT_RUN`, plus advisories that never change the verdict.
 - **Evidence:** per criterion, the `.apx` lines it rests on, or the saved browser and axe-core output with its sha256 under the task's evidence dir (`framework/EVIDENCE.md`).
 - **Gate:** UI (`framework/GATES.md`), after Runtime — required for an app with `"uiGate": true` in `apex-sync.json`, opt-in until 1.0.0; when required, a non-PASS blocks.
-- **Interface:** the criteria in `criteria/`; `python3 scripts/ux-scan.py [--app X] [--task <id>] <file-or-dir>…` for the static FAIL criteria. `python3 scripts/ux-check.py [--app X] [--task <id>] [--dialog <selector>]…` for the runtime ones, through `apex-sentinel`'s `pw.sh` with a vendored axe-core.
+- **Interface:** the criteria in `criteria/`; `python3 scripts/ux-scan.py [--app X] [--task <id>] <file-or-dir>…` for the static FAIL criteria. `python3 scripts/ux-check.py [--app X] [--env E] [--task <id>] [--dialog <selector>]…` for the runtime ones, through `apex-sentinel`'s `pw.sh` with a vendored axe-core.
 
 ## Status — what exists
 
@@ -42,14 +42,15 @@ the browser actually computes), confirmation done by a dynamic action instead of
 
 ## Runtime checks
 
-After `pw.sh [--app X] login` and `pw.sh goto <page>`, run
-`python3 scripts/ux-check.py [--app X] [--dialog <selector>]… [--raw <evidence-dir>/raw/ux-<alias>/axe.json]`
+After `pw.sh [--app X] [--env E] login` and `pw.sh goto <page>`, run
+`python3 scripts/ux-check.py [--app X] [--env E] [--dialog <selector>]… [--raw <evidence-dir>/raw/ux-<alias>/axe.json]`
 on the page the session holds. It runs axe-core (`vendor/`, pinned in `vendor/axe-core.lock.json`)
 in every frame, on the page and with each dialog open, for `UX-AXE-SERIOUS`, `UX-ITEM-NAME` and
 `UX-CONTROL-NAME`. For each `--dialog` opener (a selector pw.sh can click: `#id`, `text=Edit`) it
 checks `UX-DIALOG-FOCUS`: focus moves in, Tab and Shift+Tab stay in, Esc closes, focus returns.
 No `--dialog` leaves that criterion `NOT_RUN`. Minor violations and axe's "incomplete" are
-advisories. A `ui-result` (scope `runtime`) on stdout, never a node's HTML or a session id;
+advisories, and so is a finding in markup APEX itself renders that `oracle-owned.json` lists for
+the APEX version the page reports (`UX-ORACLE-OWNED`; entries are measured, one version each). A `ui-result` (scope `runtime`) on stdout, never a node's HTML or a session id;
 `--raw` keeps axe's full output with its sha256. Exit 0 PASS · 1 FAIL · 2 BLOCKED (axe missing or
 not matching its lock, opener not found, a login page) · 3 UNKNOWN (dead session, no verdict).
 
@@ -67,7 +68,8 @@ file against the lock.
 With `--task <id>` both scripts also write their `ui-result` under the task's evidence dir
 (`evidenceDir` in `apex-sync.json`, default `.apex-evidence/`): `ui-<alias>-static.json`, and
 `ui-<alias>-runtime-<page>.json` per page, with axe's raw output in `raw/ui-<alias>/`. `--app` names
-the app; with one app in `apex-sync.json` it may be left out. The gate passes on the static
+the app; with one app in `apex-sync.json` it may be left out. An app with `environments` also
+takes `--env` (the one the page belongs to); its files are keyed `<alias>.<env>`. The gate passes on the static
 result PASS and a runtime result PASS for each page the change touched; a consumer cites all of
 them in the manifest (`framework/GATES.md` §Order). Run the static scan over the app's `.apx` and
 `ux-check.py` on every page and dialog the change touched — a page not checked is not covered.
@@ -112,3 +114,4 @@ Where `apexlang-architecture` states a data-side rule (the closed set of classes
 - Calling a page accessible because axe found nothing.
 - Hiding a status, an action or a field to make a criterion pass.
 - Downgrading a `FAIL` criterion to an advisory for this page — severities change in the catalog, for every page, or not at all.
+- Adding to `oracle-owned.json` a defect your `.apx` causes, or one not measured on that APEX version.

@@ -7,7 +7,7 @@
 ## Shape
 
 1. An `interactiveGrid` region over a SQL query, `edit.enabled: true`.
-2. An `executeCode` process bound to the region (`editableRegion`), point `afterSubmit`, that runs **once per changed row** — the grammar's `executeCondition: forEachRow`, a property of the process's `serverSideCondition` group — branches on `:APEX$ROW_STATUS`, and calls `pkg_x.save_row`.
+2. An `executeCode` process bound to the region (`editableRegion`), point `processing`, that runs **once per changed row** — the grammar's `executeCondition: forEachRow`, a property of the process's `serverSideCondition` group — branches on `:APEX$ROW_STATUS`, and calls `pkg_x.save_row`.
 3. A package `save_row` adapter routing `C`/`U`/`D` to `create_row`/`update_row`/`delete_row`.
 
 The built-in *Interactive Grid – Automatic Row Processing (DML)* is **not** used. Delete it if APEX scaffolds it. This is the exception the official standard already carves out — `apex.interactive-grid-page.md` §*Process Guidance*: *"do not substitute custom PL/SQL **unless invoking a dedicated API**."* `pkg_sectors` is that API.
@@ -66,7 +66,7 @@ region sectors (
 
 ## `.apx` — save process
 
-The `execution.point` must be `afterSubmit`, NOT `processing` (see Non-obvious points):
+The `execution.point` is `processing`, NOT `afterSubmit` (see Non-obvious points):
 
 ```
 process save-sectors (
@@ -105,7 +105,7 @@ process save-sectors (
             end;
             ```
     }
-    execution { sequence: 10  point: afterSubmit }
+    execution { sequence: 10  point: processing }
 )
 ```
 
@@ -140,7 +140,7 @@ All validation (uniqueness, "cannot delete while referenced") lives in `create_r
 
 - **`p_sector_id` is IN OUT.** On insert it returns the new PK so the IG can finalize the row; on update/delete it carries the existing PK in.
 - **`ROW_VERSION` is projected, hidden, and passed back.** It is the lost-update guard that replaces the one Automatic Row Processing was providing (`back-end-conventions.md` §7). Leave it out and the grid silently overwrites a colleague's save. `p_row_version` is IN OUT: `save_row` hands the bumped version back to the row, so it can be saved again without a refresh.
-- **Process point is `afterSubmit`**, not `processing` — IG per-row binds (`:CODE`, `:APEX$ROW_STATUS`) are only available there.
+- **Process point is `processing`**, not `afterSubmit`. APEXlang's `afterSubmit` is the Builder's *After Submit* point, which runs **before** computations and validations; `processing` runs after them. The per-row binds (`:CODE`, `:APEX$ROW_STATUS`) and the PK/version write-back work there: measured on APEX 26.2 (`framework/CAPABILITIES.md`, Recorded runs).
 - **Required-field checks go in the process**, because IG column validations don't fire on Save. Use `apex_error.add_error(..., c_inline_in_notification)` for clean inline text.
 - **Two grids on one page:** give each its own `editableRegion`-bound process, ordered by `sequence`.
 

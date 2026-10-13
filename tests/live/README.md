@@ -13,7 +13,10 @@ re-import the kept export, `git checkout` the branch, `git update-ref -d refs/ap
 
 ## L1 — the sync protocol against a real Builder
 
-Prerequisites: `apex-sync.json` for the copy (`setup.md` §1), `apex-sync-check.sh doctor` all OK.
+Prerequisites: `apex-sync.json` for the copy (`setup.md` §1), `apex-sync-check.sh doctor` all OK —
+including its SQLcl line: APEX 26.2 exports APEXlang 26.2.0+3479, which SQLcl 26.2.0 cannot read
+back (UP-2; 26.3.0 can). A source written by hand differs in form from the Builder's export:
+after the first import, export once (step 4's way) and commit, so later diffs show content only.
 
 1. `check-import --task L1` on a clean repo with no syncpoint → PASS, first syncpoint
    (or CONFLICT, BOOTSTRAP_DIVERGED: reconcile once, `setup.md` §2).
@@ -22,8 +25,9 @@ Prerequisites: `apex-sync.json` for the copy (`setup.md` §1), `apex-sync-check.
 3. Copy the page from the kept export into LOCAL, commit → `check-import` → PASS,
    `BUILDER_CHANGES_CAPTURED`; import; `record-sync` → PASS, `basis: fresh-check`.
 4. Dirty a file under the source dir → `check-export` → **FAIL**, `LOCAL_DIRTY`; commit;
-   `check-export` → PASS; export; `record-sync` → PASS, `basis: local-equals-builder` (or
-   `fresh-check`, while step 3's `check-import` PASS is under 5 minutes old).
+   `check-export` → PASS; remove the app's source dir and export into `apexlangDir` (never into a
+   populated dir: UP-5); `record-sync` → PASS, `basis: local-equals-builder` (or `fresh-check`,
+   while step 3's `check-import` PASS is under 5 minutes old).
 5. Every result in `.apex-evidence/L1/` validates (`tests/contract/schemas.py --captured`
    pointed at a copy of it).
 
@@ -45,6 +49,10 @@ Offline (`/nolog`); records what SQLcl's `apex validate` says about the examples
 26.1 scaffold. A FAIL is recorded as a FAIL, never allowlisted.
 
 ## L4 — the runtime walkthroughs
+
+An app with `environments` names one in every call: `pw.sh --env dev`, `evidence.py … --env dev`,
+`sec-probe.py`/`ux-check.py --env dev`. An import ends every session of the app: log in again after
+one (`pw.sh login` asks the server).
 
 `skills/apex-sentinel/examples/sectors-catalog.md` and `absences-workflow.md` against the
 deployed example slices, through `pw.sh` with a dedicated low-privilege test user; one

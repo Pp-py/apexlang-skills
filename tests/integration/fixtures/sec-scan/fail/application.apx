@@ -4,4 +4,7 @@ app DEMO (
         maxSessionIdleTime: 7200
         rejoinSessions: allSessions
     }
+    sessionStateProtection {
+        enabled: false
+    }
 )

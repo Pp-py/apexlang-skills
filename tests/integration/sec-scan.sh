@@ -49,6 +49,24 @@ want=$( { tr -d '\r' < "$FIX/fail.expected"; printf 'ADVISE SEC-SESSION-TIMEOUTS
 if [[ "$got" == "$want" ]]; then ok "fail/ findings and advisories match fail.expected"
 else bad "fail/ findings differ from fail.expected"; diff <(echo "$want") <(echo "$got") || true; fi
 
+# What an export leaves out is its version's default (R-8, APEX 26.2): a page with no
+# pageAccessProtection is checksummed from 26.2 and unrestricted in 26.1; an app with no
+# sessionStateProtection block has it enabled in both.
+for v in 26.2.0+3479 26.1.0+3102; do
+  mkdir -p "$P/v$v/.apex" "$P/v$v/pages"
+  printf '{ "mmdVersion" : "%s" }\n' "$v" > "$P/v$v/.apex/apexlang.json"
+  printf 'app V (\n    name: V\n    sessionManagement {\n        maxSessionIdleTime: 3600\n        maxSessionLength: 28800\n        rejoinSessions: false\n    }\n)\n' > "$P/v$v/application.apx"
+  printf 'page 7 (\n    name: Plain\n    alias: PLAIN\n    security {\n        authorizationScheme: mustNotBePublicUser\n    }\n)\n' > "$P/v$v/pages/p00007-plain.apx"
+done
+config '{ "appId": 100, "appAlias": "demo" }'
+expect_rc "26.2: no pageAccessProtection (checksum by default), no SSP block (enabled) → PASS" 0 "v26.2.0+3479"
+expect_rc "26.1: no pageAccessProtection is unrestricted → FAIL" 1 "v26.1.0+3102"
+if "$PY" -c "import json,sys
+d = json.load(open(sys.argv[1])); c = {x['id']: x for x in d['criteria']}
+assert c['SEC-APP-SSP']['status'] == 'PASS' and c['SEC-PAGE-CHECKSUM']['status'] == 'FAIL', c
+assert '26.1 default' in c['SEC-PAGE-CHECKSUM']['findings'][0]['detail']" "$WORK/out.json"
+then ok "26.1: the finding names the version's default; SSP PASS"; else bad "26.1: wrong criteria"; fi
+
 expect_rc "unparsed.apx is UNKNOWN" 3 unparsed.apx
 expect_rc "no input is BLOCKED" 2
 expect_rc "a file outside the repo is BLOCKED" 2 "$FIX/pass/p00010-orders.apx"

@@ -42,7 +42,7 @@ one entity.
 
 ```
 ❌ Anti-pattern (agent default)        ✅ This skill
-IG → Automatic Row Processing (DML)    IG → executeCode @afterSubmit
+IG → Automatic Row Processing (DML)    IG → executeCode @processing
    → table directly                       → pkg_x.save_row(:APEX$ROW_STATUS, ...)
 Validation in IG column                Validation + rules inside the package
 DML in page processes                  All DML behind the package API

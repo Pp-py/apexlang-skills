@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """ux-check — the runtime half of apex-ux's FAIL criteria, in the page the agent has open.
 
-Usage: python3 ux-check.py [--app <alias>] [--task <id>] [--dialog <selector>]... [--raw <file>]
+Usage: python3 ux-check.py [--app <alias>] [--env <name>] [--task <id>] [--dialog <selector>]... [--raw <file>]
 
-Run it after `pw.sh [--app X] login` and `pw.sh goto <page>`: it checks the page the
+Run it after `pw.sh [--app X] [--env E] login` and `pw.sh goto <page>`: it checks the page the
 session already holds, through apex-sentinel's pw.sh (never a copy of it).
 
 Checks (criteria/common.md), with the vendored axe-core (vendor/axe-core.lock.json):
@@ -13,10 +13,13 @@ Checks (criteria/common.md), with the vendored axe-core (vendor/axe-core.lock.js
   UX-CONTROL-NAME   axe's naming rules for controls (button-name, link-name, input-button-name)
   UX-DIALOG-FOCUS   per --dialog opener: focus moves in, Tab and Shift+Tab stay in, Esc
                     closes, focus returns to the opener. No --dialog → NOT_RUN.
-  advisories        UX-AXE-MINOR (moderate/minor), UX-AXE-REVIEW (axe "incomplete")
+  advisories        UX-AXE-MINOR (moderate/minor), UX-AXE-REVIEW (axe "incomplete"),
+                    UX-ORACLE-OWNED: a finding in markup APEX itself renders, listed in
+                    ../oracle-owned.json for the APEX version the page reports — narrow entries,
+                    one version each; a version with no entry gets none
 
 Output: a ui-result (framework/schemas/ui-result.schema.json, scope runtime) on stdout, and
-with --task in <evidenceDir>/<task>/ui-<alias>-runtime-<page>.json — rule, impact, selectors
+with --task in <evidenceDir>/<task>/ui-<alias>[.<env>]-runtime-<page>.json — rule, impact, selectors
 and help per finding, never the node's HTML, which can hold personal data. axe's full output
 goes to --raw <file> (with --task, by default <evidenceDir>/<task>/raw/ui-<alias>/axe-<page>.json),
 cited in evidence with its sha256.
@@ -33,11 +36,36 @@ import sys
 from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
+import pw as pwlib  # noqa: E402
 from pw import redact, run_code  # noqa: E402
-from result import Stop, context, rel, scrub, target, write  # noqa: E402
+from result import Stop, context, rel, runtime_target, scrub, write  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENDOR = os.environ.get("UX_AXE_DIR") or os.path.join(HERE, "..", "vendor")
+OWNED = os.environ.get("UX_ORACLE_OWNED") or os.path.join(HERE, "..", "oracle-owned.json")
+
+
+def load_owned():
+    """The entries of oracle-owned.json; a list that cannot be read is a Stop, never 'no entry'."""
+    try:
+        with open(OWNED, encoding="utf-8") as fh:
+            entries = json.load(fh).get("entries", [])
+    except (OSError, ValueError, AttributeError) as e:
+        raise Stop("BLOCKED", "OWNED_UNREADABLE", f"oracle-owned.json is unreadable: {e.__class__.__name__}")
+    return [e for e in entries if isinstance(e, dict)]
+
+
+def owned_by_oracle(entries, apex, f):
+    """The entry that names this finding on this APEX version, or None."""
+    for e in entries:
+        if not apex or e.get("apex") != apex:
+            continue
+        if f.get("rule") and e.get("rule") == f["rule"] and f.get("targets") \
+                and all(re.search(e.get("targets", "^$"), t) for t in f["targets"]):
+            return e
+        if f.get("failed") and e.get("failed") and sorted(e["failed"]) == sorted(f["failed"]):
+            return e
+    return None
 TEMPLATE = os.path.join(HERE, "ux-check.js")
 TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]
 ITEM_RULES = {"label", "select-name", "aria-input-field-name"}
@@ -76,9 +104,18 @@ def run_page(app, axe_src, dialogs):
     return run_code(app, code, "ux-check-", TIMEOUT)
 
 
-def evaluate(v, dialogs):
+def evaluate(v, dialogs, owned=()):
     crit = {k: [] for k in FAIL_IDS}
     advisories, blocked, seen = [], [], set()
+    apex = v.get("apex") if isinstance(v.get("apex"), str) else None
+
+    def fail(cid, f):
+        e = owned_by_oracle([x for x in owned if x.get("criterion") == cid], apex, f)
+        if e:
+            advisories.append(dict(f, id="UX-ORACLE-OWNED",
+                                   detail=f"{cid} {e.get('id')} (APEX {apex}): {e.get('note', '')}"[:300]))
+        else:
+            crit[cid].append(f)
     for run in v.get("runs", []):
         where = run.get("where", "page")
         for viol in run.get("violations", []):
@@ -95,7 +132,7 @@ def evaluate(v, dialogs):
             if f["rule"] in CONTROL_RULES:
                 crit["UX-CONTROL-NAME"].append(f)
             if f["impact"] in ("serious", "critical"):
-                crit["UX-AXE-SERIOUS"].append(f)
+                fail("UX-AXE-SERIOUS", f)
             elif f["rule"] not in ITEM_RULES | CONTROL_RULES:
                 advisories.append(dict(f, id="UX-AXE-MINOR"))
         for inc in run.get("incomplete", []):
@@ -108,7 +145,7 @@ def evaluate(v, dialogs):
         failed = [k for k in ("opened", "focusIn", "tabStays", "shiftTabStays", "escCloses", "focusReturns")
                   if not d.get(k)]
         if failed:
-            crit["UX-DIALOG-FOCUS"].append({"selector": d.get("selector"), "failed": failed})
+            fail("UX-DIALOG-FOCUS", {"selector": d.get("selector"), "failed": failed})
     out = []
     for k in FAIL_IDS:
         c = {"id": k, "status": "FAIL" if crit[k] else "PASS", "findings": crit[k]}
@@ -124,17 +161,19 @@ def evaluate(v, dialogs):
 def main(argv):
     ap = argparse.ArgumentParser(description="apex-ux runtime checks on the page pw.sh holds")
     ap.add_argument("--app")
+    ap.add_argument("--env", help="the environment the page belongs to, for an app with environments")
     ap.add_argument("--task")
     ap.add_argument("--dialog", action="append", default=[], help="selector of a control that opens a dialog")
     ap.add_argument("--raw", help="write axe's full output here (default with --task: the task's raw dir)")
     a = ap.parse_args(argv)
     result = {"kind": "ui-result", "schemaVersion": 1, "status": "UNKNOWN", "reasons": [],
               "context": context(a.task, "apex-ux"), "scope": "runtime", "criteria": [], "advisories": []}
-    task_dir, page = None, "page"
+    task_dir, page, key = None, "page", None
     try:
-        alias, task_dir, _ = target(a.app, a.task)
+        alias, task_dir, _, key = runtime_target(a.app, a.task, a.env)
+        pwlib.ENV = a.env
         if alias:
-            result["app"] = {"appAlias": alias}
+            result["app"] = {"appAlias": alias, **({"environment": a.env} if a.env else {})}
         axe_src, lock = load_axe()
         result["engine"] = {"name": "axe-core", "version": lock.get("version"), "sha256": lock.get("sha256")}
         v = run_page(a.app, axe_src, a.dialog)
@@ -150,7 +189,7 @@ def main(argv):
                              "error": scrub(redact(str(e.get("error", ""))))[:300]} for e in v.get("errors", [])]
         if not v.get("runs"):
             raise Stop("UNKNOWN", "NO_FRAME", "axe ran in no frame")
-        raw = a.raw or (task_dir and os.path.join(task_dir, "raw", f"ui-{alias}", f"axe-{page}.json"))
+        raw = a.raw or (task_dir and os.path.join(task_dir, "raw", f"ui-{key}", f"axe-{page}.json"))
         if raw:
             data = json.dumps(v, indent=1).encode("utf-8")
             os.makedirs(os.path.dirname(os.path.abspath(raw)), exist_ok=True)
@@ -161,7 +200,7 @@ def main(argv):
                                        "description": "axe-core's full output, node HTML included - never share it"}]
             else:
                 print(f"ux-check: {raw} is outside the repository; not cited in the result", file=sys.stderr)
-        result["criteria"], result["advisories"], blocked = evaluate(v, a.dialog)
+        result["criteria"], result["advisories"], blocked = evaluate(v, a.dialog, load_owned())
         if blocked:
             raise Stop("BLOCKED", "OPENER_NOT_FOUND", "dialog opener not found: " + ", ".join(blocked))
         failed = [c["id"] for c in result["criteria"] if c["status"] == "FAIL"]
@@ -174,7 +213,7 @@ def main(argv):
             result["status"] = "FAIL"      # a defect found stands; the missing opener is reported with it
     except OSError as e:
         result["status"], result["reasons"] = "UNKNOWN", [{"code": "RAW_UNWRITABLE", "message": f"cannot write the raw output: {e.__class__.__name__}"}]
-    return write(result, task_dir, f"ui-{result.get('app', {}).get('appAlias', 'app')}-runtime-{page}.json")
+    return write(result, task_dir, f"ui-{key or 'app'}-runtime-{page}.json")
 
 
 if __name__ == "__main__":

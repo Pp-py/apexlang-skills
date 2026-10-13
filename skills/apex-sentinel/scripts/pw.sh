@@ -607,7 +607,17 @@ case "$CMD" in
     if (!page.url().startsWith(APP.replace(/\/+$/, ''))) return false;   // some other app
     if (await onLoginPage()) return false;
     const u = await appUser();
-    return !!u && u.toLowerCase() !== 'nobody';        // APEX calls an anonymous session 'nobody'
+    if (!u || u.toLowerCase() === 'nobody') return false;   // APEX calls an anonymous session 'nobody'
+    // The page we hold says who was signed in when it rendered, not now: an app import ends
+    // every session of the app (seen on 26.2, R-8). Ask the server for the same URL — a dead
+    // session answers with the login page — without leaving the page (no unload, no lost edits).
+    return page.evaluate(async () => {
+      try {
+        const r = await fetch(location.href, { credentials: 'same-origin', cache: 'no-store' });
+        const html = await r.text();
+        return r.ok && !/\/login$/i.test(new URL(r.url).pathname) && !/type=["']?password/i.test(html);
+      } catch (e) { return false; }
+    }).catch(() => false);
   };
   if (await signedIn()) return verdict();          // signed in — as whom? verdict() decides
 

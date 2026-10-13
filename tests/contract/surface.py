@@ -404,10 +404,10 @@ def check_interface():
         missing.append("pw.sh usage: [--app <alias>] [--env <name>] <subcommand>")
     for script, args in (("apexlang-architecture/scripts/arch-scan.py", "arch-scan.py <file-or-dir>..."),
                          ("apex-ux/scripts/ux-scan.py", "[--app <alias>] [--task <id>]"),
-                         ("apex-ux/scripts/ux-check.py", "[--app <alias>] [--task <id>] [--dialog <selector>]..."),
+                         ("apex-ux/scripts/ux-check.py", "[--app <alias>] [--env <name>] [--task <id>] [--dialog <selector>]..."),
                          ("apex-security/scripts/sec-scan.py", "[--app <alias>] [--task <id>]"),
                          ("apex-security/scripts/plsql-scan.py", "[--app <alias>] [--task <id>]"),
-                         ("apex-security/scripts/sec-probe.py", "[--app <alias>] [--task <id>] [--anon <url>]... [--tamper]"),
+                         ("apex-security/scripts/sec-probe.py", "[--app <alias>] [--env <name>] [--task <id>] [--anon <url>]... [--tamper]"),
                          ("apex-security/scripts/secrets-scan.py", "[--app <alias>] [--task <id>] [<path>...]")):
         if args not in read(f"skills/{script}"):
             missing.append(f"{script} usage: {args}")

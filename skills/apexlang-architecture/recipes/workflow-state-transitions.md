@@ -137,7 +137,7 @@ process approve (
         value { type: item  item: P62_ABSENCE_ID }  advanced { displaySequence: 1 } )
     parameter p_approver   ( value { type: expression  plsqlExpression: :APP_USER }
         advanced { displaySequence: 2 } )
-    execution { sequence: 10  point: afterSubmit }
+    execution { sequence: 10  point: processing }
     serverSideCondition { type: expression  plsqlExpression: :REQUEST = 'APPROVE' }
 )
 process reject (
@@ -146,7 +146,7 @@ process reject (
     parameter p_absence_id ( parameter { dataType: number }
         value { type: item  item: P62_ABSENCE_ID }  advanced { displaySequence: 1 } )
     parameter p_reason     ( value { type: item  item: P62_REASON }  advanced { displaySequence: 2 } )
-    execution { sequence: 20  point: afterSubmit }
+    execution { sequence: 20  point: processing }
     serverSideCondition { type: expression  plsqlExpression: :REQUEST = 'REJECT' }
 )
 

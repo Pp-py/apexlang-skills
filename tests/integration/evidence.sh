@@ -49,6 +49,13 @@ if q "import hashlib; assert d['evidence']['path'] == '$RAW/render'; assert d['e
   ok "capture: the path and sha256 it prints are the file's"; else bad "capture: wrong evidence ref"; fi
 if ! grep -qE "1234567890|987654321|$SECRET_PW|tiger$$" "$RAW/render" && ! grep -qF "$H" "$RAW/render" && grep -q 'home=~' "$RAW/render"; then
   ok "capture: no session id, password, connect string or home dir in the file"; else bad "capture: a value reached the file"; cat "$RAW/render"; fi
+# The other places APEX puts a session id: a page submit's URL, an encoded dialog link, the
+# per-submit token in its JSON answer (seen on a live 26.2 app, R-8).
+run "capture: an APEX submit's session forms" 0 capture --gate runtime --task T-1 submit -- \
+  printf '%s %s %s %s\n' 'wwv_flow.accept?p_context=app/resolve/1265786654885' 'url=%3Fp1%3D2%26session%3D1265786654885%26cs%3D3' \
+  'p_instance=1265786654885' '{\"pageSubmissionId\":\"MjIw\\/Ngnf\"}'
+if ! grep -qE "1265786654885|MjIw" "$RAW/submit" && grep -q 'p_context=app/resolve/ ' "$RAW/submit"; then
+  ok "capture: no session id in a submit URL, an encoded link or the submit token"; else bad "capture: a session form reached the file"; cat "$RAW/submit"; fi
 if [[ "$(cat .apex-evidence/.gitignore)" == "*" ]]; then ok "capture: the evidence dir ignores itself"; else bad "capture: no .gitignore"; fi
 run "capture: a bad name is refused" 2 capture --gate runtime --task T-1 ../x -- true
 run "capture: no command is refused" 2 capture --gate runtime --task T-1 empty

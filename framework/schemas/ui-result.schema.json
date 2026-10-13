@@ -38,7 +38,7 @@
     },
     "criteria": { "type": "array", "items": { "$ref": "#/$defs/criterion" } },
     "advisories": {
-      "description": "ADVISE signals (UX-AXE-MINOR, UX-AXE-REVIEW): reported, never a verdict.",
+      "description": "ADVISE signals (UX-AXE-MINOR, UX-AXE-REVIEW, UX-ORACLE-OWNED): reported, never a verdict.",
       "type": "array",
       "items": { "allOf": [{ "$ref": "#/$defs/finding" }, { "required": ["id"] }] }
     },

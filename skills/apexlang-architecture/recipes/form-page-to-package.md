@@ -22,7 +22,7 @@ mapping traps · which form archetype to pick · verify.
 2. Plain page items laid out into the section regions — no form-region column mapping; the PK item
    is `hidden` with `sessionStateProtection: checksumRequiredSessionLevel`.
 3. A `load-*` process at `beforeHeader` — inline SQL read, PK-gated.
-4. One process per intent at `afterSubmit`, each gated by `:REQUEST`, each calling the package.
+4. One process per intent at `processing` (after the page's validations), each gated by `:REQUEST`, each calling the package.
 5. Buttons in a `@/buttons-container` region: CREATE (PK null), APPLY CHANGES / DELETE (PK not null).
 
 ## Why no `form` region
@@ -140,7 +140,7 @@ process create-employee (
     -- OUT: the new PK, so the page continues in edit mode
     parameter p_employee_id ( parameter { direction: out  dataType: number  ignoreOutput: false }
         value { item: P41_EMPLOYEE_ID }  advanced { displaySequence: 5 } )
-    execution { point: afterSubmit }
+    execution { point: processing }
     serverSideCondition { type: requestIsContainedInValue  value: CREATE }
 )
 
@@ -157,7 +157,7 @@ process update-employee (
         value { type: item  item: P41_ROW_VERSION }  advanced { displaySequence: 5 } )
     parameter p_hired_on    ( parameter { dataType: date  hasDefault: true }
         value { type: apiDefault }  advanced { displaySequence: 6 } )
-    execution { point: afterSubmit }
+    execution { point: processing }
     serverSideCondition { type: requestIsContainedInValue  value: APPLY-CHANGES }
 )
 ```

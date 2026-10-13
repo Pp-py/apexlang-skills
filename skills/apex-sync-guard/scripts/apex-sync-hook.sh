@@ -486,8 +486,8 @@ target_of_path() {  # $1 = direction, $2 = a source path from the command
 }
 target_of_id() {  # $1 = direction, $2 = an app id from the command
   local i hit="" n=0
-  for (( i = 0; i < NAPPS; i++ )); do
-    [[ "${APPS_ID[$i]}" == "$2" ]] && { hit=${APPS_ALIAS[$i]}; n=$((n + 1)); }
+  for (( i = 0; i < NAPPS; i++ )); do        # one app's environments are one app here
+    [[ "${APPS_ID[$i]}" == "$2" && "${APPS_ALIAS[$i]}" != "$hit" ]] && { hit=${APPS_ALIAS[$i]}; n=$((n + 1)); }
   done
   if (( n == 1 )); then add_target "$1" "$hit"; else unresolved "app id $2 is not declared exactly once in apex-sync.json"; fi
 }
@@ -550,17 +550,23 @@ resolve_export() {
   done
 }
 
-if (( DEGRADED || NAPPS == 1 )); then
-  for d in "${needs[@]}"; do for _a in "${APPS_ALIAS[@]}"; do add_target "$d" "$_a"; done; done
+# An app with environments has an entry per environment: count apps, not entries — which
+# environment a command reaches is read from its connection, below.
+app_aliases
+if (( DEGRADED || ${#ALIASES[@]} == 1 )); then
+  for d in "${needs[@]}"; do for _a in "${ALIASES[@]}"; do add_target "$d" "$_a"; done; done
 else
   for d in "${needs[@]}"; do
     case "$d" in import) resolve_import ;; export) resolve_export ;; esac
     if [[ -n "$UNRESOLVED" ]]; then
       _dirs=""; _ids=""
-      for (( i = 0; i < NAPPS; i++ )); do app_src "$i"; _dirs+="${_dirs:+, }$SR"; _ids+="${_ids:+, }${APPS_ID[$i]}"; done
+      for (( i = 0; i < NAPPS; i++ )); do
+        app_src "$i"; [[ ", $_dirs, " == *", $SR, "* ]] || _dirs+="${_dirs:+, }$SR"
+        [[ ", $_ids, " == *", ${APPS_ID[$i]}, "* ]] || _ids+="${_ids:+, }${APPS_ID[$i]}"
+      done
       if [[ "$d" == import ]]; then _how="its source dir ($_dirs) as the -input, deploy-apex-app.sh or --app-path argument, or its id ($_ids) as -id"
       else _how="its id ($_ids) as -applicationid"; fi
-      block "apex-sync.json declares $NAPPS apps (${APPS_ALIAS[*]}) and this $d cannot be traced to one of them: $UNRESOLVED.
+      block "apex-sync.json declares ${#ALIASES[@]} apps (${ALIASES[*]}) and this $d cannot be traced to one of them: $UNRESOLVED.
 Name the app in the command, so the guard can require that app's check: $_how."
     fi
   done

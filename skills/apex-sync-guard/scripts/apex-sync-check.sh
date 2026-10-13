@@ -1019,7 +1019,11 @@ cmd_check_import() {
   local s; stored_stamp; s=$SS
   if [[ -n "$s" ]]; then
     echo ""
-    echo "  Pages touched in the Builder since $s (page  name  by  when):"
+    if [[ "$s" == unavailable ]]; then
+      echo "  Pages touched in the Builder (page  name  by  when): no audit stamp at the syncpoint"
+    else
+      echo "  Pages touched in the Builder since $s (page  name  by  when):"
+    fi
     pages_changed_since "$s" || true
   fi
   echo ""
@@ -1117,7 +1121,7 @@ doc_fail() { printf '  FAIL  %s\n' "$*"; DOC_BAD=$((DOC_BAD+1)); }
 # probed by doing it, never by "the binary is on PATH" — that is what let a stub
 # python3 and an unconvertible scratch path through in the first place.
 cmd_doctor() {
-  local e i have_sql=0 sid probe n
+  local e i have_sql=0 sid probe n rel mmd val
   echo "apex-sync-guard: doctor"
   doc_ok "bash ${BASH_VERSION%%(*} on ${OSTYPE:-unknown}"
   case "${OSTYPE:-}" in
@@ -1162,6 +1166,23 @@ cmd_doctor() {
         doc_fail "app $APP_ID is not visible through '$CONN' — wrong connection, wrong workspace, or wrong appId"
       else
         doc_ok "app $APP_ID visible through '$CONN'"
+      fi
+      # SQLcl must read what this APEX exports: APEX 26.2 exports APEXlang 26.2.0+3479, which
+      # SQLcl 26.2.0 refuses to validate or import (R-8). The source's own version is asked of
+      # SQLcl itself; the Builder's release is printed beside it.
+      rel=$(run_sql "select 'apex-release '||version_no from apex_release;" 2>/dev/null | sed -n 's/.*apex-release \([0-9.]*\).*/\1/p' | head -1) || rel=""
+      mmd=""
+      [[ -f "$APP_SRC/.apex/apexlang.json" ]] && { mmd=$(sed -n 's/.*"mmdVersion"[^"]*"\([^"]*\)".*/\1/p' "$APP_SRC/.apex/apexlang.json" | head -1) || mmd=""; }
+      if [[ -d "$APP_SRC" && -n "$mmd" ]]; then
+        native_path "$APP_SRC"
+        val=$(run_sql "apex validate -input \"$NP\"" 2>&1 || true)
+        if grep -qi 'not supported by this SQLcl' <<<"$val"; then
+          doc_fail "this SQLcl cannot read the source's APEXlang $mmd (APEX ${rel:-?}) — upgrade SQLcl before importing; an older one refuses what this APEX exports"
+        else
+          doc_ok "SQLcl reads the source's APEXlang $mmd (APEX ${rel:-?})"
+        fi
+      elif [[ -n "$rel" ]]; then
+        doc_note "APEX $rel; the source has no .apex/apexlang.json — after the first export, run doctor again"
       fi
     else
       doc_fail "SQLcl connection '$CONN' failed: $(head -3 <<<"$probe" | tr '\n' ' ')"

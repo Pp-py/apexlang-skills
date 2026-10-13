@@ -11,15 +11,27 @@ async (page, OPTS) => {
 
   // Load a URL in a new tab of this session, read what APEX rendered, close the tab: the
   // agent's own page never moves.
+  // A URL with no session= gets the held one: with session rejoin off (Oracle's baseline) APEX
+  // answers a URL without it with a NEW session and the login page — every control would fail.
+  const held = await page.evaluate(() => (window.apex && apex.env && apex.env.APP_SESSION) || '').catch(() => '');
+  const withSession = (url) => page.evaluate(([u, s]) => {
+    const x = new URL(u, location.href);
+    if (s && !x.searchParams.has('session')) x.searchParams.set('session', s);
+    return x.href;
+  }, [url, held]);
   const load = async (url) => {
     const p = await page.context().newPage();
     try {
-      const r = await p.goto(url, { waitUntil: 'load', timeout: 30000 });
+      const r = await p.goto(await withSession(url), { waitUntil: 'load', timeout: 30000 });
       const s = await p.evaluate(() => {
         const e = document.getElementById('pFlowStepId');
-        return { step: e ? e.value : null, login: !!document.querySelector('input[type="password"]') };
+        // APEX renders its refusals (a checksum violation, an authorization failure, an ended
+        // session) as an error page that still carries the requested page's id: the step alone
+        // would read them as "rendered". The error page's own markup tells them apart.
+        const error = !!document.querySelector('.t-Alert-errorTitle, .a-Error-back, #APEX_ERROR_MESSAGE:not(.u-hidden)');
+        return { step: e ? e.value : null, login: !!document.querySelector('input[type="password"]'), error };
       });
-      return { url, status: r ? r.status() : null, step: s.step, login: s.login };
+      return { url, status: r ? r.status() : null, step: s.step, login: s.login, error: s.error };
     } catch (e) {
       return { url, step: null, login: false, error: String(e && e.message || e).slice(0, 200) };
     } finally {
@@ -36,8 +48,13 @@ async (page, OPTS) => {
     const origin = await page.evaluate(() => location.origin);
     let link = null;
     for (const f of page.frames()) {
-      const hrefs = await f.$$eval('a[href*="cs="]', (as) => as.map((a) => a.href)).catch(() => []);
-      link = hrefs.find((h) => h.startsWith(origin + '/'));
+      // a modal page's link is `#action$a-dialog-open?url=<the URL, encoded>`: decode it
+      const hrefs = await f.$$eval('a[href*="cs="], a[href*="cs%3D"]', (as) => as.map((a) => {
+        const m = (a.getAttribute('href') || '').match(/a-dialog-open\?url=([^&#]+)/);
+        if (!m) return a.href;
+        try { return new URL(decodeURIComponent(m[1]), location.href).href; } catch (e) { return ''; }
+      })).catch(() => []);
+      link = hrefs.find((h) => h.startsWith(origin + '/') && /[?&]cs=/.test(h));
       if (link) break;
     }
     if (link) {

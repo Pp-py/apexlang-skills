@@ -1,31 +1,33 @@
 #!/usr/bin/env python3
 """sec-probe — apex-security's runtime probes, through apex-sentinel's pw.sh (never a copy).
 
-Usage: python3 sec-probe.py [--app <alias>] [--task <id>] [--anon <url>]... [--tamper] [--role <url>]... [--xss <token>]
+Usage: python3 sec-probe.py [--app <alias>] [--env <name>] [--task <id>] [--anon <url>]... [--tamper] [--role <url>]... [--xss <token>]
 
-Run it after `pw.sh [--app X] login` and `pw.sh goto <page>`, as the test user. Each probe is
+Run it after `pw.sh [--app X] [--env E] login` and `pw.sh goto <page>`, as the test user. Each probe is
 asked for; one not asked is NOT_RUN. What APEX rendered is read from the page id
-(#pFlowStepId), against a CONTROL: the same URL loaded by the test user must render a page,
+(#pFlowStepId) and its error page — APEX refuses on an error page that keeps the requested id —
+against a CONTROL: the same URL loaded by the test user must render that page without an error,
 or the probe is UNKNOWN — never a PASS on a broken link.
-  SEC-ANON-REDIRECT    --anon <url>: fetched over plain HTTP with no cookie, redirects followed;
+  SEC-ANON-REDIRECT    --anon <url>: fetched over plain HTTP with an empty cookie jar, redirects followed;
                        PASS on a login page (a password field, /login, another host),
                        FAIL if the control's page is served
   SEC-CHECKSUM-TAMPER  --tamper: the first link with cs= on the held page, loaded in a new tab
                        intact (control), without cs, and with an item value changed: both
                        variants must not render the control's page
   SEC-ROLE-REFUSED     --role <url>: logged in as the app's lowPrivUser (apex-sync.json) in its
-                       own pw.sh session, password from $APEX_TEST_PASSWORD_LOW[_<ALIAS>] — the
+                       own pw.sh session, password from $APEX_TEST_PASSWORD_LOW[_<ALIAS>] or the .env — the
                        URL must not render the control's page. No lowPrivUser → NOT_RUN
   SEC-XSS-ESCAPED      --xss <token>: on the held page, an element [data-xss-probe="<token>"]
                        is FAIL, the payload shown as text is PASS, neither is NOT_RUN. The
                        agent stores the payload through the UI first and removes it after.
 
 Output: a security-result (scope runtime) on stdout, and with --task in
-<evidenceDir>/<task>/security-<alias>-runtime.json. URLs are kept without session and checksum.
+<evidenceDir>/<task>/security-<alias>[.<env>]-runtime.json. URLs are kept without session and checksum.
 Exit:   0 PASS · 1 FAIL · 2 BLOCKED (nothing asked, pw.sh refused, the low user's login failed,
         a login page held) · 3 UNKNOWN (a control did not render, dead session, no verdict).
 """
 import argparse
+import http.cookiejar
 import json
 import os
 import re
@@ -36,8 +38,9 @@ import urllib.request
 from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
+import pw as pwlib  # noqa: E402
 from pw import pw, redact, run_code  # noqa: E402
-from result import Stop, context, scrub, target, write  # noqa: E402
+from result import ROOT, Stop, context, runtime_target, scrub, write  # noqa: E402
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sec-probe.js")
 TIMEOUT = int(os.environ.get("SEC_PROBE_TIMEOUT", "300"))
@@ -61,11 +64,15 @@ def browser(app, opts, env=None):
 
 
 def anonymous(url):
-    """(final url, html) of a cookie-less GET, redirects followed."""
+    """(final url, html) of an anonymous GET, redirects followed: no cookie of the test user's,
+    but a fresh jar of its own — APEX sets a session cookie on its redirect to the login page
+    and, refused it, redirects again until the client gives up (seen on 26.2, R-8)."""
     ctx = ssl._create_unverified_context() if os.environ.get("PW_INSECURE_TLS") == "1" else None
     req = urllib.request.Request(url, headers={"User-Agent": "apex-security sec-probe"})
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
+                                         urllib.request.HTTPSHandler(context=ctx))
     try:
-        with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+        with opener.open(req, timeout=30) as r:
             return r.geturl(), r.read(400000).decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
         return e.geturl() or url, e.read(400000).decode("utf-8", "replace")
@@ -75,20 +82,41 @@ def anonymous(url):
 
 def refused(control, probe):
     """None when the control rendered no page (UNKNOWN), else whether the probe was refused."""
-    if not control or control.get("step") in (None, "") or control.get("login"):
+    if not control or control.get("step") in (None, "") or control.get("login") or control.get("error"):
         return None
-    return probe is not None and probe.get("step") != control["step"]
+    return probe is not None and (probe.get("step") != control["step"] or bool(probe.get("error")))
 
 
-def low_env(alias, user):
+def dotenv(key):
+    """KEY=value from the repo root's .env (or $APEX_TEST_ENV), the way pw.sh reads it."""
+    path = os.environ.get("APEX_TEST_ENV") or (os.path.join(ROOT, ".env") if ROOT else "")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                k, sep, v = line.strip().partition("=")
+                if sep and k.strip() == key:
+                    v = v.strip()
+                    return v[1:-1] if len(v) > 1 and v[0] == v[-1] and v[0] in "'\"" else v
+    except OSError:
+        pass
+    return None
+
+
+def low_env(alias, user, envname=None):
     sfx = "_" + re.sub(r"[^A-Z0-9]", "_", (alias or "").upper()) if alias else ""
-    pwd = os.environ.get(f"APEX_TEST_PASSWORD_LOW{sfx}") or os.environ.get("APEX_TEST_PASSWORD_LOW")
+    esfx = sfx + "_" + re.sub(r"[^A-Z0-9]", "_", envname.upper()) if sfx and envname else ""
+    keys = [k for k in (f"APEX_TEST_PASSWORD_LOW{esfx}" if esfx else "", f"APEX_TEST_PASSWORD_LOW{sfx}" if sfx else "",
+                        "APEX_TEST_PASSWORD_LOW") if k]
+    # as pw.sh does: per app first, then shared; the environment before the .env
+    pwd = next((v for k in keys for v in (os.environ.get(k), dotenv(k)) if v), None)
     if not pwd:
         return None
     env = dict(os.environ, PW_SESSION=os.environ.get("PW_SESSION", "apex") + "-low")
-    for k in {"APEX_TEST_USER", f"APEX_TEST_USER{sfx}"}:
+    # every name pw.sh tries before these (per app and environment) is overridden, or it
+    # would log in the test user from the inherited environment or the .env
+    for k in {"APEX_TEST_USER", f"APEX_TEST_USER{sfx}", f"APEX_TEST_USER{esfx}"}:
         env[k] = user
-    for k in {"APEX_TEST_PASSWORD", f"APEX_TEST_PASSWORD{sfx}"}:
+    for k in {"APEX_TEST_PASSWORD", f"APEX_TEST_PASSWORD{sfx}", f"APEX_TEST_PASSWORD{esfx}"}:
         env[k] = pwd                                   # through the environment, never argv
     return env
 
@@ -128,10 +156,10 @@ def probe(a, alias, settings, crit, add):
     if a.role:
         user = (settings or {}).get("lowPrivUser")
         # the alias pw.sh keys the password on: --app, else the config's one app
-        env = low_env(alias or (settings or {}).get("appAlias"), user) if user else None
+        env = low_env(alias or (settings or {}).get("appAlias"), user, a.env) if user else None
         if not env:
             crit["SEC-ROLE-REFUSED"] = ("no lowPrivUser for the app in apex-sync.json" if not user
-                                        else "no $APEX_TEST_PASSWORD_LOW for the low-privilege user")
+                                        else "no $APEX_TEST_PASSWORD_LOW for the low-privilege user (environment or .env)")
         else:
             p = pw(a.app, ["login"], env, TIMEOUT)
             if p.returncode != 0:
@@ -159,6 +187,7 @@ def probe(a, alias, settings, crit, add):
 def main(argv):
     ap = argparse.ArgumentParser(description="apex-security runtime probes through pw.sh")
     ap.add_argument("--app")
+    ap.add_argument("--env")
     ap.add_argument("--task")
     ap.add_argument("--anon", action="append", default=[])
     ap.add_argument("--tamper", action="store_true")
@@ -167,7 +196,7 @@ def main(argv):
     a = ap.parse_args(argv)
     result = {"kind": "security-result", "schemaVersion": 1, "status": "UNKNOWN", "reasons": [],
               "context": context(a.task, "apex-security"), "scope": "runtime", "criteria": [], "advisories": []}
-    task_dir = None
+    task_dir, key = None, None
     asked = {"SEC-ANON-REDIRECT": a.anon, "SEC-CHECKSUM-TAMPER": a.tamper, "SEC-ROLE-REFUSED": a.role, "SEC-XSS-ESCAPED": a.xss}
     crit = {k: None if v else "not asked for (no --" + {"SEC-ANON-REDIRECT": "anon", "SEC-CHECKSUM-TAMPER": "tamper",
             "SEC-ROLE-REFUSED": "role", "SEC-XSS-ESCAPED": "xss"}[k] + ")" for k, v in asked.items()}
@@ -175,9 +204,10 @@ def main(argv):
     try:
         if a.xss is not None and not re.fullmatch(r"[A-Za-z0-9_-]{4,40}", a.xss):
             raise Stop("BLOCKED", "BAD_TOKEN", "--xss takes a token of 4-40 letters, digits, '_' or '-'")
-        alias, task_dir, settings = target(a.app, a.task)
+        alias, task_dir, settings, key = runtime_target(a.app, a.task, a.env)
+        pwlib.ENV = a.env
         if alias:
-            result["app"] = {"appAlias": alias}
+            result["app"] = {"appAlias": alias, **({"environment": a.env} if a.env else {})}
         if not any(asked.values()):
             raise Stop("BLOCKED", "NOTHING_TO_PROBE", "ask for at least one probe: --anon, --tamper, --role, --xss")
         m = probe(a, alias, settings, crit, lambda cid, held, detail: outcomes[cid].append((held, detail)))
@@ -202,7 +232,7 @@ def main(argv):
             result["status"], result["reasons"] = "UNKNOWN", [{"code": "NOTHING_EXERCISED", "message": "no probe found anything to exercise"}]
     except Stop as s:
         result["status"], result["reasons"] = s.status, [{"code": s.code, "message": s.message}]
-    return write(result, task_dir, f"security-{result.get('app', {}).get('appAlias', 'app')}-runtime.json")
+    return write(result, task_dir, f"security-{key or 'app'}-runtime.json")
 
 
 if __name__ == "__main__":

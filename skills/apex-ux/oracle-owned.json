@@ -1,0 +1,22 @@
+{
+  "about": "Defects in markup or behaviour APEX itself renders, which no .apx can change. ux-check.py reports a finding that matches an entry, on the APEX version it names, as the advisory UX-ORACLE-OWNED instead of a FAIL. Each entry is narrow: one criterion, one rule or dialog step, a pattern every target must match, one APEX version. A new APEX version gets no entry until it is measured again. Never add a defect your own .apx causes.",
+  "entries": [
+    {
+      "id": "OO-1",
+      "criterion": "UX-AXE-SERIOUS",
+      "rule": "aria-required-children",
+      "targets": "^#[A-Za-z0-9_$-]+_ig_grid_vc$",
+      "apex": "26.2",
+      "note": "the Interactive Grid's own grid view: role=grid holding a role=region footer (.a-GV-footer) and a scroll div with tabindex (.a-GV-w-scroll)",
+      "source": "R-8, framework/CAPABILITIES.md Recorded runs (2026-10-13, APEX 26.2.0, axe-core 4.13.0)"
+    },
+    {
+      "id": "OO-2",
+      "criterion": "UX-DIALOG-FOCUS",
+      "failed": ["focusReturns"],
+      "apex": "26.2",
+      "note": "APEX's modal dialog: after Tab cycles inside the dialog, Esc returns focus to the opener or to <body> from one run to the next, with the same keys",
+      "source": "R-8, framework/CAPABILITIES.md Recorded runs (2026-10-13, APEX 26.2.0)"
+    }
+  ]
+}

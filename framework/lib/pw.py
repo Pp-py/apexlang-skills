@@ -1,7 +1,7 @@
 """pw — how the runtime checks drive the browser: through apex-sentinel's pw.sh, never a copy.
 
   redact(url)              the URL without its APEX session (session= dropped, f?p's field emptied)
-  pw(app, args, env)       run pw.sh [--app X] <args>; the CompletedProcess, or a Stop
+  pw(app, args, env)       run pw.sh [--app X] [--env E] <args>; the CompletedProcess, or a Stop
   run_code(app, code, …)   pw.sh run-code --raw --filename <a mode-600 snippet, deleted after>;
                            the JSON verdict the snippet returned, or a Stop (pw.sh exit 2 →
                            BLOCKED, 3 → UNKNOWN: it reopened a dead session, logged out)
@@ -24,10 +24,14 @@ def redact(url):
     return re.sub(r"(f\?p=[^:&#]*:[^:&#]*:)[^:&#]*", r"\1", url)
 
 
+ENV = None   # the environment the checks run against (R-1): set from --env by the caller
+
+
 def pw(app, args, env=None, timeout=300):
     # bash from PATH, never a bare name Windows would resolve to System32's WSL launcher;
     # forward slashes, which Git Bash and node both read
-    cmd = ([shutil.which("bash") or "bash", PW.replace("\\", "/")] + (["--app", app] if app else []) + list(args))
+    cmd = ([shutil.which("bash") or "bash", PW.replace("\\", "/")] + (["--app", app] if app else [])
+           + (["--env", ENV] if ENV else []) + list(args))
     try:
         return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
                               timeout=timeout, env=env)

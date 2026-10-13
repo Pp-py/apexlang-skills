@@ -156,7 +156,7 @@ page 62 (
         )
         execution {
             sequence: 10
-            point: afterSubmit
+            point: processing
         }
         serverSideCondition {
             type: expression
@@ -199,7 +199,7 @@ page 62 (
         )
         execution {
             sequence: 20
-            point: afterSubmit
+            point: processing
         }
         serverSideCondition {
             type: expression
