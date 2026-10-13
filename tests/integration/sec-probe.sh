@@ -66,8 +66,10 @@ print(s.server_address[1], flush=True)
 s.serve_forever()
 SRV
 "$PY" "$WORK/srv.py" > "$WORK/port" & SRV=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do [[ -s "$WORK/port" ]] && break; "$PY" -c 'import time; time.sleep(0.3)'; done
-BASE="http://127.0.0.1:$(cat "$WORK/port")/ords/r/ws/app"
+# Python starts slowly on Windows: wait up to ~20 s, and never run the anon cases on no port
+for _ in $(seq 1 40); do [[ -s "$WORK/port" ]] && break; "$PY" -c 'import time; time.sleep(0.5)'; done
+[[ -s "$WORK/port" ]] || { echo "sec-probe: BLOCKED — the local HTTP server did not start" >&2; exit 2; }
+BASE="http://127.0.0.1:$(tr -d '\r\n' < "$WORK/port")/ords/r/ws/app"
 
 cd "$WORK/proj"; git init -q
 config() { printf '%s\n' "$1" > apex-sync.json; }
