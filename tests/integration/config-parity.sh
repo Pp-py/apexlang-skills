@@ -43,7 +43,8 @@ for app in cfg.get("apps") or [cfg]:
     keys = [(alias, None)] if not isinstance(envs, dict) or not envs else [(f"{alias}.{e}", e) for e in envs]
     for key, env in keys:
         s = target(alias, None, env)[2]
-        print(f"{key}\t{s.get('testUser', '')}\t{s.get('runtimeUrl', '')}")
+        # bytes, not print(): text mode turns \n into \r\n on Windows, and the comparison is byte-exact
+        sys.stdout.buffer.write(f"{key}\t{s.get('testUser', '')}\t{s.get('runtimeUrl', '')}\n".encode("utf-8"))
 PY
 
 pass=0; fail=0
@@ -85,7 +86,8 @@ for f in "$FIX"/*.json; do
         if [[ "$how" == python ]]; then        # result.py is python only: the third reader, same answer
           rrc=0; rout=$(in_proj python python3 "$READER" "$REPO/framework/lib") || rrc=$?
           if (( rrc == 0 )) && [[ "$rout" == "$want" ]]; then ok "$name (python): framework/lib/result.py agrees on alias, environment, testUser, runtimeUrl"
-          else bad "$name (python): result.py (exit $rrc) disagrees with the check" "$rout"; fi
+          else bad "$name (python): result.py (exit $rrc) disagrees with the check" "got:  $(printf '%s' "$rout" | od -An -c | head -4)
+want: $(printf '%s' "$want" | od -An -c | head -4)"; fi
         fi ;;
       invalid-*)
         if (( rc == 2 )); then ok "$name ($how): the check refuses it"
