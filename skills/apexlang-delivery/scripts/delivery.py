@@ -86,6 +86,11 @@ def schema_checker():
         for p in glob.glob(os.path.join(SCHEMAS, "*.schema.json")):
             with open(p, encoding="utf-8") as fh:
                 schemas[os.path.basename(p)] = json.load(fh)
+        # jsonschema is installed, so the core's schemas are the check: without them nothing can
+        # be validated, and that blocks (fail closed) rather than passing or crashing.
+        if not schemas:
+            raise Stop("BLOCKED", "NO_SCHEMAS", f"jsonschema is installed but no schemas were found in {SCHEMAS}: "
+                       "install the framework core (framework/schemas/) or uninstall jsonschema")
         try:
             from referencing import Registry, Resource
             from referencing.jsonschema import DRAFT202012
@@ -98,6 +103,8 @@ def schema_checker():
         validators = {}
 
         def check(doc, kind):
+            if f"{kind}.schema.json" not in schemas:
+                raise Stop("BLOCKED", "NO_SCHEMA", f"no {kind}.schema.json in {SCHEMAS}: the core is incomplete")
             v = validators.setdefault(kind, make(schemas[f"{kind}.schema.json"]))
             err = next(iter(v.iter_errors(doc)), None)
             return None if err is None else f"schema: {err.message[:160]}"

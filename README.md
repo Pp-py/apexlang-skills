@@ -5,8 +5,8 @@
 [![Agent Skills](https://img.shields.io/badge/agent--skills-SKILL.md-6e56cf)](https://agentskills.io)
 
 An engineering framework for building **Oracle APEX** apps as **APEXlang** declarative source
-(`.apx`) with coding agents — on top of Oracle's official APEXlang skills. Three capabilities
-(architecture, sync safety, runtime proof) behind **fail-closed gates** that leave
+(`.apx`) with coding agents — on top of Oracle's official APEXlang skills. Six skills
+(architecture, sync safety, runtime proof, UI, security, delivery) behind **fail-closed gates** that leave
 **machine-readable evidence**, so "it works" is something a result file shows, not something an
 agent says.
 
@@ -81,12 +81,14 @@ a contract that lets it add no rule of its own ([`GATES.md` §The orchestration 
 /plugin install apexlang-toolkit
 ```
 
-Installs the three skills and auto-registers the sync-guard hook (it no-ops in projects without
+Installs the six skills and auto-registers the sync-guard hook (it no-ops in projects without
 an `apex-sync.json` — per-project wiring in [`setup.md`](skills/apex-sync-guard/setup.md)).
 
 **Any other agent** (Codex, opencode, Cursor, …): plain-Markdown [Agent Skills](https://agentskills.io)
-— symlink `skills/*` into your tool's skill directory, or point the agent at [`AGENTS.md`](./AGENTS.md).
-Each skill also works on its own.
+— symlink `skills/*` into your tool's skill directory (the repo must stay in place), or point the agent at [`AGENTS.md`](./AGENTS.md).
+Only apex-sync-guard runs alone. The other five need the **core** (`framework/lib/`,
+`framework/scripts/evidence.py`, `framework/schemas/`): install them as *skill + core*, in the same
+layout (see [framework/README.md §Dependencies](framework/README.md#dependencies)).
 
 ## Requirements
 
@@ -98,6 +100,9 @@ Each skill also works on its own.
 - **SQLcl** for compile, import/export and the data-side reads.
 - **apex-sync-guard:** `git`, `jq` *or* `python3`. Check a machine with
   `skills/apex-sync-guard/scripts/apex-sync-check.sh doctor`.
+- **Python 3** (standard library; `jsonschema` optional for `delivery.py`) for the scripts of
+  apex-ux, apex-security, apexlang-architecture and apexlang-delivery, which import the core's `lib/`.
+  `ux-check.py` and `sec-probe.py` also need the browser of apex-sentinel (below).
 - **apex-sentinel:** a browser — the Playwright CLI through `skills/apex-sentinel/scripts/pw.sh`
   (it falls back to `npx`), or any browser-MCP. No browser → it stops and reports; it never fakes
   verification. A **test user** for the app's login ([`setup.md` §2](skills/apex-sentinel/setup.md)).

@@ -1,5 +1,70 @@
 # Changelog
 
+## 0.7.1 — 2026-10-14
+
+A documentary audit of 0.7.0, and the decisions it forced. No gate changes its rules; one
+behavior changes (see below). Nothing here moves a schema from experimental to stable.
+
+### Behavior changes — read before upgrading
+
+- **apexlang-delivery: missing schemas BLOCK instead of crashing.** With `jsonschema` installed,
+  a missing `framework/schemas/` made `delivery.py` raise `KeyError` and exit 1 (FAIL). It now
+  stops with `BLOCKED (NO_SCHEMAS)` and exit 2; a missing schema for one result kind is
+  `BLOCKED (NO_SCHEMA)`. Without `jsonschema`, nothing changes: the structural check runs.
+
+### Dependencies, declared
+
+- **The framework core is a declared dependency.** apex-ux, apex-security, apexlang-architecture
+  and apexlang-delivery import `framework/lib/`; apex-sentinel saves its results through
+  `framework/scripts/evidence.py`; apexlang-delivery reads `framework/schemas/` when `jsonschema`
+  is installed. Only apex-sync-guard runs alone.
+- **Install units** (`framework/README.md` §Dependencies): the whole repo; or a skill plus the core
+  in the same layout (`skills/` and `framework/` as siblings); or a symlink with the repo in place.
+  A skill copied out without the core fails on import. The dependency itself is kept: copying
+  `lib/` into each skill would duplicate what P2 keeps single.
+- `README.md`: "installs the three skills", "three capabilities" and "each skill works on its own"
+  were out of date or wrong; they now say six skills, and which skills need the core.
+
+### The framework's third reader of `apex-sync.json` is tested
+
+- `framework/lib/result.py` reads `apex-sync.json` for `evidenceDir`, the alias and environments.
+  `tests/integration/config-parity.sh` held only the guard and `pw.sh` equal; it now also holds
+  `result.py` equal on alias, environment, testUser and runtimeUrl, over the valid fixtures. A
+  control with `result.py` broken fails it.
+
+### Frozen interface: what 0.7.0 added
+
+- The frozen interface (`framework/CONTRACTS.md`, now headed 0.7.x) gained, in 0.7.0 and without
+  a line in its CHANGELOG: `ux-scan.py`, `ux-check.py`, `sec-scan.py`, `plsql-scan.py`,
+  `secrets-scan.py`, `sec-probe.py`, `delivery.py`, `evidence.py capture --gate validation`.
+  Additions only; nothing was removed or renamed.
+
+### Documentation corrected
+
+- `framework/CONTRACTS.md`: the capability contract table covers all six skills; "Phase 3" removed
+  from the present tense; `environments` added to the configuration keys.
+- **Stable and experimental, stated once.** `CONTRACTS.md` said an experimental schema stays so
+  "until its producer is a script", while `ui-result` and `security-result` already have scripts as
+  producers. The rule now says a schema becomes stable when its gate is required by default (1.0.0).
+  The four experimental results keep that status.
+- `framework/CAPABILITIES.md`: no open conflicts, and the KC rows read 0.7.0 (not "unreleased").
+- `framework/GATES.md`: the UI opt-in sentence no longer waits for a delivery change that exists.
+- `AGENTS.md`: the UI gate runs after Security, as the order in GATES says.
+- `framework/PRINCIPLES.md`: P2 names `result.py` as the third reader; P7 says that
+  `FLOW_WRAPS_ONE_ENTITY` is judged by the agent, not scanned by `arch-scan.py`.
+- `framework/schemas/security-result.schema.json`: the description called the scans "later"; the
+  scopes are named as they are.
+- Requirements: Python 3 for the scripts of the four skills, and the browser for `ux-check.py` and
+  `sec-probe.py`.
+
+### Not in this release
+
+- `docs/examples/ci/apexlang-static-gates.yml` still pins `ref: v0.7.0`: it moves to the v0.7.1 tag
+  once that tag exists.
+- `arch-scan.py` still has no `--help`: it reads `--help` as a path.
+- The fixtures under `tests/contract/fixtures/` keep their historical `frameworkVersion` (0.6.x) on
+  purpose: they are recorded results, not current ones.
+
 ## 0.7.0 — 2026-10-13
 
 Closes Phase 3. Six skills now: `apex-security` and `apexlang-delivery` join the four, and every

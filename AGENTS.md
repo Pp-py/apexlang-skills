@@ -30,7 +30,7 @@ Codex, opencode, Cursor, aider, …) working on an APEXlang app, load the releva
 4. **`skills/apex-ux/SKILL.md`** — read it when designing, changing or reviewing a page's UI.
    Criteria with IDs (`criteria/`) from WCAG 2.2 AA and Oracle's policies; a pattern catalog is
    an example only. `scripts/ux-scan.py` (static) and `ux-check.py` (runtime, through `pw.sh`)
-   write a `ui-result`; the UI gate runs after Runtime when the app sets `"uiGate": true`.
+   write a `ui-result`; the UI gate runs after Security when the app sets `"uiGate": true`.
 
 5. **`skills/apex-security/SKILL.md`** — read it before calling a change safe to deploy.
    Criteria with IDs (`criteria.md`); `scripts/sec-scan.py`, `plsql-scan.py`, `secrets-scan.py`,

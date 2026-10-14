@@ -47,7 +47,7 @@ build as feedback. Opt-in until 1.0.0.
 default, or the app's own); otherwise the consumer records it `required: false` with a
 `notApplicableReason`. It passes on two scopes: the static scan's `ui-result` PASS, and a runtime
 `ui-result` PASS for each page the change touched (at least one). Its status is the worst of
-those results. Opt-in until 1.0.0, when `apexlang-delivery` defines the required gates.
+those results. Opt-in until 1.0.0; `apexlang-delivery` already requires it only where the app opts in.
 
 ## Aggregation
 

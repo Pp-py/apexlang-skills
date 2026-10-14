@@ -20,6 +20,8 @@ gate one producer, each topic one document. Two owners means two versions of the
 
 *Enforced by:* package boundaries (architecture); one reader of `apex-sync.json` per
 skill, held equal by `config-parity.sh`; one status vocabulary ([CONTRACTS.md](CONTRACTS.md)).
+`framework/lib/result.py` is a further reader (`evidenceDir`, the alias, `environments`) that
+`config-parity.sh` does not cover yet.
 
 ## P3 — Fail closed
 
@@ -69,7 +71,8 @@ A layer, a package, a script, a field or a document exists because a real respon
 needs it — never for symmetry or future use. A flow package around one entity, a schema
 field nobody reads, a wrapper with nothing to abstract: each is a defect.
 
-*Enforced by:* review; the architecture red flags (`FLOW_WRAPS_ONE_ENTITY`); the schemas'
+*Enforced by:* review (`FLOW_WRAPS_ONE_ENTITY` is the agent's judgment: `arch-scan.py` does not
+scan it); the schemas'
 `additionalProperties: false`.
 
 ## P8 — Scoped and perishable

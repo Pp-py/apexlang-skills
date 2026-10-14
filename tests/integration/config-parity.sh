@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# apex-sync.json has two readers: apex-sync-guard's (lib/sync-config.sh, behind
-# `apex-sync-check.sh apps` and the hook) and apex-sentinel's (pw.sh — its own, so
-# that skill works alone). If they drift, the guard checks one app while sentinel
-# logs into another. Both are held to the same fixtures (fixtures/config/), under jq
-# and under python, since each script falls back from one to the other:
-#   valid-*.json    both resolve them; <name>.apps is the check's view, and pw.sh
-#                   must agree on alias, testUser and runtimeUrl
-#   invalid-*.json  both refuse them (exit 2)
+# apex-sync.json has three readers: apex-sync-guard's (lib/sync-config.sh, behind
+# `apex-sync-check.sh apps` and the hook), apex-sentinel's (pw.sh — its own, so that
+# skill works alone), and the framework's (framework/lib/result.py, which evidence.py,
+# delivery.py and the scans use for evidenceDir, the alias and environments). If they
+# drift, the guard checks one app while sentinel logs into another, or a result lands
+# in another directory. The two shell readers are held to the same fixtures
+# (fixtures/config/), under jq and under python, since each falls back from one to
+# the other; result.py is held to the valid fixtures' alias, environment, testUser and
+# runtimeUrl (it does not refuse invalid ones: that is the guard's job):
+#   valid-*.json    the guard resolves them as <name>.apps; pw.sh must agree on alias,
+#                   testUser and runtimeUrl; result.py must agree on the same, per
+#                   environment (alias.env) where the app declares them
+#   invalid-*.json  both shell readers refuse them (exit 2)
 #   *.json + .pw    pw.sh-only: a file sentinel reads but the guard rightly refuses
 #                   (no appId/connection) — the one divergence, on purpose
 set -euo pipefail
@@ -21,6 +26,26 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/proj" "$WORK/nojq"
 git -C "$WORK/proj" init -q
 printf '#!/usr/bin/env bash\nexit 127\n' > "$WORK/nojq/jq" && chmod +x "$WORK/nojq/jq"   # jq present but broken
+
+# The third reader, as the framework reads it: result.target() over apex-sync.json in the
+# scratch repo (ROOT is its git top). Prints one line per app, and per environment
+# (alias.env) where the app declares them, in the file's order — the .apps columns 1, 5, 6.
+READER="$WORK/result-reader.py"
+cat > "$READER" <<'PY'
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from result import target  # noqa: E402  (framework/lib, the framework's own reader)
+
+cfg = json.load(open("apex-sync.json", encoding="utf-8"))
+for app in cfg.get("apps") or [cfg]:
+    alias = app["appAlias"]
+    envs = (target(alias, None, None)[2] or {}).get("environments")
+    keys = [(alias, None)] if not isinstance(envs, dict) or not envs else [(f"{alias}.{e}", e) for e in envs]
+    for key, env in keys:
+        s = target(alias, None, env)[2]
+        # bytes, not print(): text mode turns \n into \r\n on Windows, and the comparison is byte-exact
+        sys.stdout.buffer.write(f"{key}\t{s.get('testUser', '')}\t{s.get('runtimeUrl', '')}\n".encode("utf-8"))
+PY
 
 pass=0; fail=0
 ok()  { echo "ok   $1"; pass=$((pass + 1)); }
@@ -57,7 +82,13 @@ for f in "$FIX"/*.json; do
         else bad "$name ($how): the check (exit $rc) disagrees with $name.apps" "$out"; fi
         want=$(cut -f1,5,6 <<<"$want")
         if (( prc == 0 )) && [[ "$pout" == "$want" ]]; then ok "$name ($how): pw.sh agrees on alias, testUser, runtimeUrl"
-        else bad "$name ($how): pw.sh (exit $prc) disagrees with the check" "$pout"; fi ;;
+        else bad "$name ($how): pw.sh (exit $prc) disagrees with the check" "$pout"; fi
+        if [[ "$how" == python ]]; then        # result.py is python only: the third reader, same answer
+          rrc=0; rout=$(in_proj python python3 "$READER" "$REPO/framework/lib") || rrc=$?
+          if (( rrc == 0 )) && [[ "$rout" == "$want" ]]; then ok "$name (python): framework/lib/result.py agrees on alias, environment, testUser, runtimeUrl"
+          else bad "$name (python): result.py (exit $rrc) disagrees with the check" "got:  $(printf '%s' "$rout" | od -An -c | head -4)
+want: $(printf '%s' "$want" | od -An -c | head -4)"; fi
+        fi ;;
       invalid-*)
         if (( rc == 2 )); then ok "$name ($how): the check refuses it"
         else bad "$name ($how): the check accepted it (exit $rc)" "$out"; fi
