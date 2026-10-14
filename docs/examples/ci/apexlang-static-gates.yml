@@ -41,7 +41,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: Pp-py/apexlang-skills
-          ref: v0.7.0           # pin a tag; update it on purpose, after reading the CHANGELOG
+          ref: v0.7.1           # pin a tag; update it on purpose, after reading the CHANGELOG
           path: .apexlang-skills
 
       - name: the five static scans (every one runs; the job fails if any is not PASS)
