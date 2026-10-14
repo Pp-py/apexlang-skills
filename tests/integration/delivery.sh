@@ -205,5 +205,17 @@ run "--env dev reads the environment's results" 4 --task T-1 --env dev
 if says "sync-hr.dev-check-import.json: not in the task" && says "runtime-hr.dev.json"; then ok "env: keyed hr.dev; validation keyed by the alias"; else bad "env: wrong keys"; fi
 if q "g['validation']['status'] == 'PASS'"; then ok "env: Validation of the source holds for every environment"; else bad "env: validation not read"; fi
 
+# --- the core without its schemas: with jsonschema installed, the check BLOCKS (NO_SCHEMAS); it never crashes
+if "$PY" -c "import jsonschema" 2>/dev/null; then
+  CORE="$WORK/core"; mkdir -p "$CORE/skills" "$CORE/framework"
+  cp -r "$REPO/skills/apexlang-delivery" "$CORE/skills/"
+  cp -r "$REPO/framework/lib" "$CORE/framework/"            # no framework/schemas/ in this copy
+  config '{ "appId": 100, "appAlias": "hr", "apexlangDir": "src", "sqlclConnection": "dev" }'
+  rc=0; "$PY" "$CORE/skills/apexlang-delivery/scripts/delivery.py" --task T-1 --app hr > "$WORK/out.json" 2> "$WORK/err.txt" || rc=$?
+  if [[ $rc -eq 2 ]] && says "NO_SCHEMAS"; then ok "no schemas with jsonschema → BLOCKED (exit 2), not a crash"; else bad "no schemas: exit $rc, expected 2 with NO_SCHEMAS"; fi
+else
+  echo "skip no-schemas case: jsonschema is not installed (the structural check has no schema to miss)"
+fi
+
 echo "delivery: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

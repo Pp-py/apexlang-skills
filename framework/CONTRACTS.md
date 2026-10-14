@@ -8,7 +8,7 @@
 | generation with policies and a local lint — 26.1 only (`apexlang-generation`) | **whether an import/export is safe now**: Builder↔git divergence against a syncpoint (`apex-sync-guard`) |
 | compilation: `apex validate` through SQLcl (`apexlang-compile`) | **whether the change works**: the running page in a real browser, with a verified test user (`apex-sentinel`) |
 | a UX pattern catalog (an example, never an authority) | **whether the UI holds**: criteria with IDs, a static scan and runtime checks (`apex-ux`) |
-| security policies and a lint — 26.1 only, advisory | **whether the app refuses what it must**: security criteria with IDs (`apex-security`; scans and gate in Phase 3) |
+| security policies and a lint — 26.1 only, advisory | **whether the app refuses what it must**: security criteria with IDs, scans and gate (`apex-security`) |
 | import / deploy (`apexlang-deploy`) and export (SQLcl) | the gates, their statuses and the evidence they leave (this directory) |
 
 Precedence where they overlap: [PRINCIPLES.md](PRINCIPLES.md) P6.
@@ -61,18 +61,21 @@ repo never redefines them, and never promotes an advisory signal to a verdict.
 
 ## Each capability's contract
 
-| | apexlang-architecture | apex-sync-guard | apex-sentinel |
-|---|---|---|---|
-| **Input** | the requirement, the app context, the schema (tables, constraints) | BASE, LOCAL, BUILDER; `--app`, `--task` | the running app (`runtimeUrl`), a test user, the archetype's check, SQLcl for the data side |
-| **Output** | `architecture-result`: each rule's place, each operation's owner (branch, layer, package), the red-flag scan, the rationale | `sync-result`; for a check PASS, the marker | `runtime-result`: per criterion, the status, what was observed and the evidence |
-| **Statuses** | PASS · FAIL · BLOCKED (missing input) · UNKNOWN | PASS · FAIL · CONFLICT · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED (no browser, unverified login) · UNKNOWN |
-| **Producer** | the agent (`method: agent`) | the script (`method: tool`) | the agent through `pw.sh` (`method: agent`) |
-| **Schema** | `architecture-result` (experimental) | `sync-result` (**stable**) | `runtime-result` (experimental) |
+| | apexlang-architecture | apex-sync-guard | apex-sentinel | apex-ux | apex-security | apexlang-delivery |
+|---|---|---|---|---|---|---|
+| **Input** | the requirement, the app context, the schema (tables, constraints) | BASE, LOCAL, BUILDER; `--app`, `--task` | the running app (`runtimeUrl`), a test user, the archetype's check, SQLcl for the data side | the `.apx` (static); the running page, its test user, `--dialog` selectors (runtime) | the `.apx`, the packages, the tracked files (static, plsql, secrets); the running app and its test users (runtime) | the task's results in `<evidenceDir>/<task>/`, and the exit codes the agent reports (`--exit`) |
+| **Output** | `architecture-result`: each rule's place, each operation's owner (branch, layer, package), the red-flag scan, the rationale | `sync-result`; for a check PASS, the marker | `runtime-result`: per criterion, the status, what was observed and the evidence | `ui-result` per scope: per FAIL criterion, findings by file and line, or by axe rule and selectors | `security-result` per scope: per FAIL criterion, findings by file and line, never a value | `verification-manifest`: the required gates, the worst status, each result cited by path and sha256 |
+| **Statuses** | PASS · FAIL · BLOCKED (missing input) · UNKNOWN | PASS · FAIL · CONFLICT · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED (no browser, unverified login) · UNKNOWN | PASS · FAIL · BLOCKED · UNKNOWN | PASS · FAIL · BLOCKED · UNKNOWN | PASS · FAIL · CONFLICT · BLOCKED · UNKNOWN · NOT_RUN (aggregated, never produced) |
+| **Producer** | the agent (`method: agent`) | the script (`method: tool`) | the agent through `pw.sh` (`method: agent`) | the scripts `ux-scan.py`, `ux-check.py` (`method: tool`) | the scripts `sec-scan.py`, `plsql-scan.py`, `secrets-scan.py`, `sec-probe.py` (`method: tool`) | the script `delivery.py` (`method: tool`) |
+| **Schema** | `architecture-result` (experimental) | `sync-result` (**stable**) | `runtime-result` (experimental) | `ui-result` (experimental) | `security-result` (experimental) | `verification-manifest` (**stable**) |
 
 A **stable** schema changes only additively within `schemaVersion` 1: `sync-result`, and
 `verification-manifest` since D-3, when `delivery.py` became its producer. An **experimental**
-one may change in any minor release, until its producer is a script rather than an agent
-following prose.
+one may change in any minor release. The four experimental results are experimental for the
+reason their gate is: `runtime-result` and `architecture-result` have an agent as producer;
+`ui-result` and `security-result` have scripts as producers, but their gates are opt-in until
+1.0.0 ([GATES.md](GATES.md)). A schema becomes stable when its gate is required by default, which
+is the 1.0.0 decision and not a change to be made earlier.
 
 ## Where results land
 
@@ -96,7 +99,7 @@ puts it back whenever it is missing.
 | raw evidence (snapshots, eval output, logs) | `<evidenceDir>/<task>/raw/<gate>-<alias>/` | whoever produced the result citing it |
 | verification-manifest | `<evidenceDir>/<task>/manifest.json` | `delivery.py` (apexlang-delivery), from the task's results |
 
-## The frozen interface (0.6.x)
+## The frozen interface (0.7.x)
 
 What a consumer may rely on. Changing any of it is a minor release with a `CHANGELOG.md`
 entry; removing any of it, a major one.
@@ -131,7 +134,7 @@ entry; removing any of it, a major one.
   `https://pp-py.github.io/apexlang-skills/schemas/1/<kind>.schema.json` (identifiers, not yet
   published URLs).
 - **Configuration.** `apex-sync.json` keys `appId`, `appAlias`, `apexlangDir`,
-  `sqlclConnection`, `ignorePaths`, `testUser`, `runtimeUrl`, `uiGate`, `securityGate`, `publicPages`, `lowPrivUser`, `evidenceDir`, `apps` — the
+  `sqlclConnection`, `ignorePaths`, `testUser`, `runtimeUrl`, `uiGate`, `securityGate`, `publicPages`, `lowPrivUser`, `environments` (each with `sqlclConnection`, `appId`, `runtimeUrl`, `testUser`, `protected`), `evidenceDir`, `apps` — the
   canonical specification is `skills/apex-sync-guard/setup.md` §1. Environment:
   `APEX_TEST_USER[_<ALIAS>]`, `APEX_TEST_PASSWORD[_<ALIAS>]`, `APEX_TEST_PASSWORD_LOW[_<ALIAS>]`, `APEX_TEST_FILE`, `APEX_TEST_ENV`,
   `PW_WORKSPACE`, `PW_SESSION`, `PW_INSECURE_TLS`.

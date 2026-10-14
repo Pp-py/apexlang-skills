@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://pp-py.github.io/apexlang-skills/schemas/1/security-result.schema.json",
   "title": "security-result (EXPERIMENTAL, schemaVersion 1)",
-  "description": "One apex-security run on one app, per FAIL criterion of skills/apex-security/criteria.md: the static scan over .apx files (scope static, sec-scan.py); later the package scan (plsql), the runtime probes (runtime) and the secrets scan (secrets). Written by the tool (method: tool) to stdout and, with --task, to <evidenceDir>/<task>/security-<alias>-<scope>.json. Advisories never change the status. A PASS is never 'secure': it covers the FAIL criteria this run exercised, nothing else — it is not a pentest.",
+  "description": "One apex-security run on one app, per FAIL criterion of skills/apex-security/criteria.md: the static scan over .apx files (scope static, sec-scan.py), the package scan (scope plsql, plsql-scan.py), the runtime probes (scope runtime, sec-probe.py) and the secrets scan (scope secrets, secrets-scan.py). Written by the tool (method: tool) to stdout and, with --task, to <evidenceDir>/<task>/security-<alias>-<scope>.json. Advisories never change the status. A PASS is never 'secure': it covers the FAIL criteria this run exercised, nothing else — it is not a pentest.",
   "type": "object",
   "additionalProperties": false,
   "required": [

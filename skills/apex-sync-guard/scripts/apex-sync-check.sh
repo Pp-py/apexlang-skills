@@ -39,7 +39,7 @@
 set -euo pipefail
 
 TTL_SECONDS=300   # how long a check PASS authorizes; must equal TTL in apex-sync-hook.sh
-FRAMEWORK_VERSION="0.7.0"   # the apexlang-skills release this script belongs to (.claude-plugin/plugin.json)
+FRAMEWORK_VERSION="0.7.1"   # the apexlang-skills release this script belongs to (.claude-plugin/plugin.json)
 
 # --- verdicts. A gate command (check-import, check-export, record-sync) ends in
 # exactly one status, and the EXIT trap (on_exit, below) turns it into the exit
