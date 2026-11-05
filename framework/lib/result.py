@@ -20,6 +20,7 @@ import sys
 FRAMEWORK_VERSION = "0.7.1"   # the apexlang-skills release (.claude-plugin/plugin.json)
 RE_ALIAS = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")   # common.schema.json appAlias
 RE_TASK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")   # common.schema.json taskId
+RE_CONN = re.compile(r"^[^/@\s\\\"'-][^/@\s\\\"']{0,127}$")   # common.schema.json connectionName, and no leading '-' (it would read as an option)
 
 
 class Stop(Exception):
@@ -199,7 +200,7 @@ def write(result, task_dir, name):
             if d == task_dir:
                 return 3                    # a gate whose result is not on disk has no verdict
     failed = [c["id"] for c in result["criteria"] if c["status"] == "FAIL"]
-    print(f"{result['scope']}: {result['status']}"
+    print(f"{result.get('scope') or result['kind']}: {result['status']}"
           + (f"; FAIL {', '.join(failed)}" if failed else "")
           + f"; {result['reasons'][0]['message']}", file=sys.stderr)
     return {"PASS": 0, "FAIL": 1, "BLOCKED": 2}.get(result["status"], 3)

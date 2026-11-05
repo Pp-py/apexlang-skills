@@ -1,0 +1,4 @@
+rrhh	100	apex/rrhh	dev_ws	QA_ALL	https://dev.example/ords/r/ws/rrhh/
+ventas.dev	200	apex/ventas	dev_ventas	QA_ALL	
+ventas.prod	200	apex/ventas	prod_ventas	QA_ALL	
+compras	300	apex/compras	dev_ws	QA_ALL	

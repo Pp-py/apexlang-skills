@@ -164,8 +164,9 @@ process update-employee (
 
 `DELETE` follows the same shape — shown only when the PK is present and confirmed
 (`apex-ux` `UX-DESTRUCTIVE-CONFIRM`), process gated on `DELETE`, calling
-`pkg_employees.delete_row`, which for a catalog-style table *inactivates* rather than deletes
-(`back-end-conventions.md` §6) and refuses while the row is still referenced.
+`pkg_employees.delete_row`, which performs the entity's declared retention (`back-end-conventions.md`
+§6): soft — inactivate, the default — unless the task declared `hard`, and either way it refuses while
+a row the declaration does not name still references the row.
 
 ## Drawer variant
 
@@ -204,6 +205,9 @@ a centred modal needs an explicit reason.
 
 ## Non-obvious points
 
+- **Unit of work.** CREATE, APPLY CHANGES and DELETE each commit one entity in one submit. A child
+  drawer opened from this form commits on its own submit, so Cancel here does not undo it
+  (`back-end-conventions.md` §4).
 - **Map items to columns 1:1.** The catalog's sample-data forms reuse one column across several
   items (`datePicker` bound to a `varchar2` column, two `subtype: phone` items on the same column) —
   harmless in a demo, a data corruption in a real table. Re-map every item against the real column,

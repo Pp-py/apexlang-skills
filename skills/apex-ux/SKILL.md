@@ -22,10 +22,10 @@ description: Use when an APEXlang page is designed, changed or reviewed for UI q
 | Criteria catalog with IDs (`criteria/`) | **built** (UX-2) |
 | Static scan over `.apx` | **built** (UX-3) for the five static `FAIL` criteria — see §Static scan; the static `ADVISE` ones are still read by hand |
 | Runtime checks: axe-core, dialog focus | **built** (UX-4) for the runtime `FAIL` criteria — see §Runtime checks |
-| Runtime `ADVISE` checks: reflow, focus visible, target size | not built — apply them by hand through `pw.sh` |
+| Runtime `ADVISE` checks: reflow, focus visible and contrast, target size, language of accessible names | not built — by hand through `pw.sh`; procedures and snippets in `references/by-hand.md` |
 | `ui-result` schema, UI gate, manifest enums | **built** (UX-5) — see §The UI gate |
 
-Until the scripts exist, a review cites the criterion IDs it checked and says which it did not. A criterion nobody exercised is `NOT_RUN`, never PASS.
+A review cites the criterion IDs it checked and says which it did not; the `manual` and `ADVISE` ones are read by a person. A criterion nobody exercised is `NOT_RUN`, never PASS.
 
 ## Static scan
 
@@ -43,14 +43,14 @@ the browser actually computes), confirmation done by a dynamic action instead of
 ## Runtime checks
 
 After `pw.sh [--app X] [--env E] login` and `pw.sh goto <page>`, run
-`python3 scripts/ux-check.py [--app X] [--env E] [--dialog <selector>]… [--raw <evidence-dir>/raw/ux-<alias>/axe.json]`
+`python3 scripts/ux-check.py [--app X] [--env E] [--dialog <selector>]… [--raw <evidence-dir>/raw/ui-<alias>/axe-<page>.json]`
 on the page the session holds. It runs axe-core (`vendor/`, pinned in `vendor/axe-core.lock.json`)
 in every frame, on the page and with each dialog open, for `UX-AXE-SERIOUS`, `UX-ITEM-NAME` and
 `UX-CONTROL-NAME`. For each `--dialog` opener (a selector pw.sh can click: `#id`, `text=Edit`) it
 checks `UX-DIALOG-FOCUS`: focus moves in, Tab and Shift+Tab stay in, Esc closes, focus returns.
 No `--dialog` leaves that criterion `NOT_RUN`. Minor violations and axe's "incomplete" are
 advisories, and so is a finding in markup APEX itself renders that `oracle-owned.json` lists for
-the APEX version the page reports (`UX-ORACLE-OWNED`; entries are measured, one version each). A `ui-result` (scope `runtime`) on stdout, never a node's HTML or a session id;
+the APEX version the page reports (`UX-ORACLE-OWNED`; entries are measured, one exact version each, and a new entry cites in `source` a minimal reproduction with a negative control and the version measured). A `ui-result` (scope `runtime`) on stdout, never a node's HTML or a session id;
 `--raw` keeps axe's full output with its sha256. Exit 0 PASS · 1 FAIL · 2 BLOCKED (axe missing or
 not matching its lock, opener not found, a login page) · 3 UNKNOWN (dead session, no verdict).
 
@@ -90,7 +90,7 @@ Grammar keeps its own order (`framework/PRINCIPLES.md` P6): no criterion here ma
 
 ### The pattern catalog is an example, never a requirement
 
-Oracle's **UX Pattern Catalog** application shows what the patterns look like. Where a criterion draws on it, the criterion is written out in full in this repo and cites the catalog page and version (`ex: CAT 26.1.6 <page>`), so it holds without the app. **This skill never needs a catalog instance to run** — a running copy (in a lab, on any instance) is a convenience for looking, nothing more. Where the catalog's own pages break a criterion (it shows a Delete link with no confirmation), the criterion stands and says so.
+Oracle's **UX Pattern Catalog** application shows what the patterns look like. Where a criterion draws on it, the criterion is written out in full in this repo and cites the catalog page and version (`ex: CAT 26.1.6 <page>`; `("x")` is a region the catalog implements, `("x", card text only)` a card with no page behind it), so it holds without the app. **This skill never needs a catalog instance to run** — a running copy (in a lab, on any instance) is a convenience for looking, nothing more. Where the catalog's own pages break a criterion (it shows a Delete link with no confirmation), the criterion stands and says so.
 
 ## Boundaries
 

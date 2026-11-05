@@ -1,0 +1,16 @@
+page 50 (
+    name: Remote
+
+    process call-remote (
+        name: Call remote DB
+        type: invokeApi
+        invoke {
+            package: pkg_a
+            procedureOrFunction: do_it
+        }
+        source {
+            location: restEnabledSql
+            remoteServer: remote_db
+        }
+    )
+)

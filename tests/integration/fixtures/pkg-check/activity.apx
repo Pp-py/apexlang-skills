@@ -1,0 +1,27 @@
+page 52 (
+    name: Activity page
+
+    process call-pkg (
+        name: Call
+        type: invokeApi
+        invoke {
+            package: pkg_a
+            procedureOrFunction: do_it
+        }
+    )
+)
+
+workflow wf1 (
+    name: WF
+    version v1 (
+        activity act1 (
+            name: Act
+            type: invokeApi
+            invoke {
+                type: plsqlPackage
+                package: pkg_missing
+                procedureOrFunction: nothing
+            }
+        )
+    )
+)

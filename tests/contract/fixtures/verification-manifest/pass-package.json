@@ -1,0 +1,33 @@
+{
+  "kind": "verification-manifest",
+  "schemaVersion": 1,
+  "status": "PASS",
+  "context": {
+    "task": "T-42",
+    "repo": {
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "dirty": false
+    },
+    "frameworkVersion": "0.7.1",
+    "timestamp": "2026-11-04T13:30:00Z",
+    "producer": {
+      "skill": "apexlang-delivery",
+      "method": "tool"
+    }
+  },
+  "gates": [
+    {
+      "gate": "package",
+      "app": "hr",
+      "required": true,
+      "status": "PASS",
+      "results": [
+        {
+          "kind": "package-result",
+          "path": ".apex-evidence/T-42/package-hr.dev.json",
+          "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+        }
+      ]
+    }
+  ]
+}

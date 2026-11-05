@@ -34,7 +34,7 @@ Engineering guardrails    single write path · fail-closed gates · evidence, no
 | [GATES.md](GATES.md) | the gates — what each establishes and what it does not — their order, aggregation, freshness, and the orchestration contract |
 | [EVIDENCE.md](EVIDENCE.md) | what counts as evidence, what a result records about its context, redaction, where evidence lives |
 | [CAPABILITIES.md](CAPABILITIES.md) | what is verified, on which Oracle version, with a link to the proof — plus known conflicts with Oracle and declared gaps |
-| `schemas/` | JSON Schema (Draft 2020-12) for every result: `sync-result` and `verification-manifest` (stable), `runtime-result`, `architecture-result`, `ui-result`, `security-result` (experimental), `common` |
+| `schemas/` | JSON Schema (Draft 2020-12) for every result: `sync-result` and `verification-manifest` (stable), `runtime-result`, `architecture-result`, `ui-result`, `security-result`, `package-result` (experimental), `common` |
 | `lib/` | the code the scripts share: `apx.py` (the `.apx` reader), `plsql.py` (the PL/SQL lexer), `pw.py` (the Playwright CLI runner), `result.py` (the result envelope, freshness, redaction) |
 | `scripts/evidence.py` | how the agent writes its runtime and architecture results, and the raw evidence behind them |
 | `oracle-skills.lock.json` | the Oracle skills revision this repo was verified against |
@@ -46,18 +46,18 @@ code is the **core**:
 
 | Core file | What uses it |
 |---|---|
-| `lib/` (`apx.py`, `plsql.py`, `pw.py`, `result.py`) | the scripts of apexlang-architecture, apex-ux, apex-security and apexlang-delivery; `evidence.py` |
+| `lib/` (`apx.py`, `plsql.py`, `pw.py`, `result.py`) | the scripts of apexlang-architecture, apex-ux, apex-security, apexlang-delivery and apex-sentinel's `pkg-check.py`; `evidence.py` |
 | `scripts/evidence.py` | apex-sentinel, to save its `runtime-result` and raw evidence |
-| `schemas/` | apexlang-delivery, when `jsonschema` is installed (it validates each result against it) |
+| `schemas/` | apexlang-delivery (it validates each result against it, with `jsonschema`, which it requires: `apt install python3-jsonschema` or `python -m pip install jsonschema`) |
 
 | Skill | Needs from the core |
 |---|---|
 | apex-sync-guard | nothing: it runs from its own directory |
-| apex-sentinel | `scripts/evidence.py` (and so `lib/`) to save results; `pw.sh` reads `apex-sync.json` itself |
+| apex-sentinel | `scripts/evidence.py` (and so `lib/`) to save results; `lib/` for `pkg-check.py`; `pw.sh` reads `apex-sync.json` itself |
 | apexlang-architecture | `lib/` for `arch-scan.py` |
 | apex-ux | `lib/` for `ux-scan.py` and `ux-check.py` |
 | apex-security | `lib/` for its four scripts |
-| apexlang-delivery | `lib/` for `delivery.py`; `schemas/` when `jsonschema` is installed |
+| apexlang-delivery | `lib/` and `schemas/` for `delivery.py`, plus the Python package `jsonschema` (required: without it, or without `schemas/`, `delivery.py` is `BLOCKED`) |
 
 **Install units.** The supported ways to install a skill, and what each one means:
 

@@ -13,7 +13,7 @@ Each file holds one table; `tests/contract/surface.py` checks every row.
 | **Criterion** | what must hold, stated so it can be checked |
 | **Sev** | `FAIL` — the UI gate fails when it does not hold · `ADVISE` — reported, never changes the verdict |
 | **By** | `static` — read from the `.apx` · `runtime` — observed in the browser · `manual` — a person (or agent) looks and says what they looked at. Several are joined with `+`. |
-| **Source** | `WCAG <SC>` (2.2) · `Oracle <policy>` (26.1, anchors in `tests/upstream/citations.md`) · `UT` (Universal Theme) · `repo <file>` · `ex: CAT 26.1.6 <page>` (the UX Pattern Catalog, an example only) |
+| **Source** | `WCAG <SC>` (2.2) · `Oracle <policy>` (26.1, anchors in `tests/upstream/citations.md`) · `UT` (Universal Theme) · `repo <file>` · `ex: CAT 26.1.6 <page>` (the UX Pattern Catalog, an example only) — `("x")` after the page is a region the catalog implements; `("x", card text only)` is a pattern card with no page behind it |
 
 ## Severity policy
 
@@ -51,4 +51,4 @@ Oracle's 26.1 policies are silent on several things WCAG requires: dialog focus 
 descriptive link text, target size, reflow, chart text alternatives, error identification. Those
 criteria cite WCAG alone. The example catalog leaves its Status and Badges, Buttons and Menus,
 Form Controls, Empty States and Navigation primitives, and its Sectioned Form, Wizard and Bulk
-Edit patterns, as one-line descriptions (26.1.6): only those lines are cited.
+Edit patterns, as one-line descriptions (26.1.6): only those lines are cited, and a Source says so with `card text only`. A catalog reference is never runtime evidence of the criterion.

@@ -1,0 +1,11 @@
+page 46 (
+    name: Standalone only
+
+    process p (
+        name: P
+        type: invokeApi
+        invoke {
+            procedureOrFunction: legacy_proc
+        }
+    )
+)

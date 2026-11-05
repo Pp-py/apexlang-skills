@@ -59,7 +59,14 @@ class H(http.server.BaseHTTPRequestHandler):
             self.end_headers(); return
         body = {"/ords/r/ws/app/login?session=123456789": '<form><input type="password" name="p"></form>',
                 "/ords/r/ws/app/open": '<input type="hidden" name="p_flow_step_id" id="pFlowStepId" value="10">',
-                "/ords/r/ws/app/odd": '<p>maintenance</p>'}.get(self.path, "")
+                "/ords/r/ws/app/odd": '<p>maintenance</p>',
+                # APEX's own error page (a dialog URL with no session) keeps the requested page's id
+                "/ords/r/ws/app/dlg": '<input type="hidden" id="pFlowStepId" value="10"><div class="a-Error-back">Session ended</div>',
+                "/ords/r/ws/app/dlg2": '<input type="hidden" id="pFlowStepId" value="10"><h2 class="t-Alert-title t-Alert-errorTitle">Error</h2>',
+                # NOT an error page: the error container is there but hidden (u-hidden), and a class that only
+                # contains the error class's name is not that class. The page itself is served: still a FAIL
+                "/ords/r/ws/app/hid": '<input type="hidden" id="pFlowStepId" value="10"><div id="APEX_ERROR_MESSAGE" class="u-hidden"></div>',
+                "/ords/r/ws/app/hid2": '<input type="hidden" id="pFlowStepId" value="10"><div class="my-a-Error-back-x"></div>'}.get(self.path, "")
         self.send_response(200 if body else 404); self.end_headers(); self.wfile.write(body.encode())
 s = http.server.HTTPServer(("127.0.0.1", 0), H)
 print(s.server_address[1], flush=True)
@@ -96,6 +103,11 @@ main "$(O "$BASE/orders" '"10"'),$(O "$BASE/open" '"10"'),$(O "$BASE/odd" '"10"'
 check "anon: redirected to the login → PASS" 0 "c['SEC-ANON-REDIRECT'] == 'PASS' and c['SEC-ROLE-REFUSED'] == 'NOT_RUN'" --anon "$BASE/orders"
 check "anon: the page served with no login → FAIL" 1 "c['SEC-ANON-REDIRECT'] == 'FAIL'" --anon "$BASE/open"
 check "anon: neither the page nor a login → UNKNOWN" 3 "d['status'] == 'UNKNOWN'" --anon "$BASE/odd"
+main "$(O "$BASE/dlg" '"10"'),$(O "$BASE/dlg2" '"10"'),$(O "$BASE/hid" '"10"'),$(O "$BASE/hid2" '"10"')"
+check "anon: APEX's error page under the requested id (a dialog, no session) → UNKNOWN, never FAIL or PASS" 3 "c['SEC-ANON-REDIRECT'] == 'NOT_RUN' and d['status'] == 'UNKNOWN'" --anon "$BASE/dlg"
+check "anon: the same error page by its other class → UNKNOWN" 3 "c['SEC-ANON-REDIRECT'] == 'NOT_RUN' and d['status'] == 'UNKNOWN'" --anon "$BASE/dlg2"
+check "anon: a hidden error container and the page served → still FAIL" 1 "c['SEC-ANON-REDIRECT'] == 'FAIL'" --anon "$BASE/hid"
+check "anon: a class that only contains the error class's name, the page served → still FAIL" 1 "c['SEC-ANON-REDIRECT'] == 'FAIL'" --anon "$BASE/hid2"
 main "$(O "$BASE/cookied" '"10"')"
 check "anon: a login reached only by keeping APEX's cookie → PASS" 0 "c['SEC-ANON-REDIRECT'] == 'PASS'" --anon "$BASE/cookied"
 main "$(O "$BASE/orders" null)"

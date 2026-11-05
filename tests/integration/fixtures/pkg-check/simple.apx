@@ -1,0 +1,12 @@
+page 48 (
+    name: Simple
+
+    process call-pkg (
+        name: Call
+        type: invokeApi
+        invoke {
+            package: pkg_a
+            procedureOrFunction: do_it
+        }
+    )
+)

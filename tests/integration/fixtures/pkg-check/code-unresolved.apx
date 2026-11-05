@@ -1,0 +1,16 @@
+page 42 (
+    name: Code unresolved
+
+    process save (
+        name: Save
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                begin
+                    pkg_sectrs.save_row(p_code => :CODE);
+                end;
+                ```
+        }
+    )
+)

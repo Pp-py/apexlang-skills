@@ -1,0 +1,14 @@
+page 49 (
+    name: Owner
+
+    process call-other (
+        name: Call other schema
+        type: invokeApi
+        invoke {
+            type: plsqlPackage
+            package: pkg_a
+            procedureOrFunction: do_it
+            owner: OTHER_SCHEMA
+        }
+    )
+)

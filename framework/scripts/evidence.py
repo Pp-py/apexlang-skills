@@ -233,8 +233,11 @@ def write(a):
     app = {"appAlias": alias, **{k: v for k, v in (d.pop("app", None) or {}).items() if k in ("appId", "mmdVersion")}}
     if a.env:
         app["environment"] = a.env
-    if "appId" not in app and isinstance((settings or {}).get("appId"), int):
-        app["appId"] = settings["appId"]
+    cfg_id = (settings or {}).get("appId")          # the config's appId (the environment's over the app's) is the app
+    if isinstance(cfg_id, int) and app.get("appId") not in (None, cfg_id):
+        raise Refuse("app.appId in the draft contradicts the one in apex-sync.json: drop it (the script takes the appId from the config)")
+    if "appId" not in app and isinstance(cfg_id, int):
+        app["appId"] = cfg_id
     out = {"kind": f"{a.kind}-result", "schemaVersion": 1, "status": status,
            "reasons": [{"code": code, "message": msg}], "app": app, "context": ctx, **d}
     name = f"runtime-{key}.json" if a.kind == "runtime" else "architecture.json"

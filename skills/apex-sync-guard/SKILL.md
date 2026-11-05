@@ -13,7 +13,7 @@ description: Use when about to run `apex import` or `apex export` on an APEXlang
 - **Output:** a `sync-result` (`.git/apex-sync/<alias>/last-<op>.json`; with `--task`, in the evidence dir) and exit 0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN. A check PASS also writes the hook's 5-minute marker, bound to the source it compared.
 - **Evidence:** the Builder export, the comparison (`changes`, `payload`), the syncpoint commit — `references/sync-result.md`.
 - **Gate:** Sync (`framework/GATES.md`); enforced in Claude Code by the `PreToolUse` hook.
-- **Interface:** `scripts/apex-sync-check.sh check-import|check-export|record-sync|status|doctor|apps [--app <alias>] [--task <id>] [--force]`
+- **Interface:** `scripts/apex-sync-check.sh check-import|check-export|record-sync|status|doctor|apps [--app <alias>] [--env <name>] [--task <id>] [--force]`
 
 ## Overview
 
@@ -80,3 +80,4 @@ Per differing file: changed only in the Builder → copy it from the kept export
 - You wrote "assuming the Builder is unchanged" (or any equivalent assumption).
 - An import/export finished and `record-sync` didn't run.
 - You are treating a stale sync-check (from before someone opened the Builder) as still valid.
+- There is no `apex-sync.json` and you are about to import or export anyway: the hook does not watch that repo (it only refuses a `cd` to a path computed at run time). Wire it first (`setup.md` §1) with values the user gives you — never invented ones.

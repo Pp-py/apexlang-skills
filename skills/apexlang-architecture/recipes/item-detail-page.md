@@ -159,6 +159,8 @@ else:
   not floating in the body grid, and the page refreshes them on `apexafterclosedialog` after the
   modal closes (`modal-crud-to-package.md`).
 
+**Unit of work.** The page has no Save of its own: each rail action and each collection dialog commits on its own submit, and cancelling one leaves what the others saved (`back-end-conventions.md` §4).
+
 ## The activity timeline is your audit trail
 
 The timeline is a `contentRow` in report mode with `plugin-grouping` for the date headers, and its

@@ -20,8 +20,8 @@ gate one producer, each topic one document. Two owners means two versions of the
 
 *Enforced by:* package boundaries (architecture); one reader of `apex-sync.json` per
 skill, held equal by `config-parity.sh`; one status vocabulary ([CONTRACTS.md](CONTRACTS.md)).
-`framework/lib/result.py` is a further reader (`evidenceDir`, the alias, `environments`) that
-`config-parity.sh` does not cover yet.
+`framework/lib/result.py` is the third reader (`evidenceDir`, the alias, `environments`); the
+same test holds it equal to the other two on the valid fixtures.
 
 ## P3 — Fail closed
 
@@ -77,7 +77,7 @@ scan it); the schemas'
 
 ## P8 — Scoped and perishable
 
-An authorization is scoped and expires: a sync marker covers one app, one direction, ten
+An authorization is scoped and expires: a sync marker covers one app, one direction, five
 minutes, and is withdrawn when the next check of that direction starts. A result belongs
 to a task and a revision; read later or elsewhere, it is stale — NOT_RUN, not PASS.
 

@@ -405,6 +405,24 @@ expect "hook: no marker blocks it under PowerShell too"      2 hook_in_proj "ape
 expect "hook: no marker blocks apex export"                  2 hook_in_proj "sql <<< 'apex export -dir x'"
 expect "hook: unrelated command passes"                      0 hook_in_proj "ls -la"
 
+# --- the Preflight of apexlang-delivery (step 0) authorizes nothing: `apps` and `doctor` exit 0 on a wired repo,
+# and still write no marker, so the hook keeps blocking the import. Only a PASSing check-import opens it (GATES.md).
+expect "preflight: apps exits 0"                              0 "$CHK" apps
+expect "preflight: doctor exits 0"                            0 "$CHK" doctor
+shopt -s nullglob; check_ok_markers=("$WORK"/proj/.git/apex-sync/demo/check-ok.*); shopt -u nullglob
+expect "preflight: neither wrote a marker"                    0 test "${#check_ok_markers[@]}" -eq 0
+expect "preflight: the hook still blocks the import"          2 hook_in_proj "apex import -applicationid 100"
+# --- a git repo WITHOUT apex-sync.json: the hook polices no import there (exit 0), but it is not inert — a `cd` to a
+# directory computed at run time is refused (false positive reproduced by the F-03 audit). setup.md section 3 says so.
+mkdir -p "$WORK/noconf-repo" && git -C "$WORK/noconf-repo" init -q
+hook_noconf() { printf '{"tool_name":"Bash","tool_input":{"command":"%s"},"cwd":"%s"}' "$1" "$WORK/noconf-repo" | "$HOOK"; }
+expect "no config: an import is not policed (exit 0)"         0 hook_noconf 'sql -name dev <<< \"apex import -input src/app\"'
+expect "no config: the deploy script is not policed (exit 0)" 0 hook_noconf 'bash deploy-apex-app.sh src/app'
+# shellcheck disable=SC2016  # the $B is the point: the hook must see it unexpanded
+expect_out "no config: a cd to a computed path is still refused" 'computed at run time' hook_noconf 'B=/x; cd $B/y; cat deploy-apex-app.sh'
+# shellcheck disable=SC2016
+expect "no config: ... with exit 2"                           2 hook_noconf 'B=/x; cd $B/y; cat deploy-apex-app.sh'
+
 # --- mentioning the subcommand is not invoking it. These five all used to be
 # blocked, because the matcher looked for the bare phrase anywhere in the
 # command text. That made ordinary work impossible while the guard was on: a
@@ -843,6 +861,22 @@ expect     "multi: uiGate that is not a boolean -> BLOCKED"    2 with_config "{ 
 expect     "multi: securityGate per app is accepted"          0 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"securityGate\": true } ] }" "$CHK" apps
 expect     "multi: securityGate that is not a boolean -> BLOCKED" 2 with_config "{ $APPS2, \"securityGate\": \"on\", \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" } ] }" "$CHK" check-import --app demo
 expect     "multi: a top-level uiGate that is not a boolean -> BLOCKED" 2 with_config "{ $APPS2, \"uiGate\": 1, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" } ] }" "$CHK" check-import --app demo
+# packageGate (apex-sentinel's Package gate) is read like uiGate and securityGate: a boolean, per app or as the
+# top-level default, and a typo blocks instead of passing silently. By jq and, when python3 is there, by python.
+expect     "multi: packageGate per app and as a default is accepted" 0 with_config "{ $APPS2, \"packageGate\": false, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"packageGate\": true } ] }" "$CHK" apps
+expect     "packageGate on a single-app config is accepted"    0 with_config "{ $APPCFG, \"packageGate\": true }" "$CHK" apps
+expect     "multi: packageGate that is not a boolean per app -> BLOCKED (jq)" 2 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"packageGate\": \"yes\" } ] }" "$CHK" check-import --app demo
+expect_out "... and it is named, with its type"                "apps.0: packageGate must be true or false \(got a string\)" with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"packageGate\": \"yes\" } ] }" "$CHK" check-import --app demo
+expect     "multi: a top-level packageGate default that is not a boolean -> BLOCKED (jq)" 2 with_config "{ $APPS2, \"packageGate\": 1, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" } ] }" "$CHK" check-import --app demo
+expect     "packageGate that is not a boolean on a single-app config -> BLOCKED (jq)" 2 with_config "{ $APPCFG, \"packageGate\": \"on\" }" "$CHK" check-import
+if [[ -n "$real_python" ]]; then
+  expect     "multi: packageGate that is not a boolean per app -> BLOCKED (python)" 2 without_jq with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"packageGate\": \"yes\" } ] }" "$CHK" check-import --app demo
+  expect     "multi: a top-level packageGate default that is not a boolean -> BLOCKED (python)" 2 without_jq with_config "{ $APPS2, \"packageGate\": 1, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\" } ] }" "$CHK" check-import --app demo
+  expect     "packageGate that is not a boolean on a single-app config -> BLOCKED (python)" 2 without_jq with_config "{ $APPCFG, \"packageGate\": \"on\" }" "$CHK" check-import
+  expect     "packageGate booleans are accepted (python)"     0 without_jq with_config "{ $APPS2, \"packageGate\": true, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"packageGate\": false } ] }" "$CHK" apps
+else
+  echo "skip the python packageGate cases: no python3"
+fi
 expect     "multi: publicPages and lowPrivUser per app are accepted" 0 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"publicPages\": [9999, 1], \"lowPrivUser\": \"QA_LOW\" } ] }" "$CHK" apps
 expect     "multi: publicPages with a non-number -> BLOCKED"   2 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"publicPages\": [\"login\"] } ] }" "$CHK" check-import --app demo
 expect     "multi: lowPrivUser that is not a string -> BLOCKED" 2 with_config "{ $APPS2, \"apps\": [ { \"appId\": 100, \"appAlias\": \"demo\", \"lowPrivUser\": 5 } ] }" "$CHK" check-import --app demo

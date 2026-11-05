@@ -14,7 +14,8 @@ line carrying `secrets-scan: allow <reason>`, on it or on the line above.
 
 Output: a security-result (scope secrets) on stdout, and with --task in
 <evidenceDir>/<task>/security-<alias>-secrets.json.
-Exit:   0 PASS · 1 FAIL · 2 BLOCKED (not a git repo and no path, unreadable, outside the repo).
+Exit:   0 PASS · 1 FAIL · 2 BLOCKED (not a git repo and no path, unreadable, outside the repo) ·
+        3 UNKNOWN (the result could not be written).
 """
 import argparse
 import os

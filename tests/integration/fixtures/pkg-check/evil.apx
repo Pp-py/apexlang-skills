@@ -1,0 +1,12 @@
+page 43 (
+    name: Evil
+
+    process p (
+        name: P
+        type: invokeApi
+        invoke {
+            package: pkg_x; drop table employees
+            procedureOrFunction: go
+        }
+    )
+)

@@ -9,6 +9,8 @@ Static checks, no network, no database:
   * the plugin manifests agree on the version; the Oracle lock is well-formed;
   * the patterns, constants and functions that are deliberately duplicated are still
     identical (alias and connection-name patterns, the marker TTL, json_flatten);
+  * the minutes the documents give for the sync marker are the guard's TTL;
+  * the recipes that write name the unit of work, which back-end-conventions defines once;
   * every runtime pass criterion has a unique ID with its check's prefix, and every ID
     a walkthrough cites exists;
   * every apex-ux criterion row is well-formed: a unique ID with its file's prefix, a
@@ -18,6 +20,7 @@ Static checks, no network, no database:
 
 Exit 0 PASS, 1 FAIL.
 """
+import importlib.util
 import json
 import os
 import re
@@ -155,7 +158,7 @@ CONTRACT_LABELS = ["Does", "Use when", "Decides", "Output", "Evidence", "Gate"]
 
 def check_skill_shape():
     """Progressive disclosure: a SKILL.md opens with its Contract, stays within budget,
-    and every references/ file it points to exists."""
+    and every references/ and recipes/ file it points to exists."""
     for rel in tracked("skills/*/SKILL.md"):
         text, problems = read(rel), []
         size = len(text.encode("utf-8"))
@@ -173,13 +176,13 @@ def check_skill_shape():
                 if not re.search(rf"^- \*\*{label}:\*\*", block, re.M):
                     problems.append(f"the Contract block has no '{label}:' line")
         skill_dir = os.path.dirname(rel)
-        for ref in sorted(set(re.findall(r"`(references/[a-z0-9.-]+\.md)`", text))):
+        for ref in sorted(set(re.findall(r"`((?:references|recipes)/[a-z0-9.-]+\.md)`", text))):
             if not os.path.exists(os.path.join(REPO, skill_dir, ref)):
                 problems.append(f"points to {ref}, which does not exist")
         if problems:
             bad(f"{rel}: shape", problems)
         else:
-            ok(f"{rel}: Contract first, {size} bytes ≤ {SKILL_BUDGET}, its references/ exist")
+            ok(f"{rel}: Contract first, {size} bytes ≤ {SKILL_BUDGET}, its references/ and recipes/ exist")
     size = len(read("AGENTS.md").encode("utf-8"))
     if size > AGENTS_BUDGET:
         bad(f"AGENTS.md is {size} bytes — over the {AGENTS_BUDGET}-byte budget")
@@ -242,7 +245,8 @@ def check_duplicates():
     # The connection-name pattern is POSIX ERE in bash and ECMA/Python in the schema:
     # compare what they accept, not how they are spelled.
     samples = ["dev", "dev_hr", "DEV-1.x", "a" * 128, "a" * 129, "", "scott/tiger", "u@db",
-               "two words", "q\"uote", "q'uote", "back\\slash", "tab\tbed", "ñandú"]
+               "two words", "q\"uote", "q'uote", "back\\slash", "tab\tbed", "ñandú",
+               "/x", "@x", " x", "\\x", "\"x", "'x"]      # each forbidden character in the leading position too
     bash = subprocess.run(
         ["bash", "-c", f'. "{os.path.join(REPO, lib)}"; while IFS= read -r -d "" s; do '
                        '[[ "$s" =~ $RE_CONNECTION ]] && echo 1 || echo 0; done'],
@@ -253,6 +257,22 @@ def check_duplicates():
         ok("the connection-name pattern accepts the same names in bash and in the schema")
     else:
         bad("the connection-name pattern disagrees between bash and the schema", diff or bash)
+
+    # framework/lib/result.py holds a third copy (Python) with one more rule: no leading '-' (it would read as an option)
+    try:
+        spec = importlib.util.spec_from_file_location("apex_result_lib", os.path.join(REPO, "framework/lib/result.py"))
+        lib_result = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(lib_result)
+        seen = [(s, bool(lib_result.RE_CONN.match(s)), re.fullmatch(common["connectionName"]["pattern"], s) is not None)
+                for s in samples + ["-x"]]
+        diff = [f"{s!r}: result.py {a}, schema {b}" for s, a, b in seen if a != b and not s.startswith("-")]
+        diff += [f"{s!r}: result.py must refuse a leading '-' the schema accepts" for s, a, b in seen if s.startswith("-") and (a or not b)]
+    except Exception as e:                      # a result.py that does not load is a failed check, not a traceback
+        diff = [f"framework/lib/result.py: {e.__class__.__name__}: {str(e)[:80]}"]
+    if not diff:
+        ok("result.py's connection-name pattern is the schema's, plus the refused leading '-'")
+    else:
+        bad("result.py's connection-name pattern disagrees with the schema", diff)
 
     ttl = {chk: shell_var(chk, "TTL_SECONDS"), hook: shell_var(hook, "TTL")}
     vals = {k: re.match(r"\d+", v or "").group(0) if re.match(r"\d+", v or "") else v for k, v in ttl.items()}
@@ -271,6 +291,17 @@ def check_duplicates():
         bad("APP_KEYS differs between the guard's lib and pw.sh (an app key one accepts, the other rejects)",
             [f"{k}: {v}" for k, v in keys.items()])
 
+    # page_name names a ui-result's file (ux-check.py) and is what delivery.py's --page is matched against
+    def pybody(rel, fn):
+        m = re.search(rf"^def {fn}\(.*?(?=^\S)", read(rel), re.M | re.S)
+        return m.group(0).rstrip() if m else None
+    ux, dl = "skills/apex-ux/scripts/ux-check.py", "skills/apexlang-delivery/scripts/delivery.py"
+    a, b = pybody(ux, "page_name"), pybody(dl, "page_name")
+    if a and a == b:
+        ok("page_name is the same function in ux-check.py and delivery.py (the page a ui-result names)")
+    else:
+        bad("page_name differs between ux-check.py and delivery.py (a --page would never match the file ux-check.py wrote)")
+
     a, b = body(lib, "json_flatten"), body(pw, "json_flatten")
     if a and a == b:
         ok("json_flatten is the same function in the guard's lib and in pw.sh")
@@ -278,8 +309,61 @@ def check_duplicates():
         bad("json_flatten differs between the guard's lib and pw.sh (the two readers of apex-sync.json)")
 
 
+WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+         "fifteen": 15, "twenty": 20, "thirty": 30}
+
+
+def check_marker_minutes():
+    """The minutes a document gives for the sync marker are the ones the guard enforces. Prose is joined
+    across soft line wraps (a number and its unit can sit on two lines); only a figure within 60
+    characters of the word 'marker' counts, so another timeout (a session, a token) is left alone."""
+    raw = shell_var("skills/apex-sync-guard/scripts/apex-sync-check.sh", "TTL_SECONDS")
+    m = re.match(r"\d+", raw or "")
+    if not m or int(m.group(0)) < 60 or int(m.group(0)) % 60:
+        bad("the marker TTL is not a whole number of minutes the documents can name", [f"TTL_SECONDS={raw!r}"])
+        return
+    want, hits, seen = int(m.group(0)) // 60, [], 0
+    for rel in tracked("framework/*.md") + tracked("skills/*.md") + tracked("skills/*.sh"):
+        for block in re.split(r"\n\s*\n|\n(?=\|)", read(rel)):
+            if "closed (R-" in block:                       # a closed gap narrates what used to be
+                continue
+            text = " ".join(block.split())
+            for f in re.finditer(r"\b(\d+|" + "|".join(WORDS) + r")\s+minutes?\b", text, re.I):
+                if "marker" not in text[max(0, f.start() - 60):f.end() + 60].lower():
+                    continue
+                seen += 1
+                n = int(f.group(1)) if f.group(1).isdigit() else WORDS[f.group(1).lower()]
+                if n != want:
+                    hits.append(f"{rel}: '{f.group(0)}' near the marker, TTL_SECONDS says {want}")
+    if hits:
+        bad("a document gives the marker a lifetime the guard does not enforce", hits)
+    elif not seen:
+        bad("no document names the marker's minutes: has this check lost its target?")
+    else:
+        ok(f"every document that names the marker's minutes says {want} ({seen} mentions)")
+
+
+UOW_RECIPES = ["editable-ig-to-package", "modal-crud-to-package", "form-page-to-package", "master-detail-edit",
+               "versioned-vigency-record", "wizard-multi-step", "workflow-state-transitions", "item-detail-page",
+               "attachments-to-package"]
+
+
+def check_unit_of_work():
+    """The recipes that write say what one submit commits, and back-end-conventions defines it once."""
+    base = "skills/apexlang-architecture/"
+    missing = [r for r in UOW_RECIPES if "Unit of work" not in read(f"{base}recipes/{r}.md")]
+    lines = [l for l in read(base + "back-end-conventions.md").splitlines() if l.startswith("**Unit of work.**")]
+    problems = [f"recipes/{r}.md has no 'Unit of work'" for r in missing]
+    if len(lines) != 1:
+        problems.append(f"back-end-conventions.md has {len(lines)} lines starting '**Unit of work.**' (exactly one)")
+    if problems:
+        bad("unit of work: the recipes that write and the one definition", problems)
+    else:
+        ok(f"unit of work: defined once in back-end-conventions.md, named in the {len(UOW_RECIPES)} recipes that write")
+
+
 CHECK_PREFIX = {"browse-search": "BROWSE", "dashboard-report": "DASH", "editable-ig": "IG",
-                "form-page": "FORM", "modal-crud": "MODAL", "split-view": "SPLIT", "workflow-state": "WF"}
+                "form-page": "FORM", "modal-crud": "MODAL", "package": "PKG", "split-view": "SPLIT", "workflow-state": "WF"}
 ID = re.compile(r"`([A-Z]{2,8}(?:-[A-Z0-9]{1,24}){1,4})`")
 ID_PATTERN = json.loads(read("framework/schemas/common.schema.json"))["$defs"]["criterionId"]["pattern"]
 
@@ -405,12 +489,14 @@ def check_interface():
     for script, args in (("apexlang-architecture/scripts/arch-scan.py", "arch-scan.py <file-or-dir>..."),
                          ("apex-ux/scripts/ux-scan.py", "[--app <alias>] [--task <id>]"),
                          ("apex-ux/scripts/ux-check.py", "[--app <alias>] [--env <name>] [--task <id>] [--dialog <selector>]..."),
+                         ("apex-sentinel/scripts/pkg-check.py", "[--app <alias>] [--env <name>] [--task <id>] <file-or-dir>..."),
                          ("apex-security/scripts/sec-scan.py", "[--app <alias>] [--task <id>]"),
                          ("apex-security/scripts/plsql-scan.py", "[--app <alias>] [--task <id>]"),
                          ("apex-security/scripts/sec-probe.py", "[--app <alias>] [--env <name>] [--task <id>] [--anon <url>]... [--tamper]"),
                          ("apex-security/scripts/secrets-scan.py", "[--app <alias>] [--task <id>] [<path>...]"),
                          ("apexlang-delivery/scripts/delivery.py", "--task <id> [--app <alias>] [--env <name>] [--skip <gate>:<reason>]..."),
-                         ("apexlang-delivery/scripts/delivery.py", "[--exit <gate>:<code>]...")):
+                         ("apexlang-delivery/scripts/delivery.py", "[--exit <gate>:<code>]..."),
+                         ("apexlang-delivery/scripts/delivery.py", "[--page <page>[:dialog]]...")):
         if args not in read(f"skills/{script}"):
             missing.append(f"{script} usage: {args}")
     ev = read("framework/scripts/evidence.py")
@@ -427,6 +513,11 @@ def check_interface():
     if not any("skills/apex-sync-guard/scripts/apex-sync-hook.sh" in c for c in cmds):
         missing.append("hooks.json: a command running skills/apex-sync-guard/scripts/apex-sync-hook.sh")
     contracts = read("framework/CONTRACTS.md")
+    for args in ("pkg-check.py [--app <alias>] [--env <name>] [--task <id>] <file-or-dir>…",
+                 "delivery.py --task <id> [--app <alias>] [--env <name>]", "[--skip <gate>:<reason>]…",
+                 "[--exit <gate>:<code>]…", "[--page <page>[:dialog]]…"):
+        if args not in " ".join(contracts.split()):      # the usage line wraps in the document
+            missing.append(f"CONTRACTS.md does not state delivery.py's usage: {args}")
     for path in re.findall(r"`(skills/[^`\s]+\.sh)", contracts):
         if not os.path.exists(os.path.join(REPO, path)):
             missing.append(f"CONTRACTS.md names {path}, which does not exist")
@@ -443,6 +534,8 @@ def main():
     check_skill_shape()
     check_versions_and_lock()
     check_duplicates()
+    check_marker_minutes()
+    check_unit_of_work()
     check_criterion_ids()
     check_ux_criteria()
     check_capability_refs()

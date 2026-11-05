@@ -77,7 +77,8 @@ process save-members (
 ## Conventions
 
 - **Parent FK on new child rows** is stamped in the detail process from the master PK item (`:P30_SECTOR_ID`), then passed to the child package — the child package still owns the write and its rules. (`save_sector_assignment` is this recipe's scoped IG adapter, the same shape as `save_row` in `editable-ig-to-package.md`; the shipped `examples/employees-form` package exposes plain CRUD instead.)
-- **Two packages, two transactions-of-rules** (Case B) under one page submit (APEX commits once). If the master must exist before children, create/fetch it in a `beforeHeader` step and carry its PK. In Case A there is one package, so the ordering is its problem, not the page's.
+- **Unit of work.** Master and detail on one page: one Save, one transaction — a `-20xxx` from either package rolls both back. A per-row dialog commits on its own submit, so say on the page which of the two it is (`back-end-conventions.md` §4).
+- **Two packages, two sets of rules** (Case B) under one page submit (APEX commits once). If the master must exist before children, create/fetch it in a `beforeHeader` step and carry its PK. In Case A there is one package, so the ordering is its problem, not the page's.
 - For a deep master + many-child create-in-one-shot flow (Case B), an APEX **page-level** orchestration process calling `pkg_master.create_row` and then looping children through `pkg_detail` is the right shape — the `.apx` is allowed to call packages in sequence. It stops being enough when the cross-entity test fires (`package-boundaries.md` §Test 2): an intermediate state that is invalid if the sequence halts, or the same operation needed from a job or REST. Then the coordination moves into a `_flow` package and the page calls that one operation instead.
 
 ## Common mistakes

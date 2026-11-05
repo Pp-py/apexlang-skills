@@ -164,4 +164,6 @@ contract just described. The tree variant above needs none of it.
 ## Verify
 
 `apex-sentinel/checks/split-view.md`: first row selected on load, detail follows a second selection,
-detail survives filtering and paging, empty state when the filter matches nothing.
+detail survives filtering, empty state when the filter matches nothing and the detail comes back when
+it clears; on the visible-selection variant, also across pages. Focus after a reconcile and rapid
+successive selections are not checked yet (they need an induced delay in `pw.sh`).

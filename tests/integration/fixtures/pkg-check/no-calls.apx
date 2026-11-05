@@ -1,0 +1,16 @@
+page 44 (
+    name: No calls
+
+    process p (
+        name: P
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                begin
+                    null;
+                end;
+                ```
+        }
+    )
+)

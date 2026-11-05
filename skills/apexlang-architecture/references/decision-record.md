@@ -27,6 +27,8 @@ Run the procedures of `../package-boundaries.md` and record the first branch tha
 | a **rule** — uniqueness, a guard, a required field | A | A1 → `constraint` · A2 → `apx` · A3 → the package that owns the operation |
 | an **operation** — a save, a transition, a wizard's last step | B | B0 → `read` · B1 → `entity` · B2 → `entity-sequence` or `flow` · B3 → `integration` |
 
+Retention is one more rule decision, per entity that can be deleted: type `rule`, branch A3, layer `entity`, subject beginning `retention:`. `soft` is the default and needs no decision. `hard` needs one that names the dependents it removes (`retention: hard, dependents: <list>`), and says whether the package or an ON DELETE CASCADE removes them (`../back-end-conventions.md` section 6). apex-sentinel `FORM-SOFT-DELETE` and `FORM-HARD-DELETE` read it.
+
 ```json
 { "subject": "saving a sector from the grid", "type": "operation", "branch": "B1",
   "layer": "entity", "package": "pkg_sectors",

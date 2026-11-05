@@ -12,6 +12,8 @@
 
 The package is the only writer; the UI never issues UPDATE/INSERT against the vigency table.
 
+**Unit of work.** `new_vigency` closes the open row and inserts the new one in one submit: both or neither. Cancel on the modal writes nothing (`back-end-conventions.md` §4).
+
 ## The write — `new_vigency`
 
 ```plsql

@@ -4,7 +4,7 @@ Every `check-import`, `check-export` and `record-sync` run writes its verdict as
 schema is `framework/schemas/sync-result.schema.json` (stable, `schemaVersion: 1`):
 
 - always `.git/apex-sync/<alias>/last-<operation>.json`;
-- with `--task <id>`, also `<evidenceDir>/<id>/sync-<alias>-<operation>.json` — the copy an
+- with `--task <id>`, also `<evidenceDir>/<id>/sync-<alias>[.<env>]-<operation>.json` — the copy an
   orchestrator reads. The evidence dir is created with a `.gitignore` of `*`.
 
 A placeholder (`UNKNOWN`, `INTERRUPTED`) is written when the run starts, so a run killed

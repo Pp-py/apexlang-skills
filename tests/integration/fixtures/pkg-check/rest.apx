@@ -1,0 +1,22 @@
+page 51 (
+    name: Rest
+
+    process call-rest (
+        name: Call REST
+        type: invokeApi
+        invoke {
+            type: restSource
+            restSource: my_rest
+            operation: get_op
+        }
+    )
+
+    process call-pkg (
+        name: Call
+        type: invokeApi
+        invoke {
+            package: pkg_a
+            procedureOrFunction: do_it
+        }
+    )
+)
