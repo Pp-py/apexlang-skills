@@ -708,6 +708,7 @@ if q "not g['package']['required'] and g['package']['excludedBy'] == 'config'"; 
 # --- no apex-sync.json (F-03): the exit stays 4 and ONE additive stderr note says why Sync, Validation and Runtime cannot PASS.
 # A sentinel sql and npx on PATH record any call: delivery.py reads files and runs neither. With a valid config the note is absent.
 NC="$WORK/noconf"; mkdir -p "$NC" "$WORK/sentinel"; git -C "$NC" init -q
+# shellcheck disable=SC2016  # the sentinel's own $0 and $* are meant literally: they expand when IT runs
 for t in sql npx; do printf '#!/usr/bin/env bash\necho "$0 $*" >> "%s/called"\n' "$WORK/sentinel" > "$WORK/sentinel/$t"; chmod +x "$WORK/sentinel/$t"; done
 NOTE="apex-sync.json not found: Sync, Validation and Runtime cannot PASS; run apex-sync-check.sh apps"
 rc=0; ( cd "$NC" && PATH="$WORK/sentinel:$PATH" "$PY" "$DLV" --task T-1 --app hr ) > "$WORK/out.json" 2> "$WORK/err.txt" || rc=$?

@@ -234,7 +234,7 @@ for v in doc:"'document' under run-code" syntax:"a snippet that does not parse" 
   else ok "by-hand.md lint rejects ${v#*:}"; fi
 done
 if "$PY" "$WORK/by-hand-lint.py" "$BH" > "$WORK/lint.out" 2>&1; then
-  ok "by-hand.md: every snippet is a DOM function or run-code code, read-only, and $(head -1 "$WORK/lint.out" | tr 'A-Z' 'a-z')"
+  ok "by-hand.md: every snippet is a DOM function or run-code code, read-only, and $(head -1 "$WORK/lint.out" | tr '[:upper:]' '[:lower:]')"
 else bad "by-hand.md lint: $(grep PROBLEM "$WORK/lint.out" | head -3 | tr '\n' ';')"; fi
 
 echo "ux-check: $pass passed, $fail failed"
