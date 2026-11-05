@@ -5,7 +5,7 @@ writes the verification-manifest — reading each result for the destination it 
 (GATES.md §The orchestration contract).
 
 Usage: python3 delivery.py --task <id> [--app <alias>] [--env <name>] [--skip <gate>:<reason>]...
-                          [--exit <gate>:<code>]... [--page <page>[:dialog]]...
+                          [--exit <gate>[/<producer>]:<code>]... [--page <page>[:dialog]]...
 
 Per gate, from <evidenceDir>/<task>/ (the app's key is <alias>, or <alias>.<env>):
   architecture  architecture.json                       (evidence.py write --kind architecture)
@@ -36,7 +36,10 @@ or misfiled (valid and fresh, but its operation, scope, app alias, environment o
 another destination's) → NOT_RUN — unless --exit says the gate's command just ran: then a result it did not
 leave is BLOCKED when it exited 2 and UNKNOWN otherwise (GATES.md §The orchestration contract),
 and a single producer's exit code that disagrees with its result's status is UNKNOWN (so is a PASS, in any gate, whose command exited non-zero: results an earlier run left cannot absorb a failed one) (for the
-runtime gate, --exit speaks for runtime-<key>.json alone, not for record-sync). A gate's status is the worst of its results. Package, Security and UI are required
+runtime gate, --exit speaks for runtime-<key>.json alone, not for record-sync). --exit <gate>/<producer>:<code> speaks for
+one producer: security static|plsql|secrets|runtime, ui static|runtime-<page>, runtime walkthrough|record-sync, sync check-import,
+and architecture|validation|package; the same key twice with two codes, or a key the task has no such producer for, is BAD_EXIT. A
+specific exit 0 never neutralizes the gate's non-zero exit. A gate's status is the worst of its results. Package, Security and UI are required
 when the app sets packageGate / securityGate / uiGate; --skip records any gate required: false, with why. A gate left out carries
 excludedBy (config: the app did not opt in; skip: --skip) and stderr names it: "not evaluated: ...".
 
@@ -79,6 +82,11 @@ HINT = {
 
 # A page token is what page_name() makes of a URL: letters, digits, _ and -, at most 40 characters.
 RE_PAGE = re.compile(r"[A-Za-z0-9_-]{1,40}")
+# GAP-14 A: the producers a gate has, by the key `--exit <gate>/<key>:<code>` names them. ui also has one
+# `runtime-<page>` per declared page or runtime result found: those depend on the task and are checked there.
+PRODUCERS = {"architecture": ("architecture",), "validation": ("validation",), "package": ("package",),
+             "sync": ("check-import",), "runtime": ("walkthrough", "record-sync"),
+             "security": ("static", "plsql", "secrets", "runtime"), "ui": ("static",)}
 
 
 def page_name(url):
@@ -92,6 +100,19 @@ def page_name(url):
 def ran_without(code):
     """A gate whose command ran and left no fresh result: what GATES.md's contract reads it as."""
     return "BLOCKED" if code == 2 else "UNKNOWN"
+
+
+def apply_exit(res, c, label):
+    """GAP-14 A: one producer's own exit code against its own result. res = (status, cite, note), as read.
+    A result the producer did not leave fresh (NOT_RUN) reads as `ran_without`: BLOCKED for exit 2, UNKNOWN otherwise
+    (exit 0 included: it ran and left nothing). A result whose status disagrees with the exit is UNKNOWN: a PASS whose
+    command exited non-zero is not its output. A status that matches its exit keeps its severity."""
+    s, cite, note = res
+    if s == "NOT_RUN":
+        return ran_without(c), cite, f"{label}: ran (exit {c}) but {note}"
+    if s in EXIT and EXIT[s] != c and cite:
+        return "UNKNOWN", cite, f"{label}: {note}, but its command exited {c}"
+    return res
 
 
 def utc(stamp):
@@ -306,7 +327,7 @@ def main(argv):
     ap.add_argument("--app")
     ap.add_argument("--env")
     ap.add_argument("--skip", action="append", default=[], metavar="GATE:REASON")
-    ap.add_argument("--exit", action="append", default=[], metavar="GATE:CODE", dest="exits")
+    ap.add_argument("--exit", action="append", default=[], metavar="GATE[/PRODUCER]:CODE", dest="exits")
     ap.add_argument("--run", default=os.environ.get("APEX_RUN_ID") or None, metavar="ID",
                     help="read only the results written in this run (context.runId; default $APEX_RUN_ID): GAP-14")
     ap.add_argument("--page", action="append", default=[], metavar="PAGE[:dialog]",
@@ -327,12 +348,21 @@ def main(argv):
             if g not in ORDER or not sep or not why.strip():
                 raise Stop("BLOCKED", "BAD_SKIP", f"--skip takes <gate>:<reason>, gate one of {', '.join(ORDER)}")
             skips[g] = why.strip()
-        exits = {}
+        exits, pexits = {}, {}          # the gate's exit; one producer's, by (gate, key)
         for s in a.exits:
-            g, sep, code = s.partition(":")
-            if g not in ORDER or not re.fullmatch(r"-?[0-9]{1,3}", code.strip()):
-                raise Stop("BLOCKED", "BAD_EXIT", f"--exit takes <gate>:<exit code>, gate one of {', '.join(ORDER)}")
-            exits[g] = int(code)
+            spec, sep, code = s.rpartition(":")
+            g, slash, prod = spec.partition("/")
+            if not sep or g not in ORDER or not re.fullmatch(r"-?[0-9]{1,3}", code.strip()) or (slash and not prod):
+                raise Stop("BLOCKED", "BAD_EXIT", f"--exit takes <gate>[/<producer>]:<exit code>, gate one of {', '.join(ORDER)}")
+            if slash:
+                fixed = PRODUCERS[g]
+                if prod not in fixed and not (g == "ui" and prod.startswith("runtime-") and RE_PAGE.fullmatch(prod[8:])):
+                    raise Stop("BLOCKED", "BAD_EXIT", f"--exit {g}/{prod[:40]}: {g} has the producers {', '.join(fixed)}"
+                               + (" and runtime-<page>" if g == "ui" else ""))
+                if pexits.setdefault((g, prod), int(code)) != int(code):
+                    raise Stop("BLOCKED", "BAD_EXIT", f"--exit {g}/{prod} is given with two different codes")
+            else:
+                exits[g] = int(code)
         pages = {}
         for s in a.page:
             token, sep, mod = s.partition(":")
@@ -368,10 +398,12 @@ def main(argv):
                 entry["required"] = True
                 if gate == "validation":
                     st, ev, note = validation(reader, list(dict.fromkeys([alias, key])))
-                    if st == "NOT_RUN" and gate in exits:
-                        st, note = ran_without(exits[gate]), f"the capture ran (exit {exits[gate]}) but {note}"
-                    elif st == "PASS" and exits.get(gate, 0) != 0:     # a capture left by an earlier run, a command that failed since
-                        st, note = "UNKNOWN", f"{note}, but its command exited {exits[gate]}"
+                    # the gate's exit, and the producer's own (validation/validation): either one that failed counts
+                    for c in [x for x in (exits.get(gate), pexits.get((gate, "validation"))) if x is not None]:
+                        if st == "NOT_RUN":
+                            st, note = ran_without(c), f"the capture ran (exit {c}) but {note}"
+                        elif st == "PASS" and c != 0:     # a capture left by an earlier run, a command that failed since
+                            st, note = "UNKNOWN", f"{note}, but its command exited {c}"
                     entry["status"] = st
                     if ev:
                         entry["evidence"] = ev
@@ -388,18 +420,25 @@ def main(argv):
                     ui_pages = list(page_checks) + [n for n in others if n not in page_checks]
                     who = {"app.appAlias": alias}
                     bound = {**who, "app.environment": a.env, "app.appId": (settings or {}).get("appId")}
+                    pre = f"ui-{key}-runtime-"
                     files = {
-                        "architecture": [("architecture.json", "architecture-result", {})],
-                        "package": [(f"package-{key}.json", "package-result", bound)],
-                        "sync": [(f"sync-{key}-check-import.json", "sync-result", {"operation": "check-import", **bound})],
-                        "runtime": [(f"runtime-{key}.json", "runtime-result", bound),
-                                    (f"sync-{key}-record-sync.json", "sync-result", {"operation": "record-sync", **bound})],
-                        "security": [(f"security-{alias}-{s}.json", "security-result", {"scope": s, **who}) for s in ("static", "plsql", "secrets")]
-                                    + [(f"security-{key}-runtime.json", "security-result", {"scope": "runtime", **bound})],
-                        "ui": [(f"ui-{alias}-static.json", "ui-result", {"scope": "static", **who})]
-                              + [(n, "ui-result", {"scope": "runtime", **bound}) for n in ui_pages],
+                        "architecture": [("architecture.json", "architecture-result", {}, "architecture")],
+                        "package": [(f"package-{key}.json", "package-result", bound, "package")],
+                        "sync": [(f"sync-{key}-check-import.json", "sync-result", {"operation": "check-import", **bound}, "check-import")],
+                        "runtime": [(f"runtime-{key}.json", "runtime-result", bound, "walkthrough"),
+                                    (f"sync-{key}-record-sync.json", "sync-result", {"operation": "record-sync", **bound}, "record-sync")],
+                        "security": [(f"security-{alias}-{s}.json", "security-result", {"scope": s, **who}, s) for s in ("static", "plsql", "secrets")]
+                                    + [(f"security-{key}-runtime.json", "security-result", {"scope": "runtime", **bound}, "runtime")],
+                        "ui": [(f"ui-{alias}-static.json", "ui-result", {"scope": "static", **who}, "static")]
+                              + [(n, "ui-result", {"scope": "runtime", **bound}, "runtime-" + n[len(pre):-5]) for n in ui_pages],
                     }[gate]
-                    got = [reader.result(n, k, w, page_checks.get(n)) for n, k, w in files]
+                    for g_, k_ in pexits:        # a producer key must name one this task has (a declared page counts without its file)
+                        if g_ == gate and k_ not in [f[3] for f in files]:
+                            raise Stop("BLOCKED", "BAD_EXIT", f"--exit {g_}/{k_}: no such producer in this task; {g_} has "
+                                       + ", ".join(f[3] for f in files))
+                    got = [reader.result(n, k, w, page_checks.get(n)) for n, k, w, _ in files]
+                    got = [apply_exit(r, pexits[(gate, f[3])], f"{gate}/{f[3]}") if (gate, f[3]) in pexits else r
+                           for r, f in zip(got, files)]
                     if gate == "runtime":      # record-sync is the import's second half: the walkthrough comes after it
                         got = after_record_sync(reader, files[0][0], files[1][0], got)
                     if gate == "ui" and not pages:

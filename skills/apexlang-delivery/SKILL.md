@@ -13,7 +13,7 @@ description: Use when a change to an APEXlang app is to be delivered and called 
 - **Output:** `<evidenceDir>/<task>/manifest.json` (`framework/schemas/verification-manifest.schema.json`), its status the worst of the required gates.
 - **Evidence:** the manifest cites every result it read by path and sha256, and Validation by the compiler's command, exit code and words; nothing of its own.
 - **Gate:** none — it is the consumer of all seven (`framework/GATES.md` §The orchestration contract); it may skip a gate only as `required: false` with a reason.
-- **Interface:** the agent runs each gate with its owning skill, passing `--app` (and `--env`) and `--task`; then `python3 scripts/delivery.py --task <id> [--app X] [--env E] [--skip <gate>:<reason>]… [--exit <gate>:<code>]… [--page <page>[:dialog]]… [--run <id>]` writes the manifest and says the next step. Exit 0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN · 4 NOT_RUN.
+- **Interface:** the agent runs each gate with its owning skill, passing `--app` (and `--env`) and `--task`; then `python3 scripts/delivery.py --task <id> [--app X] [--env E] [--skip <gate>:<reason>]… [--exit <gate>[/<producer>]:<code>]… [--page <page>[:dialog]]… [--run <id>]` writes the manifest and says the next step. Exit 0 PASS · 1 FAIL/CONFLICT · 2 BLOCKED · 3 UNKNOWN · 4 NOT_RUN.
 
 ## The loop — one task
 
@@ -127,7 +127,8 @@ check — it also passes after an omitted import, and after an export, which wri
 was observed after the import (its timestamp is when the verdict was written, to the second); anything about another app, environment or task. `delivery.py` sees
 files, not commands: pass a gate's exit with `--exit <gate>:<code>` whenever you just ran it —
 a result it did not leave is then `BLOCKED` (exit 2) or `UNKNOWN`, and a result whose command's
-exit disagrees with it is `UNKNOWN`; without `--exit`, a missing result reads `NOT_RUN`.
+exit disagrees with it is `UNKNOWN`; without `--exit`, a missing result reads `NOT_RUN`; one producer:
+`--exit security/runtime:2`, `--exit ui/runtime-<page>:1`.
 
 ## Red flags — stop
 

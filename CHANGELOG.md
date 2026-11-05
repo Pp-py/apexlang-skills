@@ -100,6 +100,12 @@ what the same inputs produce, so it reads as a minor. No version was bumped and 
   the other scopes' results from an earlier attempt. `evidence.py capture` writes it into Validation's
   `.exit.json` too, and `delivery.py --run` checks it there. Without a run id nothing changes. Not covered:
   `--exit` is still per gate, and an id reused for two attempts is not detected.
+- **`--exit` can speak for one producer (GAP-14 A).** `delivery.py --exit <gate>/<producer>:<code>`
+  (`security/runtime:2`, `ui/runtime-orders:1`, `runtime/record-sync:1`, ...): only that producer's result is
+  judged against it, so a failed retry of one scope no longer hides behind the other scopes' PASS. A page declared
+  with `--page` is a producer even when its file is missing. A specific exit 0 never neutralizes the gate's
+  non-zero exit; the same key with two codes, and a key the task has no such producer for, are BLOCKED `BAD_EXIT`.
+  The gate-only form is unchanged.
 - **`FORM-SOFT-DELETE` applies only to soft retention.** Retention is a decision declared in the
   `architecture-result` (a `rule` decision whose subject begins `retention:`); none means soft, as before.
   With a declared hard retention `FORM-SOFT-DELETE` is NOT_RUN and the new `FORM-HARD-DELETE` applies.
@@ -170,6 +176,7 @@ what the same inputs produce, so it reads as a minor. No version was bumped and 
 
 - `delivery.py --page <page>[:dialog]` (repeatable); new stop reasons `NO_JSONSCHEMA` and `BAD_PAGE`.
 - `sec-probe.py --auth-host <host[:port]>` (repeatable).
+- `delivery.py --exit <gate>/<producer>:<code>` (the gate-only form is unchanged).
 - `delivery.py --run <id>` (default `$APEX_RUN_ID`), new stop reason `BAD_RUN`; optional `context.runId` in the result envelope, written from `APEX_RUN_ID`.
 - New script `skills/apex-sentinel/scripts/pkg-check.py [--app <alias>] [--env <name>] [--task <id>]
   <file-or-dir>…`, exit 0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN; environment variables `SQLCL_BIN` and

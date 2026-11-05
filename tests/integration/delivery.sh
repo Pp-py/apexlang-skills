@@ -399,6 +399,56 @@ run "ui pages: orders and billing, each file names its own page → PASS" 0 "${U
 if q "len(g['ui']['results']) == 3"; then ok "  ...three results cited"; else bad "ui pages: two pages not cited"; fi
 run "ui pages: control — billing exists but only orders is declared → PASS (an undeclared PASS is cited)" 0 "${UIP[@]}" --page orders
 if q "len(g['ui']['results']) == 3"; then ok "  ...and still cited"; else bad "ui pages: undeclared file not cited"; fi
+# GAP-14 A: --exit <gate>/<producer>:<code>, one producer's exit code (security has four, ui one per page)
+PEX=("${UIP[@]}" --page orders --page billing)
+run "A: control — every producer PASS, no --exit → PASS" 0 "${PEX[@]}"
+run "A: security/runtime:2, every scope PASS → UNKNOWN, naming that producer only" 3 "${PEX[@]}" --exit security/runtime:2
+if q "g['security']['status'] == 'UNKNOWN' and len(g['security']['results']) == 4 and g['ui']['status'] == 'PASS'" && says "security/runtime: .*exited 2" \
+   && [[ $(grep -c 'exited 2' "$WORK/err.txt") -eq 1 ]]; then ok "  ...one producer named, the other three scopes and the UI gate keep their PASS"; else bad "A: security/runtime:2"; fi
+run "A: security/static:0, every scope PASS → PASS" 0 "${PEX[@]}" --exit security/static:0
+run "A: ui/runtime-billing:1, both pages PASS → UNKNOWN, only that page" 3 "${PEX[@]}" --exit ui/runtime-billing:1
+if q "g['ui']['status'] == 'UNKNOWN' and g['security']['status'] == 'PASS'" && says "ui/runtime-billing: .*exited 1" && [[ $(grep -c 'exited 1' "$WORK/err.txt") -eq 1 ]]; then
+  ok "  ...billing named, orders not"; else bad "A: ui/runtime-billing:1"; fi
+run "A: validation/validation:1, a PASS capture → UNKNOWN" 3 "${PEX[@]}" --exit validation/validation:1
+run "A: sync/check-import:1, a PASS result → UNKNOWN" 3 "${PEX[@]}" --exit sync/check-import:1
+# a declared page whose producer died leaves no file: it is a producer, never BAD_EXIT
+mv "$T/ui-hr-runtime-billing.json" "$WORK/billing.keep"
+run "A: a declared page with no file, ui/runtime-billing:2 → BLOCKED (not BAD_EXIT)" 2 "${PEX[@]}" --exit ui/runtime-billing:2
+if q "g['ui']['status'] == 'BLOCKED'" && ! says "BAD_EXIT"; then ok "  ...BLOCKED, the missing producer is recognized"; else bad "A: declared page with no file"; fi
+run "A: the same page, ui/runtime-billing:3 → UNKNOWN" 3 "${PEX[@]}" --exit ui/runtime-billing:3
+run "A: the same page, ui/runtime-billing:0 → UNKNOWN (it ran and left nothing)" 3 "${PEX[@]}" --exit ui/runtime-billing:0
+mv "$WORK/billing.keep" "$T/ui-hr-runtime-billing.json"
+# invalid keys, gates, shapes
+for bad_exit in security/nope:1 ui/runtime-ghost:1 "ui/runtime-bad key:1" architecture/x:1 security/:1 /runtime:1 security/runtime/x:1 runtime/walk:1; do
+  run "A: --exit $bad_exit → BLOCKED (BAD_EXIT)" 2 "${PEX[@]}" --exit "$bad_exit"
+  if says "(BAD_EXIT)"; then ok "  ...BAD_EXIT named"; else bad "A: $bad_exit not BAD_EXIT"; fi
+done
+run "A: an unknown key names the keys the gate has" 2 "${PEX[@]}" --exit security/nope:1
+if says "static" && says "plsql" && says "secrets" && says "runtime"; then ok "  ...the four security keys listed"; else bad "A: keys not listed"; fi
+# the global and the specific form together: a specific 0 never neutralizes a global non-zero
+run "A: --exit security:2 with security/runtime:0 → UNKNOWN (the global still holds)" 3 "${PEX[@]}" --exit security:2 --exit security/runtime:0
+run "A: --exit security:0 with security/runtime:2 → UNKNOWN (the specific still holds)" 3 "${PEX[@]}" --exit security:0 --exit security/runtime:2
+run "A: the same key twice with the same code → accepted" 3 "${PEX[@]}" --exit security/runtime:2 --exit security/runtime:2
+run "A: the same key twice with different codes → BLOCKED (BAD_EXIT)" 2 "${PEX[@]}" --exit security/runtime:2 --exit security/runtime:1
+if says "(BAD_EXIT)"; then ok "  ...BAD_EXIT named"; else bad "A: contradictory duplicate"; fi
+# runtime: the walkthrough and record-sync are two producers; the global form speaks for the walkthrough only
+run "A: runtime/record-sync:1, a PASS record-sync → UNKNOWN" 3 "${PEX[@]}" --exit runtime/record-sync:1
+if q "g['runtime']['status'] == 'UNKNOWN'" && says "runtime/record-sync: .*exited 1" && ! says "runtime/walkthrough"; then ok "  ...attributed to record-sync, not to the walkthrough"; else bad "A: runtime/record-sync:1"; fi
+run "A: runtime/walkthrough:0 and runtime/record-sync:0 → PASS" 0 "${PEX[@]}" --exit runtime/walkthrough:0 --exit runtime/record-sync:0
+run "A: runtime/walkthrough:1, a PASS walkthrough → UNKNOWN" 3 "${PEX[@]}" --exit runtime/walkthrough:1
+# a result that disagrees with its exit: FAIL with exit 0 is UNKNOWN; FAIL with exit 1 keeps its severity
+stamp security-result/static-fail security-hr-static.json
+run "A: security/static:0, its result is a FAIL → UNKNOWN (they disagree)" 3 "${PEX[@]}" --exit security/static:0
+run "A: security/static:1, its result is a FAIL → FAIL (severity kept)" 1 "${PEX[@]}" --exit security/static:1
+stamp security-result/static-pass security-hr-static.json
+# a missing result: the exit says how it reads
+mv "$T/security-hr-secrets.json" "$WORK/secrets.keep"
+run "A: security/secrets:2, no result → BLOCKED" 2 "${PEX[@]}" --exit security/secrets:2
+run "A: security/secrets:3, no result → UNKNOWN" 3 "${PEX[@]}" --exit security/secrets:3
+run "A: security/secrets:0, no result → UNKNOWN (it ran and left nothing)" 3 "${PEX[@]}" --exit security/secrets:0
+mv "$WORK/secrets.keep" "$T/security-hr-secrets.json"
+# a gate that is not evaluated does not read its --exit
+run "A: control — everything restored → PASS" 0 "${PEX[@]}"
 # an undeclared page's result still counts in the worst status
 page extra "$URLB" "$FAILED"
 run "ui pages: a FAIL on an undeclared page is still FAIL" 1 "${UIP[@]}" --page orders --page billing

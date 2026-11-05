@@ -502,7 +502,7 @@ def check_interface():
                          ("apex-security/scripts/sec-probe.py", "[--app <alias>] [--env <name>] [--task <id>] [--anon <url>]... [--tamper]"),
                          ("apex-security/scripts/secrets-scan.py", "[--app <alias>] [--task <id>] [<path>...]"),
                          ("apexlang-delivery/scripts/delivery.py", "--task <id> [--app <alias>] [--env <name>] [--skip <gate>:<reason>]..."),
-                         ("apexlang-delivery/scripts/delivery.py", "[--exit <gate>:<code>]..."),
+                         ("apexlang-delivery/scripts/delivery.py", "[--exit <gate>[/<producer>]:<code>]..."),
                          ("apexlang-delivery/scripts/delivery.py", "[--page <page>[:dialog]]...")):
         if args not in read(f"skills/{script}"):
             missing.append(f"{script} usage: {args}")
@@ -522,7 +522,7 @@ def check_interface():
     contracts = read("framework/CONTRACTS.md")
     for args in ("pkg-check.py [--app <alias>] [--env <name>] [--task <id>] <file-or-dir>…",
                  "delivery.py --task <id> [--app <alias>] [--env <name>]", "[--skip <gate>:<reason>]…",
-                 "[--exit <gate>:<code>]…", "[--page <page>[:dialog]]…"):
+                 "[--exit <gate>[/<producer>]:<code>]…", "[--page <page>[:dialog]]…"):
         if args not in " ".join(contracts.split()):      # the usage line wraps in the document
             missing.append(f"CONTRACTS.md does not state delivery.py's usage: {args}")
     for path in re.findall(r"`(skills/[^`\s]+\.sh)", contracts):

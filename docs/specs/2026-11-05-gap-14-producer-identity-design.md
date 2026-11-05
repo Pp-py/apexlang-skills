@@ -54,7 +54,7 @@ that gate is BLOCKED `BAD_EXIT`, naming the keys the gate has.
 |---|---|---|---|
 | PASS | PASS | n/a | UNKNOWN: it ran and failed, the file is not its output |
 | FAIL / CONFLICT / BLOCKED / UNKNOWN | UNKNOWN (disagrees) | keeps its status | UNKNOWN (disagrees) |
-| missing, stale or misfiled | as today (NOT_RUN) | n/a | BLOCKED when the exit is 2, UNKNOWN otherwise (`ran_without`) |
+| missing, stale or misfiled | UNKNOWN: it ran and left nothing fresh | n/a | BLOCKED when the exit is 2, UNKNOWN otherwise (`ran_without`) |
 | invalid | UNKNOWN | UNKNOWN | UNKNOWN |
 
 The gate's status stays the worst of its producers' statuses; severity (a FAIL stays FAIL) and the existing
