@@ -54,14 +54,18 @@ if [[ -f "$DEST" && -f "$DEST.prev" && ! -e "$DEST.lock" && "$(hash_of "$DEST.pr
   ok "second run: the first result is .prev, the new one is current, the lock is gone"; else bad "second run: .prev is not the first result"; fi
 
 # --- a live lock: a second producer for the same destination is refused, nothing is touched
-sleep 120 & SLEEPER=$!
-printf '%s R-1\n' "$SLEEPER" > "$DEST.lock"
+# a live holder as the producers see it: a python process, whose pid is the one os.getpid() reports (on Git Bash $! is not)
+"$PY" -c "import os, time; print(os.getpid(), flush=True); time.sleep(120)" > "$WORK/holder.pid" & SLEEPER=$!
+for _ in $(seq 1 50); do [[ -s "$WORK/holder.pid" ]] && break; sleep 0.1; done
+HELD_PID=$(tr -d '\r\n' < "$WORK/holder.pid")
+printf '%s R-1\n' "$HELD_PID" > "$DEST.lock"
 BEFORE=$(hash_of "$DEST")
 run "a live lock → BLOCKED" 2 "$SCAN" --task T-1 pass
 if says "security-demo-static.json.lock is held by a running producer"; then ok "  ...the lock and its holder are named"; else bad "live lock: not named"; fi
 if [[ "$(hash_of "$DEST")" == "$BEFORE" && -f "$DEST.lock" ]] && [[ "$(grep -c '"status"' "$DEST")" -ge 1 ]]; then ok "  ...the destination and the lock are untouched"; else bad "live lock: the destination or the lock changed"; fi
 if "$PY" -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['status'] == 'BLOCKED' and d['reasons'][0]['code'] == 'CLAIM_HELD'" "$WORK/out.json"; then ok "  ...stdout says BLOCKED CLAIM_HELD (the refusal is not written over the other producer's file)"; else bad "live lock: stdout"; fi
-kill "$SLEEPER" 2>/dev/null || true; wait "$SLEEPER" 2>/dev/null || true; DEAD=$SLEEPER; SLEEPER=""
+kill "$SLEEPER" 2>/dev/null || true; wait "$SLEEPER" 2>/dev/null || true; DEAD=$HELD_PID; SLEEPER=""
+sleep 1
 
 # --- a lock whose process is gone: replaced, with a note
 printf '%s R-1\n' "$DEAD" > "$DEST.lock"

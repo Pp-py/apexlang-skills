@@ -61,8 +61,10 @@ if [[ -f "$RAW/pair.prev" && -f "$RAW/pair.exit.json.prev" && ! -e "$RAW/pair.lo
   ok "capture: the previous output and its metadata are .prev; no lock is left"; else bad "capture: .prev or lock wrong"; fi
 if q "import hashlib, sys; assert d['sha256'] == hashlib.sha256(open('$RAW/pair','rb').read()).hexdigest()" "$RAW/pair.exit.json"; then
   ok "capture: the metadata carries the output's sha256"; else bad "capture: metadata without the output's hash"; fi
-sleep 30 & HOLD=$!
-printf '%s R-1\n' "$HOLD" > "$RAW/pair.lock"
+# a live holder as the producers see it: a python process, whose pid is the one os.getpid() reports (on Git Bash $! is not)
+"$PY" -c "import os, time; print(os.getpid(), flush=True); time.sleep(120)" > "$WORK/holder.pid" & HOLD=$!
+for _ in $(seq 1 50); do [[ -s "$WORK/holder.pid" ]] && break; sleep 0.1; done
+printf '%s R-1\n' "$(tr -d '\r\n' < "$WORK/holder.pid")" > "$RAW/pair.lock"
 rm -f "$WORK/ran"
 run "capture: a live lock on the destination → BLOCKED, the command does not run" 2 capture --gate runtime --task T-1 pair -- sh -c "touch '$WORK/ran'; echo three"
 if [[ ! -e "$WORK/ran" && "$(cat "$RAW/pair")" == two ]]; then ok "  ...the command did not run and the output is untouched"; else bad "capture: ran under a live lock"; fi
