@@ -12,7 +12,8 @@
 #             that is not a result → 2
 #   refused   (exit 2, nothing written, the value never echoed): a status in the draft, a PASS
 #             without evidence, a cited file that changed or is outside the repo, a secret in a
-#             field, a decision whose branch and layer disagree
+#             field, a decision whose branch and layer disagree, an app.appId that contradicts
+#             apex-sync.json's (the environment's over the app's)
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
@@ -91,6 +92,9 @@ draft "{$BASE,\"criteria\":[{\"id\":\"IG-RENDER\",\"required\":true,\"status\":\
 run "refused: a cited file that changed" 2 write --kind runtime --task T-1 "$WORK/d.json"
 draft "{$BASE,\"criteria\":[{\"id\":\"IG-RENDER\",\"required\":true,\"status\":\"PASS\",\"observed\":\"x\",\"evidence\":[{\"kind\":\"file\",\"path\":\"../outside\"}]}]}"
 run "refused: a file outside the repo" 2 write --kind runtime --task T-1 "$WORK/d.json"
+draft "{$BASE,\"app\":{\"appId\":999},\"criteria\":[$CRIT]}"
+run "refused: an appId that contradicts apex-sync.json (100)" 2 write --kind runtime --task T-1 "$WORK/d.json"
+if grep -q "app.appId" "$WORK/err.txt" && grep -q "apex-sync.json" "$WORK/err.txt"; then ok "refused: names the field and the config"; else bad "refused: the appId message"; cat "$WORK/err.txt"; fi
 if [[ ! -e .apex-evidence/T-1/runtime-hr.json ]]; then ok "refused: nothing written"; else bad "refused: a result was written"; fi
 
 # --- write architecture
@@ -145,6 +149,15 @@ run "env: write --env uat → PASS" 0 write --kind runtime --env uat --task T-2 
 if q "assert d['app']['environment'] == 'uat' and d['context']['target']['runtimeUrl'].startswith('https://uat.example')" .apex-evidence/T-2/runtime-hr.uat.json; then
   ok "env: runtime-hr.uat.json, with the environment and its runtimeUrl"; else bad "env: the written result"; fi
 run "env: an environment nobody declared is refused" 2 write --kind runtime --env prod --task T-2 "$WORK/d.json"
+draft "{$BASE,\"app\":{\"appId\":100},\"criteria\":[{\"id\":\"IG-RENDER\",\"required\":true,\"status\":\"PASS\",\"observed\":\"rows=2\",\"evidence\":[{\"kind\":\"file\",\"path\":\".apex-evidence/T-2/raw/runtime-hr.uat/render\"}]}]}"
+printf '%s\n' '{ "appId": 100, "appAlias": "hr", "environments": { "uat": { "sqlclConnection": "uat_hr", "appId": 201, "runtimeUrl": "https://uat.example/ords/r/ws/hr/" } } }' > apex-sync.json
+run "env: the environment's appId (201) wins; a draft with the top-level 100 is refused" 2 write --kind runtime --env uat --task T-2 "$WORK/d.json"
+draft "{$BASE,\"app\":{\"appId\":201},\"criteria\":[{\"id\":\"IG-RENDER\",\"required\":true,\"status\":\"PASS\",\"observed\":\"rows=2\",\"evidence\":[{\"kind\":\"file\",\"path\":\".apex-evidence/T-2/raw/runtime-hr.uat/render\"}]}]}"
+run "env: a draft with the environment's own appId → PASS" 0 write --kind runtime --env uat --task T-2 "$WORK/d.json"
+printf '%s\n' '{ "appAlias": "hr", "runtimeUrl": "https://dev.example/ords/r/ws/hr/" }' > apex-sync.json
+draft "{$BASE,\"app\":{\"appId\":999},\"criteria\":[$CRIT]}"
+run "control: no appId in apex-sync.json → the draft's is kept (compared only when both exist)" 0 write --kind runtime --task T-2 "$WORK/d.json"
+if q "assert d['app']['appId'] == 999" .apex-evidence/T-2/runtime-hr.json; then ok "control: appId from the draft"; else bad "control: appId"; fi
 cp "$WORK/cfg.saved" apex-sync.json
 
 echo "evidence: $pass passed, $fail failed"

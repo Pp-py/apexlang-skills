@@ -1,0 +1,28 @@
+page 47 (
+    name: Code local
+
+    process call-pkg (
+        name: Call
+        type: invokeApi
+        invoke {
+            package: pkg_a
+            procedureOrFunction: do_it
+        }
+    )
+
+    process wrapper (
+        name: Wrapper
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                declare
+                    l_obj t_thing;
+                begin
+                    l_obj.configure(p_x => 1);
+                    pkg_a.do_it(p_x => 2);
+                end;
+                ```
+        }
+    )
+)

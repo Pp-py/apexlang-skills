@@ -20,7 +20,7 @@ items · common mistakes · verify.
 |---|---|
 | Narrow by known attributes, then look | faceted search (`master-faceted-search.md`) |
 | Recognise by image or short text | cards / content row (`ui-contracts.md` §1) |
-| **Sort, filter ad hoc, save a view, export, act on rows** | **Interactive Report — this recipe** |
+| **Shape the view: filter ad hoc, save a view, personalise columns, export** | **Interactive Report — this recipe** |
 | Compare aggregates over periods | `analytical-report.md` |
 
 The IR earns its weight when the *user* decides how to look at the data. If every user wants the same
@@ -132,6 +132,6 @@ box is two search boxes disagreeing.
 
 ## Verify
 
-`apex-sentinel/checks/browse-search.md`: rows render, a filter actually lowers the count, the row link
-opens the right record without a checksum error, and after an edit in the modal the list shows the new
-value.
+`apex-sentinel/checks/browse-search.md`: rows render, a filter makes the region's total equal the SQL
+count of the same predicate, the row link opens the right record without a checksum error, and after
+an edit in the modal the list shows the new value.

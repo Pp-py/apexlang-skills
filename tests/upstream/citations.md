@@ -92,6 +92,9 @@ SKILL.md | If the version is unknown, use 26.1. | README.md (Requirements: the v
 26.1/apexlang-generation/references/policies/memory-bank/30-pages/apex.dashboard.md | Do not emit aggregate KPI tiles as `classicReport` regions. | apex-ux criteria/dashboards.md (UXDASH-KPI-METRICCARD)
 26.1/apexlang-generation/references/policies/memory-bank/30-pages/apex.dashboard.md | Do not literally stack multiple dashboard charts | apex-ux criteria/dashboards.md (UXDASH-CHART-ROWS)
 26.1/apexlang-generation/references/policies/memory-bank/30-pages/apex.faceted-search.md | Use consistent facet sequencing: search → categorical facets → range facets. | apex-ux criteria/browse-search.md (UXBRW-FACET-ORDER)
+26.1/apexlang-generation/references/policies/memory-bank/30-pages/apex.faceted-search.md | `filteredRegion` must reference the results region static ID. | apexlang-architecture recipes/master-faceted-search.md (one filtered region)
+26.1/apexlang-generation/templates/template-components/content-row/content-row._common.md | Use `orderBy { type: item ... }` only when an available same-page page item controls the sort | apexlang-architecture ui-contracts.md §1 (a closed order on a content row)
+26.1/apexlang-generation/templates/template-components/content-row/content-row._common.md | order by every grouped column first, in grouping order, before any secondary tie-breakers | apexlang-architecture ui-contracts.md §1 (grouping first; the primary-key tie-breaker is this repo's rule, not Oracle's)
 26.1/apexlang-generation/references/policies/memory-bank/30-pages/apex.smart-filter-search.md | Give every search/refinement child a concise visible label | apex-ux criteria/browse-search.md (UXBRW-FILTER-LABELS)
 26.1/apexlang-generation/references/policies/memory-bank/20-data/apex.logic.md | Messages: concise, user-friendly, and associated to items. | apex-ux criteria/common.md (UX-MESSAGES)
 26.1/apexlang-generation/references/policies/governance/00-governance.md | Use bare `mustNotBePublicUser` on every non-login, non-Page 0 page | apex-security criteria.md (SEC-PAGE-AUTHZ)
@@ -108,4 +111,8 @@ SKILL.md | If the version is unknown, use 26.1. | README.md (Requirements: the v
 26.1/apexlang-generation/references/policies/memory-bank/10-global/apex.global.md | Restrict CSV/Excel/PDF downloads via authorization schemes. | apex-security criteria.md (SEC-DOWNLOAD-AUTHZ)
 26.1/apexlang-generation/references/policies/memory-bank/10-global/apex.global.md | Define a Content Security Policy (CSP) | apex-security criteria.md (SEC-CSP)
 26.1/apexlang-generation/references/policies/memory-bank/20-data/apex.sql.md | never rely on UI-only predicates | apex-security criteria.md (SEC-DATA-SCOPE)
+26.1/apexlang-generation/references/policies/memory-bank/40-components/apex.region-media.md | Any region displaying a BLOB must include primary keys for lookup. | apexlang-architecture recipes/attachments-to-package.md
+26.1/apexlang-generation/references/policies/memory-bank/40-components/apex.region-media.md | Raw LOB projection is display-only. | apexlang-architecture recipes/attachments-to-package.md
+26.1/apexlang-generation/templates/items/file-upload/file-upload._common.md | Proven storage type: `appTempFiles`. | apexlang-architecture recipes/attachments-to-package.md
+26.1/apexlang-generation/templates/items/file-upload/file-upload._common.md | Omit `source {}` when the item is not bound to persisted data or a form region. | apexlang-architecture recipes/attachments-to-package.md
 ```

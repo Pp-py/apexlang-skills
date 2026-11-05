@@ -6,7 +6,7 @@ purchase request that collects a header and then its lines. Several steps, one o
 **REQUIRED BACKGROUND:** `back-end-conventions.md` (single write-path, no COMMIT, error catalog); `package-boundaries.md` §Test 1 if a step writes a second entity.
 
 **Contents:** the one decision (where partial state lives) · when the package writes · the shell ·
-validation across steps · going back · abandoned drafts · common mistakes · verify.
+validation across steps · unit of work · going back · abandoned drafts · common mistakes · verify.
 
 The shell is official and small: `dialogTemplate: @/wizard-modal-dialog`, one page whose step regions
 are gated by `serverSideCondition { type: request=Value  value: STEP2 }`, buttons setting `:REQUEST`.
@@ -114,6 +114,12 @@ request, so no button but Finish can write.
   only correct place — the user can walk back to step 1 and change the date that step 3 already
   validated against. The wizard's per-step validations are a UX courtesy; the package's check at
   commit is the truth.
+
+## Unit of work
+
+Session-state model: only FINISH writes, in one transaction; Cancel and Back write nothing. Draft-row
+model: each step commits its own `UPDATE`, and Cancel reverts only the step the user has not yet
+submitted (`back-end-conventions.md` §4).
 
 ## Going back must not write
 

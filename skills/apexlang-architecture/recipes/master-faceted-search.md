@@ -57,11 +57,25 @@ Two failure modes: a facet over a column the user cannot reason about (a surroga
 flag) is noise; and a range facet split into `_FROM` / `_TO` items is wrong — one range facet is one
 item.
 
+## A search box that is a page item
+
+A text item that refreshes the region instead of a `search` facet (the full-page-search shape; an
+interactive report keeps its own search bar). Decide **one effective term** and apply it on both
+sides: trimmed, and empty means "no search" — the dynamic action's client condition and the SQL
+(`LOWER()` on both sides) read the same term. A client test of `getValue().length > 0` with `trim()`
+only in the SQL disagrees on `'   '`: the client shows results while the SQL sees NULL, and
+`'%' || NULL || '%'` is `'%%'`, which matches every non-null value (Oracle treats the empty string
+as NULL; inferred here, not run). So a blank term is the **Initial** state — the landing prompt, no
+results — on the client and in the SQL, never a search and never "no results"; clearing the box,
+or a blank value restored from session state, returns to Initial. A debounce on the `input` event
+only cuts queries; its interval is a product choice. Verified by `checks/browse-search.md` step 9.
+
 ## Choosing the results body
 
 `cards`, `contentRow` and `interactiveReport` all work as the filtered region. Pick with
 `ui-contracts.md` §1: media/recognition → `cards`; dense vertical scanning → `contentRow`; the user
-needs sorting, personalisation, export → `interactiveReport`.
+shapes the view (saved reports, personalised columns, ad-hoc filters, a download of columns they
+choose) → `interactiveReport`. Facets plus a fixed set of sort orders do not need the IR (§1).
 
 **This is a documented deviation.** The official default results region is a Classic Report with its
 header visible, and hiding a region header is listed there as an anti-pattern — yet the catalog's
@@ -97,10 +111,12 @@ facet P33_F_STATUS ( type: checkboxGroup  appearance { display: addFilterDialog 
 
 Officially inline is the default and this is the exception — same rule, write the reason down.
 
-## Variant — two views over one source
+## Variant — two views over one source (not proven)
 
-Cards for browsing, report for scanning, same query. Declare both regions and let the theme switch
-them:
+Cards for browsing, report for scanning, same query. `source.filteredRegion` names **one** region
+(Oracle's faceted-search policy has it reference *the* results region; nothing there says whether a
+second region can be filtered too). A `regionDisplaySelector` only shows and hides the sibling
+regions that opt in:
 
 ```
 region view-switch ( type: regionDisplaySelector  layout { slot: body } )
@@ -108,13 +124,18 @@ region results  ( type: cards              advanced { regionDisplaySelector: tru
 region results-list ( type: interactiveReport  advanced { regionDisplaySelector: true } ... )
 ```
 
-No JavaScript, no page item, and both regions stay filtered by the same `facetedSearch`. (Hand-rolled
-`apex.region().refresh()` toggles are only worth it if the choice must persist per user — then it is
-a preference to store, not a view to hide.)
+That the second view is filtered by the same `facetedSearch` is **not proven** here, so do not
+assume it. Either **omit the second view** (one primitive from "Choosing the results body"), or wire
+it by hand: the second region lists every facet item in `pageItemsToSubmit`, applies the same
+predicate as the filtered region and refreshes after it (`apexafterrefresh` of the filtered region);
+the reason goes in `comments`. The hand-wired predicate is a second copy of the facet's semantics,
+which is the cost. `checks/browse-search.md` step 8 tests the wiring. A live test with one
+`facetedSearch` and two regions would settle it (not run).
 
 ## Conventions
 
-- The faceted region filters its target automatically via `filteredRegion` — no manual WHERE wiring.
+- The faceted region filters **its one target** automatically via `filteredRegion` — no manual WHERE
+  wiring. Nothing else on the page is filtered unless it is wired by hand as above.
 - Source from a `v_*` view when the listing joins many tables or reuses an aggregation; inline SQL
   when it's page-local. The view is also where the badge's state class comes from
   (`ui-contracts.md` §2). It never supplies a URL: the link is declared on the component (§3).
@@ -126,6 +147,7 @@ a preference to store, not a view to hide.)
 
 ## Verify
 
-`apex-sentinel/checks/browse-search.md`: applying a facet lowers the row count (not just adds a chip),
-clearing it restores the baseline, selector-mode counts actually fill, zero results shows the no-data
-message, and the row link opens the right record without a checksum error.
+`apex-sentinel/checks/browse-search.md`: the region's total equals the SQL count for a facet value and
+for an AND across groups (not just a chip, not just fewer rendered rows), clearing it restores the
+baseline total, selector-mode counts actually fill, zero results shows the no-data message, a blank
+search term is the initial state, and the row link opens the right record without a checksum error.

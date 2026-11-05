@@ -138,6 +138,7 @@ All validation (uniqueness, "cannot delete while referenced") lives in `create_r
 
 ## Non-obvious points
 
+- **Unit of work.** One Save submits every changed row in one transaction: a `-20xxx` on any row rolls the whole save back. Cancel or a reload discards what was not saved (`back-end-conventions.md` §4).
 - **`p_sector_id` is IN OUT.** On insert it returns the new PK so the IG can finalize the row; on update/delete it carries the existing PK in.
 - **`ROW_VERSION` is projected, hidden, and passed back.** It is the lost-update guard that replaces the one Automatic Row Processing was providing (`back-end-conventions.md` §7). Leave it out and the grid silently overwrites a colleague's save. `p_row_version` is IN OUT: `save_row` hands the bumped version back to the row, so it can be saved again without a refresh.
 - **Process point is `processing`**, not `afterSubmit`. APEXlang's `afterSubmit` is the Builder's *After Submit* point, which runs **before** computations and validations; `processing` runs after them. The per-row binds (`:CODE`, `:APEX$ROW_STATUS`) and the PK/version write-back work there: measured on APEX 26.2 (`framework/CAPABILITIES.md`, Recorded runs).

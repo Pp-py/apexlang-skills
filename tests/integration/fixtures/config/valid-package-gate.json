@@ -1,0 +1,16 @@
+{
+  "apexlangDir": "apex",
+  "sqlclConnection": "dev_ws",
+  "testUser": "QA_ALL",
+  "packageGate": true,
+  "securityGate": true,
+  "apps": [
+    { "appId": 100, "appAlias": "rrhh", "packageGate": false, "runtimeUrl": "https://dev.example/ords/r/ws/rrhh/" },
+    { "appId": 200, "appAlias": "ventas", "packageGate": true,
+      "environments": {
+        "dev":  { "sqlclConnection": "dev_ventas" },
+        "prod": { "sqlclConnection": "prod_ventas", "protected": true }
+      } },
+    { "appId": 300, "appAlias": "compras" }
+  ]
+}

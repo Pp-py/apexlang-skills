@@ -25,7 +25,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
-from apx import collect  # noqa: E402
+from apx import code_blocks, collect  # noqa: E402
 from plsql import LexError, mask  # noqa: E402
 from result import Stop, context, rel, target, write  # noqa: E402
 
@@ -108,19 +108,7 @@ def judge(expr, code, seen=()):
 
 def blocks(path, text):
     """(first line, code) of each piece of SQL or PL/SQL in a file."""
-    if not path.lower().endswith(".apx"):
-        return [(1, text)]
-    out, lines, cur = [], text.split("\n"), None
-    for no, ln in enumerate(lines, 1):
-        s = ln.strip()
-        if cur is None and re.match(r"(?i)^```\s*(sql|plsql)\b", s):
-            cur = (no + 1, [])
-        elif cur is not None and s.startswith("```"):
-            out.append((cur[0], "\n".join(cur[1])))
-            cur = None
-        elif cur is not None:
-            cur[1].append(ln)
-    return out
+    return code_blocks(text) if path.lower().endswith(".apx") else [(1, text)]
 
 
 def scan_file(path, r, add, advise):

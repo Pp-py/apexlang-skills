@@ -1,0 +1,20 @@
+app hr (
+    name: HR
+    alias: HR
+    databaseSession {
+        parsingSchema: HR2
+    }
+)
+
+page 53 (
+    name: Parsing schema
+
+    process call-pkg (
+        name: Call
+        type: invokeApi
+        invoke {
+            package: pkg_a
+            procedureOrFunction: do_it
+        }
+    )
+)

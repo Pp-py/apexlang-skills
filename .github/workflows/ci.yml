@@ -40,6 +40,17 @@ jobs:
         shell: bash          # Git Bash on windows-latest — the only supported Windows shell
     steps:
       - uses: actions/checkout@v5      # .gitattributes keeps *.sh at LF, so bash can run them
+      # delivery.py (the delivery.sh suite) REQUIRES jsonschema: without it, it is BLOCKED. Install it on
+      # both legs rather than trust what the runner image happens to ship.
+      - name: jsonschema (Ubuntu — the apt package, as a user installing from apt gets it)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q python3-jsonschema
+      - name: jsonschema (Windows — into the interpreter the suites pick, python3 or python)
+        if: runner.os == 'Windows'
+        run: |
+          PY=$(command -v python3 || command -v python)
+          "$PY" -m pip install --disable-pip-version-check jsonschema
+          "$PY" -c "import jsonschema; print('jsonschema', jsonschema.__file__)"
       - name: sync-guard e2e (stubbed SQLcl)
         run: bash tests/integration/sync-guard-e2e.sh
       - name: pw.sh smoke (stubbed Playwright CLI)
@@ -62,6 +73,8 @@ jobs:
         run: bash tests/integration/sec-probe.sh
       - name: apex-security secrets scan (a scratch repo, and this one)
         run: bash tests/integration/secrets-scan.sh
+      - name: apex-sentinel Package gate (stubbed SQLcl, canned rows, only SELECTs sent)
+        run: bash tests/integration/pkg-check.sh
       - name: apexlang-delivery aggregator (stamped results, a real Validation capture)
         run: bash tests/integration/delivery.sh
       - name: the CI example's scan step, verbatim, over the examples

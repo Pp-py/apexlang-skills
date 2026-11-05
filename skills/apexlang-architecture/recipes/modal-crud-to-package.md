@@ -135,6 +135,11 @@ dynamicAction refresh-sectors (
 fires `apexafterclosecanceldialog` instead, so cancelling doesn't refresh. Don't invent
 event aliases like `dialogClosed` — they are invalid for `when.event`.
 
+**Unit of work.** SAVE commits one row, then closes the dialog and refreshes the master; CANCEL writes
+nothing and refreshes nothing (`back-end-conventions.md` §4). If the page disables the submit button
+against double clicks, it must re-enable it when the server returns errors — the dialog stays open
+after a `-20xxx`, and a dead button forces the user to close it and lose what they typed.
+
 ## Validation placement
 
 - **Field-shape** (required, maxLength): declarative item attributes.

@@ -163,6 +163,8 @@ or care which layer it is calling — it states one intent per button.
 
 Each button submits with its `buttonName` as `:REQUEST`; each process is gated by `serverSideCondition { plsqlExpression: :REQUEST = '<BUTTONNAME>' }` so exactly one transition runs. No process writes `status` directly. (This `:REQUEST`-matching gate is the validated pattern; do not invent a `whenButtonPressed` attribute on process `execution`.)
 
+**Unit of work.** Each transition button is its own submit and its own transaction: one transition per click, and a refused one (`-20xxx`) changes nothing. Cancel on the resolve dialog writes nothing (`back-end-conventions.md` §4).
+
 On the master page, wire the `apexafterclosedialog` → refresh dynamic action so the badge flips without a manual reload — see `modal-crud-to-package.md` §Close & refresh; verify with `apex-sentinel/checks/workflow-state.md`.
 
 ## Common mistakes
@@ -171,4 +173,4 @@ On the master page, wire the `apexafterclosedialog` → refresh dynamic action s
 |---|---|
 | An IG/form that lets you edit the `status` column | Skips the legal-transition guard and the side effects (quota, audit stamp). State changes must be verbs. |
 | "Reject" just sets a column with a page process | Loses the reason capture and the from-state check. Route through `pkg.reject`. |
-| Hard delete a request | Use soft-delete (`cancelled_at`) so history and any reversal stay auditable. |
+| Hard delete a request | Soft-delete (`cancelled_at`) so history and any reversal stay auditable — the §6 default; hard only when the task declares that retention. |

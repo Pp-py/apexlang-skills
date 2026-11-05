@@ -40,7 +40,7 @@ Engineering guardrails    single write path · fail-closed gates · evidence, no
 
 | Oracle's skills provide | apexlang-skills provides |
 |---|---|
-| the APEXlang language, its grammar and component inventory | **where logic goes** — [`apexlang-architecture`](skills/apexlang-architecture/SKILL.md): every write through a PL/SQL package, one owner per table and per rule; 13 screen-archetype recipes and the data contracts behind cards, badges and links |
+| the APEXlang language, its grammar and component inventory | **where logic goes** — [`apexlang-architecture`](skills/apexlang-architecture/SKILL.md): every write through a PL/SQL package, one owner per table and per rule; 14 screen-archetype recipes and the data contracts behind cards, badges and links |
 | generation with policies and a local lint (26.1) | **whether an import/export is safe now** — [`apex-sync-guard`](skills/apex-sync-guard/SKILL.md): Builder↔git divergence against a recorded syncpoint, both directions, several apps per repo; a wrapper script and a blocking `PreToolUse` hook |
 | compilation (`apex validate` through SQLcl) | **whether the change works** — [`apex-sentinel`](skills/apex-sentinel/SKILL.md): the running page in a real browser, as a verified test user, criterion by criterion, with the data read back through SQLcl |
 | import / deploy and export | **the gates, their statuses and their evidence** — [`framework/`](framework/README.md) |
@@ -57,7 +57,7 @@ disagreement is recorded as a known conflict
 ## The loop, as gates
 
 ```text
-Architecture → build (.apx + package) → Validation → Sync → import → record-sync → Runtime → Security → UI
+Architecture → build (.apx + package) → Validation → Package → Sync → import → record-sync → Runtime → Security → UI
 ```
 
 Each gate has one owner and states what its PASS does **not** establish
@@ -66,8 +66,8 @@ BLOCKED · UNKNOWN`, with exit codes 0 · 1 · 1 · 2 · 3 — and `NOT_RUN`, wh
 producer's verdict: a consumer assigns it to a gate that did not run (a runtime check marks a
 criterion it did not exercise the same way). **PASS ≠ NOT_RUN ≠ UNKNOWN ≠ "the agent says it worked."** Results are JSON validated by
 [`framework/schemas/`](framework/schemas/) — `sync-result` is stable and written by the guard on
-every run; `runtime-result`, `architecture-result`, `ui-result` and `security-result` are experimental;
-the task-level `verification-manifest` is stable, written by `apexlang-delivery`'s `delivery.py`. The Security and UI gates are opt-in per app (`securityGate`, `uiGate`) until 1.0.0. [`apexlang-delivery`](skills/apexlang-delivery/SKILL.md) orchestrates the gates for one task and `delivery.py` writes its manifest from those files (a CI example for the static scans: [`docs/examples/ci/`](docs/examples/ci/apexlang-static-gates.yml)), under
+every run; `runtime-result`, `architecture-result`, `ui-result`, `security-result` and `package-result` are experimental;
+the task-level `verification-manifest` is stable, written by `apexlang-delivery`'s `delivery.py`. The Package, Security and UI gates are opt-in per app (`packageGate`, `securityGate`, `uiGate`) until 1.0.0. [`apexlang-delivery`](skills/apexlang-delivery/SKILL.md) orchestrates the gates for one task and `delivery.py` writes its manifest from those files (a CI example for the static scans: [`docs/examples/ci/`](docs/examples/ci/apexlang-static-gates.yml)), under
 a contract that lets it add no rule of its own ([`GATES.md` §The orchestration contract](framework/GATES.md#the-orchestration-contract)).
 
 ## Install
@@ -81,8 +81,9 @@ a contract that lets it add no rule of its own ([`GATES.md` §The orchestration 
 /plugin install apexlang-toolkit
 ```
 
-Installs the six skills and auto-registers the sync-guard hook (it no-ops in projects without
-an `apex-sync.json` — per-project wiring in [`setup.md`](skills/apex-sync-guard/setup.md)).
+Installs the six skills and auto-registers the sync-guard hook (without an `apex-sync.json` it polices
+no import or export — the repo is unguarded until wired, and it can still refuse a `cd` to a
+run-time-computed path — per-project wiring in [`setup.md`](skills/apex-sync-guard/setup.md)).
 
 **Any other agent** (Codex, opencode, Cursor, …): plain-Markdown [Agent Skills](https://agentskills.io)
 — symlink `skills/*` into your tool's skill directory (the repo must stay in place), or point the agent at [`AGENTS.md`](./AGENTS.md).
@@ -100,8 +101,10 @@ layout (see [framework/README.md §Dependencies](framework/README.md#dependencie
 - **SQLcl** for compile, import/export and the data-side reads.
 - **apex-sync-guard:** `git`, `jq` *or* `python3`. Check a machine with
   `skills/apex-sync-guard/scripts/apex-sync-check.sh doctor`.
-- **Python 3** (standard library; `jsonschema` optional for `delivery.py`) for the scripts of
-  apex-ux, apex-security, apexlang-architecture and apexlang-delivery, which import the core's `lib/`.
+- **Python 3** (standard library) for the scripts of apex-ux, apex-security, apexlang-architecture
+  and apexlang-delivery, which import the core's `lib/`. **apexlang-delivery also requires
+  `jsonschema`** (`apt install python3-jsonschema`, or `python -m pip install jsonschema`):
+  without it `delivery.py` stops `BLOCKED (NO_JSONSCHEMA)` — it has no weaker check to fall back to.
   `ux-check.py` and `sec-probe.py` also need the browser of apex-sentinel (below).
 - **apex-sentinel:** a browser — the Playwright CLI through `skills/apex-sentinel/scripts/pw.sh`
   (it falls back to `npx`), or any browser-MCP. No browser → it stops and reports; it never fakes

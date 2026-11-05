@@ -18,7 +18,7 @@
     },
     "gates": { "type": "array", "items": { "$ref": "#/$defs/gate" } },
     "schemaCheck": {
-      "description": "How the consumer validated the results it read: with jsonschema against these schemas, or — jsonschema not installed — by apexlang-delivery's own checks of what a verdict rests on (kind, status vocabulary, task, criteria against status).",
+      "description": "How the consumer validated the results it read: with jsonschema against these schemas. apexlang-delivery requires jsonschema and always writes \"jsonschema\"; \"structural\" is kept in the enum only so that manifests written by apexlang-delivery 0.7.1 or earlier — when, without jsonschema, it ran its own partial checks (kind, status vocabulary, task, criteria against status) — still validate. A manifest that says \"structural\" was NOT checked against these schemas.",
       "enum": ["jsonschema", "structural"]
     }
   },
@@ -31,7 +31,7 @@
       "additionalProperties": false,
       "required": ["gate", "required", "status"],
       "properties": {
-        "gate": { "enum": ["architecture", "validation", "sync", "runtime", "security", "ui"] },
+        "gate": { "enum": ["architecture", "validation", "package", "sync", "runtime", "security", "ui"] },
         "app": { "$ref": "common.schema.json#/$defs/appAlias" },
         "required": { "type": "boolean" },
         "status": { "$ref": "common.schema.json#/$defs/gateStatus" },
@@ -42,14 +42,15 @@
             "additionalProperties": false,
             "required": ["kind", "path", "sha256"],
             "properties": {
-              "kind": { "enum": ["architecture-result", "sync-result", "runtime-result", "security-result", "ui-result"] },
+              "kind": { "enum": ["architecture-result", "sync-result", "runtime-result", "security-result", "ui-result", "package-result"] },
               "path": { "$ref": "common.schema.json#/$defs/relPath" },
               "sha256": { "$ref": "common.schema.json#/$defs/sha256" }
             }
           }
         },
         "evidence": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/evidenceRef" } },
-        "notApplicableReason": { "$ref": "common.schema.json#/$defs/safeText" }
+        "notApplicableReason": { "$ref": "common.schema.json#/$defs/safeText" },
+        "excludedBy": { "enum": ["config", "skip"], "description": "why a gate that is not required was left out: the app's own setting (packageGate / securityGate / uiGate not true) or the caller's --skip. Optional: a reader that does not know it loses nothing but the distinction." }
       },
       "allOf": [
         {
@@ -64,7 +65,7 @@
         },
         {
           "description": "a gate with its own producer PASSes on that producer's result file",
-          "if": { "properties": { "gate": { "enum": ["architecture", "sync", "runtime", "security", "ui"] }, "status": { "const": "PASS" } } },
+          "if": { "properties": { "gate": { "enum": ["architecture", "package", "sync", "runtime", "security", "ui"] }, "status": { "const": "PASS" } } },
           "then": { "required": ["results"], "properties": { "results": { "minItems": 1 } } }
         },
         {
@@ -88,6 +89,16 @@
           "description": "the Security gate PASSes on four scopes: static, plsql, secrets and runtime",
           "if": { "properties": { "gate": { "const": "security" }, "status": { "const": "PASS" } } },
           "then": { "properties": { "results": { "minItems": 4, "items": { "properties": { "kind": { "const": "security-result" } } } } } }
+        },
+        {
+          "description": "excludedBy names why a gate was left out, so only a gate that is not required carries it",
+          "if": { "required": ["excludedBy"] },
+          "then": { "properties": { "required": { "const": false } } }
+        },
+        {
+          "description": "the Package gate PASSes on a package-result (a rule is appended, never inserted: negatives.json cites the rules by index)",
+          "if": { "properties": { "gate": { "const": "package" }, "status": { "const": "PASS" } } },
+          "then": { "properties": { "results": { "items": { "properties": { "kind": { "const": "package-result" } } } } } }
         }
       ]
     },

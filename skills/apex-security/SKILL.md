@@ -99,6 +99,7 @@ What this skill defends against, for an APEX app built from this repo's source:
 | A logged-in user reaches what their role does not allow | `SEC-ACTION-AUTHZ`, `SEC-ROLE-REFUSED`, `SEC-NO-SSC-AUTHZ`, `SEC-DATA-SCOPE` |
 | A user edits a URL or session state to act on another record | `SEC-PAGE-CHECKSUM`, `SEC-APP-SSP`, `SEC-ITEM-SSP`, `SEC-CHECKSUM-TAMPER` |
 | Stored or reflected HTML/JavaScript runs in another user's browser | `SEC-ESCAPE-COLUMN`, `SEC-ESCAPE-SUBST`, `SEC-URL-SAFE`, `SEC-XSS-ESCAPED`, `SEC-CSP` |
+| A user opens another record's file, or uploads one the app must refuse | `SEC-DOWNLOAD-AUTHZ`, `SEC-UPLOAD-SERVER-RULES` (both `ADVISE`: no probe checks a per-record scope) |
 | A value reaches SQL as code | `SEC-SQL-BIND` |
 | A credential leaks through the repo | `SEC-NO-SECRETS` |
 

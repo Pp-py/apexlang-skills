@@ -10,7 +10,8 @@ against a CONTROL: the same URL loaded by the test user must render that page wi
 or the probe is UNKNOWN — never a PASS on a broken link.
   SEC-ANON-REDIRECT    --anon <url>: fetched over plain HTTP with an empty cookie jar, redirects followed;
                        PASS on a login page (a password field, /login, another host),
-                       FAIL if the control's page is served
+                       FAIL if the control's page is served; APEX's error page that keeps the page
+                       id (a dialog URL with no session) is UNKNOWN, never FAIL or PASS
   SEC-CHECKSUM-TAMPER  --tamper: the first link with cs= on the held page, loaded in a new tab
                        intact (control), without cs, and with an item value changed: both
                        variants must not render the control's page
@@ -45,6 +46,10 @@ from result import ROOT, Stop, context, runtime_target, scrub, write  # noqa: E4
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sec-probe.js")
 TIMEOUT = int(os.environ.get("SEC_PROBE_TIMEOUT", "300"))
 CRITERIA = ["SEC-ANON-REDIRECT", "SEC-CHECKSUM-TAMPER", "SEC-ROLE-REFUSED", "SEC-XSS-ESCAPED"]
+# APEX's own error page (what it renders for a refusal or an ended session), in raw HTML: the two
+# classes sec-probe.js reads in the browser, as whole class tokens. #APEX_ERROR_MESSAGE is left out on
+# purpose: the browser half skips it when it carries `u-hidden`, and raw HTML cannot tell.
+ERRPAGE = re.compile(r"""class=["'][^"']*(?<![\w-])(?:t-Alert-errorTitle|a-Error-back)(?![\w-])""")
 STEP = re.compile(r"""id=["']pFlowStepId["'][^>]*value=["']([^"']*)["']|value=["']([^"']*)["'][^>]*id=["']pFlowStepId["']""")
 
 
@@ -133,13 +138,17 @@ def probe(a, alias, settings, crit, add):
         served = (m.group(1) or m.group(2)) if m else None
         login = bool(re.search(r"""type=["']?password""", html, re.I)) or "/login" in urlsplit(final).path.lower() \
             or urlsplit(final).netloc != urlsplit(url).netloc
-        r = refused(ctl.get(url), {"step": served})
+        # an error page keeps the requested page's id: without the flag it reads as "served" (a false FAIL)
+        err = bool(ERRPAGE.search(html))
+        r = refused(ctl.get(url), {"step": served, "error": err})
         if r is None:
             add("SEC-ANON-REDIRECT", None, f"{clean(url)}: the control (as the test user) rendered no page")
         elif served and not r:
             add("SEC-ANON-REDIRECT", False, f"{clean(url)}: served page {served} with no login")
         elif not login:
-            add("SEC-ANON-REDIRECT", None, f"{clean(url)}: ended on {clean(final)}, neither the page nor a login")
+            add("SEC-ANON-REDIRECT", None, f"{clean(url)}: ended on {clean(final)}, " + (
+                "APEX's error page, no login and no content: UNKNOWN until its HTML is measured" if err
+                else "neither the page nor a login"))
         else:
             add("SEC-ANON-REDIRECT", True, None)
     if a.tamper:

@@ -10,14 +10,14 @@ description: Use when an APEXlang page or component was just imported or changed
 - **Does:** drives the running page in a real browser, as a verified test user, through the archetype's pass criteria — and reads the data side back with SQLcl.
 - **Use when:** a page was imported or changed and someone is about to say it works.
 - **Decides:** whether each required criterion holds on the running app — never grammar, never sync safety.
-- **Output:** a `runtime-result` (`<evidenceDir>/<task>/runtime-<alias>.json`): PASS · FAIL · BLOCKED (no browser, login not verified) · UNKNOWN — `references/runtime-result.md`.
-- **Evidence:** per criterion, saved `eval` output or snapshots under `raw/runtime-<alias>/` with their sha256, and SQL reads — saved and written through `framework/scripts/evidence.py`, never by hand.
-- **Gate:** Runtime (`framework/GATES.md`) — discipline, no hook.
-- **Interface:** `scripts/pw.sh [--app <alias>] [--env <name>] login|open|goto|eval|run-code|snapshot|find|…|close-all` (exit 0 · 2 refused / login unverified · 3 recovered on a logged-out page)
+- **Output:** a `runtime-result` (`<evidenceDir>/<task>/runtime-<alias>[.<env>].json`): PASS · FAIL · BLOCKED (no browser, login not verified) · UNKNOWN — `references/runtime-result.md`; and, from `scripts/pkg-check.py`, a `package-result` (`package-<alias>[.<env>].json`).
+- **Evidence:** per criterion, saved `eval` output or snapshots under `raw/runtime-<alias>[.<env>]/` with their sha256, and SQL reads — saved and written through `framework/scripts/evidence.py`, never by hand.
+- **Gate:** Runtime (`framework/GATES.md`) — discipline, no hook; and Package, opt-in per app (`packageGate`) until 1.0.0.
+- **Interface:** `scripts/pw.sh [--app <alias>] [--env <name>] login|open|goto|eval|run-code|snapshot|find|…|close-all` (exit 0 · 2 refused / login unverified · 3 recovered on a logged-out page); `scripts/pkg-check.py [--app <alias>] [--env <name>] [--task <id>] <file-or-dir>…` (exit 0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN)
 
 ## Overview
 
-`apex validate` proves **grammar**. `apex import` loads **metadata**. Neither proves the page **renders or works** — validate doesn't even resolve PL/SQL references (a process can call a package procedure that doesn't exist and still validate). The browser is the only gate that proves behavior.
+`apex validate` proves **grammar**. `apex import` loads **metadata**. Neither proves the page **renders or works** — validate doesn't even resolve PL/SQL references (a process can call a package procedure that doesn't exist and still validate; the Package gate below looks it up). The browser is the only gate that proves behavior.
 
 **Principle: a change isn't done at "import succeeded." It's done when you've driven the running page in a browser and watched the expected behavior happen.**
 
@@ -80,13 +80,17 @@ A full accessibility snapshot of an APEX page is tens of thousands of tokens; a 
 
 **Read `setup.md` before any check** — base-URL/TLS resolution, login, session preservation, and IG inline-edit mechanics are non-obvious and block everything.
 
+## The Package gate — no browser
+
+Where the app sets `packageGate`, run `scripts/pkg-check.py --app X [--env E] --task <id> <the .apx files or directories>` after Validation and before Sync. It reads, with `SELECT`s only, whether the packages and procedures the `.apx` names (`invokeApi` processes and workflow activities, named-notation calls in its sql/plsql blocks) exist in the app's parsing schema, are `VALID` with no compile error, and declare the procedure called: criteria `PKG-EXISTS`, `PKG-COMPILED`, `PKG-PROC-EXISTS`, all three needed for a PASS. It never runs DDL or recompiles; a `protected` environment may be read. FAIL: absent or broken. UNKNOWN: `INVALID` with no error to read, not visible to the session's user, a synonym, a name it cannot follow: compile through your usual database path and run it again, never read it as PASS. BLOCKED: nothing to look up, no SQLcl, no connection, the app not in the database yet. PASS is not "the PL/SQL is right": the walkthrough above is. Criteria, reasons and limits: `checks/package.md`; connection: `setup.md` §5.
+
 ## Prefer non-mutating checks
 
 Verify the **rejection/negative path** first (duplicate code → error, illegal transition → blocked): it exercises the full write path + business rule **without persisting test data**. When you must write, use an obvious throwaway value and clean up; confirm the DB with SQLcl (`sql -name <conn>`) — UI "saved" and the row existing are two different claims.
 
 ## When NOT to use
 
-- Backend-only changes with no page to drive (pure PL/SQL or view work) — there's nothing to render.
+- Backend-only changes with no page to drive (pure PL/SQL or view work) — there's nothing to render (the Package gate still reads the names a `.apx` calls, and a change naming none is `--skip package:<reason>`).
 - No running instance reachable — see Prerequisites; stop and report, don't fake it.
 - Grammar / validate / import / round-trip questions — that's Oracle's APEXlang skills.
 - Generic "did I finish?" checks with no APEX runtime — that's `superpowers:verification-before-completion`.

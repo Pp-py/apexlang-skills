@@ -8,6 +8,7 @@
   is_destructive(c)  a control or process that deletes, rejects or cancels a record —
                      one definition for UX-DESTRUCTIVE-CONFIRM and SEC-ACTION-AUTHZ
   collect(paths)     the .apx files (or other extensions) under files and directories, sorted
+  code_blocks(text)  (first line, code) of each ```sql / ```plsql block of an .apx
 """
 import os
 import re
@@ -132,3 +133,19 @@ def collect(paths, exts=(".apx",)):
         else:
             raise FileNotFoundError(p)
     return sorted(set(files))
+
+
+def code_blocks(text):
+    """(first line, code) of each ```sql / ```plsql fenced block of an .apx file: the code the
+    component reader skips (a process's plsqlCode, a region's query)."""
+    out, cur = [], None
+    for no, ln in enumerate(text.split("\n"), 1):
+        s = ln.strip()
+        if cur is None and re.match(r"(?i)^```\s*(sql|plsql)\b", s):
+            cur = (no + 1, [])
+        elif cur is not None and s.startswith("```"):
+            out.append((cur[0], "\n".join(cur[1])))
+            cur = None
+        elif cur is not None:
+            cur[1].append(ln)
+    return out

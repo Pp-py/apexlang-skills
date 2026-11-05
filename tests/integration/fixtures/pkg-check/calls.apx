@@ -1,0 +1,57 @@
+page 41 (
+    name: Calls
+
+    process create-employee (
+        name: Create employee
+        type: invokeApi
+        invoke {
+            package: pkg_employees
+            procedureOrFunction: create_row
+        }
+    )
+
+    process update-employee (
+        name: Update employee
+        type: invokeApi
+        invoke {
+            package: pkg_employees
+            procedureOrFunction: update_row
+        }
+    )
+
+    process legacy-call (
+        name: Legacy call
+        type: invokeApi
+        invoke {
+            procedureOrFunction: legacy_proc
+        }
+    )
+
+    process typed-standalone (
+        name: Typed standalone
+        type: invokeApi
+        invoke {
+            type: plsqlProcedureOrFunction
+            procedureOrFunction: legacy_typed
+        }
+    )
+
+    process save-sectors (
+        name: Save sectors
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                begin
+                    -- thin wrapper: a grid save
+                    apex_error.add_error(p_message => 'x', p_display_location => apex_error.c_inline_in_notification);
+                    l_tab.extend(1);
+                    pkg_sectors.save_row(
+                        p_row_status => :APEX$ROW_STATUS,
+                        p_code       => :CODE
+                    );
+                end;
+                ```
+        }
+    )
+)

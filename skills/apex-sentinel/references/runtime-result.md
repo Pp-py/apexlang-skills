@@ -1,8 +1,8 @@
 # Recording a runtime-result
 
 A verification ends in a `runtime-result` — `framework/schemas/runtime-result.schema.json`
-(experimental) — written to `<evidenceDir>/<task>/runtime-<alias>.json`, with raw evidence
-under `<evidenceDir>/<task>/raw/runtime-<alias>/`. The orchestrator reads that file, not your
+(experimental) — written to `<evidenceDir>/<task>/runtime-<alias>[.<env>].json`, with raw evidence
+under `<evidenceDir>/<task>/raw/runtime-<alias>[.<env>]/`. The orchestrator reads that file, not your
 summary of it.
 
 ## One entry per criterion
@@ -19,7 +19,7 @@ Record every one you were asked to verify:
 ```
 
 Save what the page told you through `framework/scripts/evidence.py capture`: it runs the step,
-stores its output under `raw/runtime-<alias>/` with session ids, local paths, passwords and connect
+stores its output under `raw/runtime-<alias>[.<env>]/` with session ids, local paths, passwords and connect
 strings removed, creates the evidence dir's `.gitignore`, and prints the `evidence` entry with the
 file's sha256 — the hash is what makes the result auditable after the fact.
 

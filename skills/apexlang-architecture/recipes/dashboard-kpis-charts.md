@@ -109,6 +109,8 @@ catalog also demonstrates `pyramid`, `bubble`, `radar`, `stock` and `timeAxisTyp
 `zoomAndScroll` / stacked series — reachable, but each needs a written reason: exotic chart types
 read as decoration unless the question they answer is stated.
 
+A series whose categories are time orders by the date key, never by the label or the formatted text (`order by trunc(d)`, not `order by to_char(d, 'Month YYYY')`) — an alphabetical axis draws "Agosto, Julio, Junio…".
+
 Aggregate in SQL, at the granularity the axis shows (`trunc(date)` for daily). A chart series that
 returns raw rows and lets the chart engine group is a performance problem that only appears in
 production data volumes.

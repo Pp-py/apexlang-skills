@@ -35,7 +35,25 @@ under *Cards*. That is the material for the split:
 | People / users | either | cards for a directory grid, content row for a sidebar roster |
 | Product / media catalog | **cards** | media is the point: `media { source: urlColumn ... }` |
 | Timeline / activity feed | **content row** | grouping (`plugin-grouping`) has no cards equivalent |
-| Anything the user must filter, sort or export | **interactive report** | neither primitive gives the IR toolbar |
+| The user shapes the view: saved reports, personalised columns, ad-hoc filters, group-by or pivot, a download of columns they choose | **interactive report** | the IR toolbar is the only primitive that offers them |
+| Fixed facets and a fixed set of sort orders | **cards** or **content row** with `facetedSearch` | the choices are closed and declared, so no IR toolbar is needed (below) |
+
+**Facets and an order without an IR.** Cards and content row take a `facetedSearch`
+(`recipes/master-faceted-search.md`) and, on a content row, an `orderBy` that a page item selects.
+Keep both closed:
+
+- **Closed alternatives.** The sort control is a select list over a static LOV; each key maps to a
+  literal clause in `orderBy { type: item ... orderBys }`. Never user text, never a column name
+  concatenated into SQL, no arbitrary SQL from the page.
+- **A stable tie-breaker.** Every clause ends in the entity's primary key (`name asc, employee_id asc`),
+  or rows repeat and vanish between pages when the leading column has ties. This is this repo's rule;
+  Oracle's content-row template asks for the top-level `orderBy {}` and, with grouping, every grouped
+  column first before any secondary tie-breaker, and says nothing about the key.
+- **Order is independent of the filter.** Changing the order keeps the active facets and the search.
+- **What "all" means.** With a multiple selection, say next to the control whether "select all" is
+  the rows of the page or the whole filtered set, and show that count before a bulk action runs.
+
+Not yet checked at runtime (`checks/browse-search.md` covers the facets): treat these as review points.
 
 Two traps worth naming:
 

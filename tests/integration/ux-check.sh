@@ -9,7 +9,10 @@
 #   * a dead session (pw.sh exit 3) or output with no verdict is UNKNOWN, never PASS;
 #   * stdout never carries a node's HTML or a session id; --raw keeps both, with its sha256;
 #   * --task writes the ui-result and the raw output into the evidence dir;
-#   * the snippet the CLI receives carries the pinned axe, and is deleted afterwards.
+#   * the snippet the CLI receives carries the pinned axe, and is deleted afterwards;
+#   * oracle-owned.json lists only OO-1: a page's own dialog failing focusReturns on 26.2 is FAIL,
+#     the version compare is exact, and the `failed` branch is covered by a temporary list;
+#   * the snippets in references/by-hand.md parse (when node is on PATH) and stay read-only.
 # The real-browser smoke (fixtures/ux-check/page.html, a live app) is manual: tests/README.md.
 set -euo pipefail
 
@@ -80,17 +83,41 @@ check "login page → BLOCKED" not-logged-in 2 "d['status'] == 'BLOCKED'"
 check "axe ran in no frame → UNKNOWN" no-runs 3 "d['status'] == 'UNKNOWN'"
 check "no verdict in the output → UNKNOWN" garbage 3 "d['status'] == 'UNKNOWN'"
 
-# Markup APEX itself renders (oracle-owned.json): an advisory on the version an entry names,
+# Markup APEX itself renders (oracle-owned.json): an advisory on the exact version an entry names,
 # a FAIL on any other version, with any other target, or with another dialog step failing.
-check "APEX 26.2's IG grid markup and dialog focus return → UX-ORACLE-OWNED, PASS" oracle-owned 0 \
-  "d['status'] == 'PASS' and sorted(a['detail'].split()[1] for a in d['advisories'] if a['id'] == 'UX-ORACLE-OWNED') == ['OO-1', 'OO-2']" --dialog '#open'
+# Only OO-1 is listed. A dialog that loses focus on Esc is the page's own until a minimal
+# reproduction with a negative control says otherwise (OO-2 was retired).
+check "APEX 26.2's IG grid markup → UX-ORACLE-OWNED OO-1, PASS" oracle-owned 0 \
+  "d['status'] == 'PASS' and sorted(a['detail'].split()[1] for a in d['advisories'] if a['id'] == 'UX-ORACLE-OWNED') == ['OO-1']" --dialog '#open'
 sed 's/"apex": "26.2"/"apex": "26.3"/' "$FIX/oracle-owned.json" > "$WORK/oo-263.json"
+sed 's/"apex": "26.2"/"apex": "26.2.0"/' "$FIX/oracle-owned.json" > "$WORK/oo-2620.json"
 sed 's/#orders_ig_grid_vc/#orders_grid/' "$FIX/oracle-owned.json" > "$WORK/oo-target.json"
 sed 's/"tabStays": true/"tabStays": false/' "$FIX/oracle-owned.json" > "$WORK/oo-steps.json"
 sed 's/, "apex": "26.2"//' "$FIX/oracle-owned.json" > "$WORK/oo-none.json"
-for v in 263:"another APEX version" target:"another target" steps:"another dialog step too" none:"no APEX version reported"; do
+for v in 263:"another APEX version" 2620:"26.2.0 is not 26.2 (exact version)" target:"another target" steps:"another dialog step too" none:"no APEX version reported"; do
   check "oracle-owned, ${v#*:} → FAIL" "$WORK/oo-${v%%:*}.json" 1 "d['status'] == 'FAIL'" --dialog '#open'
 done
+# The retired OO-2: the page's own dialog failing only focusReturns on 26.2, against the REAL list.
+check "own dialog on 26.2 failing only focusReturns → FAIL, no advisory" own-dialog 1 \
+  "c['UX-DIALOG-FOCUS'] == 'FAIL' and 'UX-ORACLE-OWNED' not in adv and d['criteria'][3]['findings'][0]['failed'] == ['focusReturns']" --dialog '#my-own-dialog-opener'
+sed 's/"apex": "26.2"/"apex": "26.2.0"/' "$FIX/own-dialog.json" > "$WORK/own-2620.json"
+check "own dialog failing only focusReturns on 26.2.0 → FAIL" "$WORK/own-2620.json" 1 \
+  "c['UX-DIALOG-FOCUS'] == 'FAIL' and 'UX-ORACLE-OWNED' not in adv" --dialog '#my-own-dialog-opener'
+# The `failed` branch of owned_by_oracle, kept covered with a temporary list (UX_ORACLE_OWNED).
+cat > "$WORK/owned-failed.json" <<'JSON'
+{"about": "temporary list for the test", "entries": [
+  {"id": "OO-T", "criterion": "UX-DIALOG-FOCUS", "failed": ["focusReturns"], "apex": "26.2", "note": "test entry", "source": "test"}]}
+JSON
+sed 's/"tabStays": true/"tabStays": false/' "$FIX/own-dialog.json" > "$WORK/own-steps.json"
+sed 's/"apex": "26.2"/"apex": "26.3"/' "$FIX/own-dialog.json" > "$WORK/own-263.json"
+UX_ORACLE_OWNED="$WORK/owned-failed.json" check "temporary list: the exact failed steps on the named version → UX-ORACLE-OWNED, PASS" own-dialog 0 \
+  "d['status'] == 'PASS' and c['UX-DIALOG-FOCUS'] == 'PASS' and [a['detail'].split()[1] for a in d['advisories'] if a['id'] == 'UX-ORACLE-OWNED'] == ['OO-T']" --dialog '#my-own-dialog-opener'
+UX_ORACLE_OWNED="$WORK/owned-failed.json" check "temporary list: another step fails too → FAIL" "$WORK/own-steps.json" 1 \
+  "c['UX-DIALOG-FOCUS'] == 'FAIL' and 'UX-ORACLE-OWNED' not in adv" --dialog '#my-own-dialog-opener'
+UX_ORACLE_OWNED="$WORK/owned-failed.json" check "temporary list: another APEX version → FAIL" "$WORK/own-263.json" 1 \
+  "c['UX-DIALOG-FOCUS'] == 'FAIL' and 'UX-ORACLE-OWNED' not in adv" --dialog '#my-own-dialog-opener'
+UX_ORACLE_OWNED="$WORK/owned-failed.json" check "temporary list: 26.2.0 is not 26.2 → FAIL" "$WORK/own-2620.json" 1 \
+  "c['UX-DIALOG-FOCUS'] == 'FAIL' and 'UX-ORACLE-OWNED' not in adv" --dialog '#my-own-dialog-opener'
 printf '{ not json' > "$WORK/owned-bad.json"
 UX_ORACLE_OWNED="$WORK/owned-bad.json" check "an unreadable oracle-owned.json → BLOCKED, never 'no entry'" oracle-owned 2 "d['status'] == 'BLOCKED'" --dialog '#open'
 
@@ -164,6 +191,51 @@ lock = json.load(open(sys.argv[1] + '/axe-core.lock.json'))
 assert hashlib.sha256(open(sys.argv[1] + '/' + lock['file'], 'rb').read()).hexdigest() == lock['sha256']" \
   "$REPO/skills/apex-ux/vendor"; then ok "the vendored axe-core matches its lock"
 else bad "the vendored axe-core does not match its lock"; fi
+
+# references/by-hand.md: the snippets are the manual procedures' only code, so they must parse, be
+# DOM functions (for `pw.sh eval`) or Playwright code (for `run-code`), never mixed, never touch
+# focus, and never reach for `document` in Node code. Negative controls first: a tampered copy fails.
+cat > "$WORK/by-hand-lint.py" <<'PYEOF'
+import re, subprocess, shutil, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+blocks = re.findall(r"^```js\n(.*?)^```", text, re.M | re.S)
+problems = []
+if len(blocks) < 3:
+    problems.append(f"{len(blocks)} js snippets, expected at least 3")
+node = shutil.which("node")
+for i, b in enumerate(blocks, 1):
+    run_code = b.lstrip().startswith("async (page)")
+    if not run_code and not b.lstrip().startswith("() =>"):
+        problems.append(f"snippet {i}: neither '() =>' (eval) nor 'async (page)' (run-code)")
+    if run_code:
+        # outside a function handed to evaluate(), `document` does not exist in Node
+        if re.search(r"\bdocument\b", b):
+            problems.append(f"snippet {i}: 'document' in run-code code")
+    if re.search(r"\.focus\(|\.click\(|\.blur\(", b):
+        problems.append(f"snippet {i}: moves focus or clicks on the shared session")
+    if node:
+        r = subprocess.run([node, "-e", "new Function('return (' + require('fs').readFileSync(0, 'utf8') + ')')"],
+                           input=b, text=True, capture_output=True)
+        if r.returncode:
+            problems.append(f"snippet {i}: does not parse: {r.stderr.strip().splitlines()[-1] if r.stderr.strip() else r.returncode}")
+print("PARSED" if node else "NOT-PARSED", len(blocks))
+for p in problems:
+    print("PROBLEM", p)
+sys.exit(1 if problems else 0)
+PYEOF
+BH="$REPO/skills/apex-ux/references/by-hand.md"
+sed 's/(\/\* the function, pasted here \*\/)/(document.title)/' "$BH" > "$WORK/bh-doc.md"
+sed '0,/const de = /s//const de = (/' "$BH" > "$WORK/bh-syntax.md"
+sed '0,/const de = /s//e.focus(); const de = /' "$BH" > "$WORK/bh-focus.md"
+for v in doc:"'document' under run-code" syntax:"a snippet that does not parse" focus:"e.focus() on the shared session"; do
+  if "$PY" "$WORK/by-hand-lint.py" "$WORK/bh-${v%%:*}.md" > "$WORK/lint.out" 2>&1; then
+    if grep -q '^NOT-PARSED' "$WORK/lint.out" && [[ ${v%%:*} == syntax ]]; then echo "skip by-hand lint of ${v#*:} (node not found)"
+    else bad "by-hand.md lint accepted ${v#*:}"; fi
+  else ok "by-hand.md lint rejects ${v#*:}"; fi
+done
+if "$PY" "$WORK/by-hand-lint.py" "$BH" > "$WORK/lint.out" 2>&1; then
+  ok "by-hand.md: every snippet is a DOM function or run-code code, read-only, and $(head -1 "$WORK/lint.out" | tr '[:upper:]' '[:lower:]')"
+else bad "by-hand.md lint: $(grep PROBLEM "$WORK/lint.out" | head -3 | tr '\n' ';')"; fi
 
 echo "ux-check: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

@@ -1,0 +1,102 @@
+{
+  "kind": "package-result",
+  "schemaVersion": 1,
+  "status": "UNKNOWN",
+  "reasons": [
+    {
+      "code": "UNVERIFIED",
+      "message": "1 package(s) and 3 procedure call(s) looked up in HR; an answer reads neither as held nor as failed"
+    }
+  ],
+  "app": {
+    "appId": 100,
+    "appAlias": "hr"
+  },
+  "context": {
+    "task": "T-42",
+    "repo": {
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "dirty": false
+    },
+    "frameworkVersion": "0.7.1",
+    "timestamp": "2026-11-04T13:00:00Z",
+    "producer": {
+      "skill": "apex-sentinel",
+      "method": "tool"
+    },
+    "target": {
+      "connectionName": "dev_hr"
+    }
+  },
+  "database": {
+    "owner": "HR",
+    "sessionUser": "HR"
+  },
+  "files": [
+    "apex/apexlang/hr/pages/03-page-employee-form.apx",
+    "apex/apexlang/hr/pages/04-page-absence-resolve.apx"
+  ],
+  "unparsed": [],
+  "criteria": [
+    {
+      "id": "PKG-EXISTS",
+      "status": "PASS",
+      "findings": []
+    },
+    {
+      "id": "PKG-COMPILED",
+      "status": "UNKNOWN",
+      "findings": [
+        {
+          "package": "PKG_SECTORS",
+          "detail": "INVALID and ALL_ERRORS holds nothing visible for it (invalidated by a dependency, or errors this user cannot read); not recompiled"
+        }
+      ]
+    },
+    {
+      "id": "PKG-PROC-EXISTS",
+      "status": "PASS",
+      "findings": []
+    }
+  ],
+  "advisories": [
+    {
+      "id": "PKG-STANDALONE",
+      "path": "apex/apexlang/hr/pages/03-page-employee-form.apx",
+      "line": 311,
+      "detail": "an invokeApi process names a standalone procedure or function: not looked up"
+    }
+  ],
+  "evidence": [
+    {
+      "kind": "sql",
+      "statement": "select 'pkgchk|ctx|' || sys_context('USERENV','SESSION_USER') || '|' || nvl((select owner from apex_applications where application_id = 100), '-') from dual;",
+      "exitCode": 0,
+      "result": "1 row(s)"
+    },
+    {
+      "kind": "sql",
+      "statement": "select 'pkgchk|obj|' || object_name || '|' || object_type || '|' || status from all_objects where owner = (select owner from apex_applications where application_id = 100) and object_type in ('PACKAGE','PACKAGE BODY') and object_name in ('PKG_EMPLOYEES','PKG_SECTORS');",
+      "exitCode": 0,
+      "result": "4 row(s)"
+    },
+    {
+      "kind": "sql",
+      "statement": "select 'pkgchk|err|' || name || '|' || type || '|' || line || ':' || position || '|' || substr(replace(replace(text, chr(10), ' '), chr(13), ' '), 1, 160) from all_errors where owner = (select owner from apex_applications where application_id = 100) and type in ('PACKAGE','PACKAGE BODY') and name in ('PKG_EMPLOYEES','PKG_SECTORS') and attribute = 'ERROR' order by name, type, sequence;",
+      "exitCode": 0,
+      "result": "0 row(s)"
+    },
+    {
+      "kind": "sql",
+      "statement": "select 'pkgchk|proc|' || object_name || '|' || procedure_name from all_procedures where owner = (select owner from apex_applications where application_id = 100) and object_type = 'PACKAGE' and procedure_name is not null and object_name in ('PKG_EMPLOYEES','PKG_SECTORS');",
+      "exitCode": 0,
+      "result": "7 row(s)"
+    },
+    {
+      "kind": "sql",
+      "statement": "select 'pkgchk|syn|' || synonym_name || '|' || table_owner || '.' || table_name || nvl2(db_link, '@' || db_link, '') from all_synonyms where owner in ((select owner from apex_applications where application_id = 100), 'PUBLIC') and synonym_name in ('PKG_EMPLOYEES','PKG_SECTORS');",
+      "exitCode": 0,
+      "result": "0 row(s)"
+    }
+  ]
+}

@@ -17,13 +17,20 @@ Submit a value the package refuses (duplicate email, inactive FK, missing requir
 
 **On the drawer variant this is the whole check:** assert the drawer is **still open** after the rejection — `eval` → a visible dialog still in the DOM (`document.querySelector('.ui-dialog:not([style*="display: none"])')`). A drawer that closed on a failed submit is the defect this recipe exists to prevent: the close is a `:REQUEST`-gated `closeDialog` **process**, not a button trigger action.
 
-Then cancel the drawer and assert the calling list did **not** refresh (cancel fires `apexafterclosecanceldialog`, not `apexafterclosedialog`).
+**Then correct and resubmit in the same page or drawer** — do not reopen it. The submit control must still be enabled (a "disable on submit" dynamic action that is not undone when the server returns errors leaves it dead), and the corrected submit succeeds exactly once: on the full page as the create that returns it in edit mode (`FORM-CREATE`), on the drawer by closing it and refreshing the list. Procedure, snippet and the three SQL counts (`n, n, n+1`): `modal-crud.md` §Then correct and resubmit. Do the rejection first and the resubmit is the valid write of step 2, not an extra one.
+
+Cancel the drawer and assert the calling list did **not** refresh (cancel fires `apexafterclosecanceldialog`, not `apexafterclosedialog`).
+
+**Drawer opened by its URL without a session:** `modal-crud.md` §Dialog without a session; report it as `MODAL-NO-SESSION`, with `NOT_RUN` on a full page. Data leaking there is `SEC-ANON-REDIRECT`'s, not this check's.
 
 ## Confirm
 
 `sql -name <conn>`: the row exists with the submitted values after a valid save, and **no row was inserted** after a rejection. UI "saved" ≠ row exists.
 
-For delete, confirm the soft delete: the row is still there with `active_flag = 'N'` (or `cancelled_at` set), not gone.
+For delete, read the entity's retention first: a `rule` decision whose subject begins `retention:` in the task's `architecture-result` (`<evidenceDir>/<task>/architecture.json`; `apexlang-architecture/back-end-conventions.md` §6). None means **soft**, and `FORM-HARD-DELETE` is `NOT_RUN`.
+
+- **Soft** (the default): the row is still there with `active_flag = 'N'` (or `cancelled_at` set), not gone.
+- **Hard** (declared): the row is gone and so are the dependents the declaration names, and no other row changed. Delete is refused — friendly message, row and dependents intact — while a row **other than the declared dependents** still references it.
 
 ## Pass criteria
 
@@ -31,5 +38,6 @@ Each criterion has an ID: a runtime-result (`framework/schemas/runtime-result.sc
 
 - `FORM-CREATE` — Create mode shows only the create action; a valid create returns the page in edit mode with the new PK.
 - `FORM-UPDATE` — Edit mode prefills; a valid update persists.
-- `FORM-REFUSED-SUBMIT` — A refused submit shows a friendly package error, leaves the drawer open, and writes nothing.
-- `FORM-SOFT-DELETE` — Delete deactivates rather than deleting.
+- `FORM-REFUSED-SUBMIT` — A refused submit shows a friendly package error, leaves the drawer open, and writes nothing, and the same page or drawer accepts the corrected values exactly once.
+- `FORM-SOFT-DELETE` — For an entity whose retention is soft (the default, when none is declared), delete deactivates rather than deleting. `NOT_RUN` when the declared retention is hard.
+- `FORM-HARD-DELETE` — For an entity whose declared retention is hard, delete removes the row and exactly the dependents the declaration names, and is refused while a row other than the declared dependents references it. `NOT_RUN` when the retention is soft or undeclared.

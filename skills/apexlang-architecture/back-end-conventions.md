@@ -116,6 +116,14 @@ reaches for `SAVEPOINT` only when it must undo one step and *carry on*; letting 
 already unwinds everything, because nothing committed in between. The
 pattern is in `package-boundaries.md` §Atomicity and locking in a flow package.
 
+**Unit of work.** One page submit is one transaction: what its processes wrote commits together, or a
+`-20xxx` rolls all of it back. A dialog or drawer is its own page, so its submit commits on its own:
+what it saved stays saved when the page that opened it is cancelled. Cancel reverts only what the
+current page has not submitted. Every recipe that writes says in one line what each action commits
+and what Cancel reverts. A screen whose parent and children must stand or fall together needs a draft
+row or a coordinating package (`wizard-multi-step.md`, `package-boundaries.md` §Test 2) — a deliberate
+choice, not a side effect of two dialogs.
+
 ## 5. Reads: inline SQL or a view — never the package
 
 Packages are the **write** path. Reads go straight to SQL:
@@ -136,6 +144,15 @@ literals. They never project HTML or a URL, and they never build a class out of 
 derivation belongs, is in `ui-contracts.md` §2–§4.
 
 ## 6. Recurring data patterns
+
+**Retention is a decision, never the agent's default.** It is declared once per entity in the task's
+`architecture-result`, as a `rule` decision (procedure A, branch A3) whose subject begins `retention:`
+(`references/decision-record.md`). No such decision means **soft**, by one of the first two patterns
+below. `hard` exists only when a decision declares it, and that decision names the dependents it
+removes: the rows that reference the entity and go with it in the same call, through their own package
+when they have one (an `ON DELETE CASCADE` skips that package — the decision says so when the cascade
+is what removes them). A hard delete takes the §7 guard and is refused only while a row **other than
+the declared dependents** still references the row.
 
 - **Soft delete via flag:** catalogs carry `active_flag` ('Y'/'N'); queries filter `active_flag='Y'`. Inactivation is blocked while referenced. The UI half of that agreement — which value a switch or checkbox stores — is declared once in shared components, not per item (`ui-contracts.md` §10).
 - **Soft delete via audit columns:** transactional rows carry `cancelled_at`/`cancelled_by`/`cancel_reason`; queries filter `cancelled_at IS NULL`. Preserves history.

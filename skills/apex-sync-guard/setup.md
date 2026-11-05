@@ -22,7 +22,7 @@ Committed at the **project repo root**. Everything the guard needs to know about
 - `testUser` / `runtimeUrl` (optional) — read by **apex-sentinel**, not by the guard: the runtime app's test user and its URL, so a verification run doesn't rediscover them. Both are ordinary config; the password is **not** and never belongs in this file, which is committed (see `skills/apex-sentinel/setup.md` §2).
 - `uiGate`, `securityGate` (optional, `true`/`false`, default `false`) — read by the orchestrator, not by the guard: make **apex-ux**'s UI gate and **apex-security**'s Security gate required for the app (`framework/GATES.md`). Opt-in until 1.0.0. The guard checks only that they are booleans.
 - `publicPages` (optional, an array of page numbers) and `lowPrivUser` (optional, a user name) — read by **apex-security**, not by the guard: the app's public pages besides the login page, each also carrying a `public page review: <reason>` comment in its `.apx`; and a test user without the app's roles, its password in `$APEX_TEST_PASSWORD_LOW[_<ALIAS>[_<ENV>]]` or the gitignored `.env`, never here. The guard checks only their types.
-- `evidenceDir` (optional, default `.apex-evidence`) — where a gate run given `--task <id>` also writes its JSON result (`<evidenceDir>/<id>/sync-<appAlias>-<operation>.json`). Created with a `.gitignore` of `*`, so evidence is never committed by accident; every run also leaves `.git/apex-sync/<appAlias>/last-<operation>.json`.
+- `evidenceDir` (optional, default `.apex-evidence`) — where a gate run given `--task <id>` also writes its JSON result (`<evidenceDir>/<id>/sync-<appAlias>[.<env>]-<operation>.json`). Created with a `.gitignore` of `*`, so evidence is never committed by accident; every run also leaves `.git/apex-sync/<appAlias>/last-<operation>.json`.
 
 **Several apps in one repo.** A workspace often holds more than one live app, and one repo can carry all of them. List them in `apps[]`; the top-level `apexlangDir`, `sqlclConnection`, `ignorePaths`, `testUser`, `runtimeUrl`, `uiGate`, `securityGate`, `publicPages` and `lowPrivUser` are then defaults that each app may override (`ignorePaths` is replaced, never merged), and `evidenceDir` stays repo-wide:
 
@@ -84,7 +84,7 @@ Layer 2 on top of process discipline: a `PreToolUse` hook that blocks an import 
 
 The matcher names **both** shell tools — `Bash|PowerShell` — because Claude Code exposes them as two separate tools (`PowerShell` is not an alias of `Bash`, so a `Bash`-only matcher never fires on a Windows-native session). Widening it is safe precisely because the hook is **shell-agnostic**: both tools carry the same `tool_input.command` field, and the hook reads that text and pattern-matches it. It executes nothing from the caller's shell, so there is no shell syntax for it to get wrong. A matcher of that shape (letters and pipes only) is compared by **exact tool name**, not as a loose regex — it matches those two tools and nothing else.
 
-**Installed as a plugin?** Nothing to do — the plugin registers the hook itself (repo-root `hooks/hooks.json`, resolved via `${CLAUDE_PLUGIN_ROOT}`). It is safe globally: in a repo without `apex-sync.json` (or outside a git repo) the hook exits 0 and polices nothing.
+**Installed as a plugin?** Nothing to do — the plugin registers the hook itself (repo-root `hooks/hooks.json`, resolved via `${CLAUDE_PLUGIN_ROOT}`). It is safe globally for imports: in a repo without `apex-sync.json` (or outside a git repo) the hook does not police `apex import`, `apex export` or the deploy script — it exits 0, so that repo is **unguarded until it is wired** (§1; `apex-sync-check.sh apps` and `doctor` exit 2 there). It is not fully inert: in a git repo without the file it still refuses a `cd` to a directory computed at run time (`cd $B/x`), which is a false positive when nothing imports; use a literal path.
 
 **Running from a local clone / symlinks?** Register it in the **project's** `.claude/settings.json`, with the absolute path to *your* clone:
 
@@ -127,6 +127,16 @@ Known trade-off: the hook matches the command **text**. A command that only *men
 The opposite limit is a declared gap: an import the command text does not show — `sql @script.sql` whose script imports, a wrapper script under another name, an MCP tool, a path held in a variable — never reaches the pattern match. There the check script is the whole protocol.
 
 Other agents (Codex, opencode, …) don't get the hook — for them the wrapper script IS the protocol; `AGENTS.md` in this repo instructs loading the skill before any import/export.
+
+### Skipping a delivery gate is the user's call (P9)
+
+`delivery.py --skip <gate>:<reason>` records any of the six gates as `required: false`; the script cannot tell the user from the agent (same uid), so the only real authority is the permission system. Ask before each such run, in the project's `.claude/settings.json`:
+
+```json
+{ "permissions": { "ask": [ "Bash(*delivery.py*--s*)", "PowerShell(*delivery.py*--s*)" ] } }
+```
+
+`--s*` is deliberate: argparse accepts `--sk` and `--skip=…` as `--skip`, so a pattern on the full flag name is bypassed by an abbreviation (a prompt on a stray `--s…` costs one confirmation). The rule reads the command text, like the hook: a run that does not show `delivery.py` or `--skip` there (a wrapper script, a variable) is not covered, and other agents have no permission system. **Risk** without it: an agent can turn a FAIL or a missing gate into `NOT_RUN` and still exit 0 (the manifest and stderr record it as `excludedBy: skip`). **Rollback**: remove the rule. There is no delivery profile to set: `securityGate: true` and `uiGate: true` at the top level of `apex-sync.json` already is the profile that requires both gates (an app in `apps[]` may override either).
 
 ## 4. Smoke test the wiring
 

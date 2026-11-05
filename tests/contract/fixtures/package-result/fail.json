@@ -1,0 +1,103 @@
+{
+  "kind": "package-result",
+  "schemaVersion": 1,
+  "status": "FAIL",
+  "reasons": [
+    {
+      "code": "PACKAGE_CRITERIA_FAILED",
+      "message": "2 package(s) and 3 procedure call(s) looked up in HR; 2 finding(s)"
+    }
+  ],
+  "app": {
+    "appId": 100,
+    "appAlias": "hr"
+  },
+  "context": {
+    "task": "T-42",
+    "repo": {
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "dirty": false
+    },
+    "frameworkVersion": "0.7.1",
+    "timestamp": "2026-11-04T13:00:00Z",
+    "producer": {
+      "skill": "apex-sentinel",
+      "method": "tool"
+    },
+    "target": {
+      "connectionName": "dev_hr"
+    }
+  },
+  "database": {
+    "owner": "HR",
+    "sessionUser": "HR"
+  },
+  "files": [
+    "apex/apexlang/hr/pages/03-page-employee-form.apx",
+    "apex/apexlang/hr/pages/04-page-absence-resolve.apx"
+  ],
+  "unparsed": [],
+  "criteria": [
+    {
+      "id": "PKG-EXISTS",
+      "status": "PASS",
+      "findings": []
+    },
+    {
+      "id": "PKG-COMPILED",
+      "status": "FAIL",
+      "findings": [
+        {
+          "package": "PKG_EMPLOYEES",
+          "detail": "PACKAGE BODY 41:7 PLS-00201: identifier 'HR_EMPLOYEEZ' must be declared"
+        }
+      ]
+    },
+    {
+      "id": "PKG-PROC-EXISTS",
+      "status": "FAIL",
+      "findings": [
+        {
+          "package": "PKG_ABSENCES",
+          "procedure": "APROVE",
+          "path": "apex/apexlang/hr/pages/04-page-absence-resolve.apx",
+          "line": 124,
+          "detail": "not declared in the package specification"
+        }
+      ]
+    }
+  ],
+  "advisories": [],
+  "evidence": [
+    {
+      "kind": "sql",
+      "statement": "select 'pkgchk|ctx|' || sys_context('USERENV','SESSION_USER') || '|' || nvl((select owner from apex_applications where application_id = 100), '-') from dual;",
+      "exitCode": 0,
+      "result": "1 row(s)"
+    },
+    {
+      "kind": "sql",
+      "statement": "select 'pkgchk|obj|' || object_name || '|' || object_type || '|' || status from all_objects where owner = (select owner from apex_applications where application_id = 100) and object_type in ('PACKAGE','PACKAGE BODY') and object_name in ('PKG_EMPLOYEES','PKG_SECTORS');",
+      "exitCode": 0,
+      "result": "4 row(s)"
+    },
+    {
+      "kind": "sql",
+      "statement": "select 'pkgchk|err|' || name || '|' || type || '|' || line || ':' || position || '|' || substr(replace(replace(text, chr(10), ' '), chr(13), ' '), 1, 160) from all_errors where owner = (select owner from apex_applications where application_id = 100) and type in ('PACKAGE','PACKAGE BODY') and name in ('PKG_EMPLOYEES','PKG_SECTORS') and attribute = 'ERROR' order by name, type, sequence;",
+      "exitCode": 0,
+      "result": "1 row(s)"
+    },
+    {
+      "kind": "sql",
+      "statement": "select 'pkgchk|proc|' || object_name || '|' || procedure_name from all_procedures where owner = (select owner from apex_applications where application_id = 100) and object_type = 'PACKAGE' and procedure_name is not null and object_name in ('PKG_EMPLOYEES','PKG_SECTORS');",
+      "exitCode": 0,
+      "result": "7 row(s)"
+    },
+    {
+      "kind": "sql",
+      "statement": "select 'pkgchk|syn|' || synonym_name || '|' || table_owner || '.' || table_name || nvl2(db_link, '@' || db_link, '') from all_synonyms where owner in ((select owner from apex_applications where application_id = 100), 'PUBLIC') and synonym_name in ('PKG_EMPLOYEES','PKG_SECTORS');",
+      "exitCode": 0,
+      "result": "0 row(s)"
+    }
+  ]
+}

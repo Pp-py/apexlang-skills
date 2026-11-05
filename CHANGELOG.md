@@ -1,5 +1,216 @@
 # Changelog
 
+## Unreleased
+
+The changes of an external audit of 0.7.1: the aggregator reads
+less than it used to trust, a seventh gate (Package) exists, and a set of recipes, criteria and
+documents were corrected. Several behaviors change for the same inputs (below). Nothing here is
+live-verified: every new script was tested with SQLcl and the browser stubbed, and the live
+protocols (`tests/live/README.md` L6 and L7) are written, not run.
+
+**Version classification is the owner's call.** `framework/CONTRACTS.md` says a change to the frozen
+interface is a minor release (0.8.0); 0.7.1 shipped a `delivery.py` behavior change as a patch under
+"Behavior changes". This section adds interface (new flag, script, config key, result path) and changes
+what the same inputs produce, so it reads as a minor. No version was bumped and no tag made.
+
+### Behavior changes — read before upgrading
+
+**apexlang-delivery (`delivery.py`)**
+- **`jsonschema` is required.** Without it, or without `framework/schemas/`, `delivery.py` stops
+  `BLOCKED (NO_JSONSCHEMA)` / `BLOCKED (NO_SCHEMAS)`, exit 2, and writes no manifest. It no longer
+  falls back to its own structural check, so the 0.7.1 sentence "Without `jsonschema`, nothing changes:
+  the structural check runs" is no longer true. Who notices: a skill copied without `jsonschema` or
+  without `framework/schemas/`, and any pipeline that ran `delivery.py` on a bare interpreter. Install
+  with `apt install python3-jsonschema` or `python -m pip install jsonschema`. The manifest always
+  writes `schemaCheck: "jsonschema"`; the stable schema's enum still lists `"structural"` so manifests
+  written by 0.7.1 and earlier validate.
+- **A result of another destination reads NOT_RUN, "misfiled".** A valid, fresh result whose
+  `operation` (sync), `scope` (security, ui), `app.appAlias`, or, for sync, runtime, package and the
+  runtime scopes of security and ui, `app.environment` (absent only without `--env`) or `app.appId`
+  (compared only when both the result and `apex-sync.json` carry one) belongs to another destination
+  used to be read as this destination's PASS. It is now NOT_RUN (exit 4; BLOCKED or UNKNOWN with
+  `--exit`). Not compared: the architecture decision (it is the task's), static security and ui scopes
+  (shared between environments), and the `runtimeUrl` host. This checks consistency, not authenticity:
+  results are not signed.
+- **`--page` is required under `uiGate`.** With `"uiGate": true`, `delivery.py --page <page>[:dialog]`
+  (repeatable, once each) declares every page the change touched; `<page>` is the part of
+  `ui-<key>-runtime-<page>.json`. With no `--page` the UI gate is NOT_RUN, naming how to declare pages,
+  where one runtime ui-result PASS used to be enough whichever page it covered. The gate reads exactly
+  that file, valid and fresh, and the result's own `runtimeUrl` must name that page, else NOT_RUN
+  "misfiled". `:dialog` also needs `UX-DIALOG-FOCUS` PASS in it. Other `ui-<key>-runtime-*.json` files
+  still count in the worst status. `--skip ui:<reason>` still skips the whole gate and wins over
+  `--page`; there is no per-page skip and no manifest `scope`. A repeated or malformed `--page` stops
+  `BLOCKED (BAD_PAGE)`.
+- **`record-sync` is required by the Runtime gate.** Runtime now also reads
+  `sync-<key>-record-sync.json` and cites both results in the manifest. A task that passed with
+  `check-import` and a runtime result but no `record-sync` reads NOT_RUN (exit 4) on Runtime; so does one
+  whose runtime verdict's `context.timestamp` is earlier than the `record-sync`'s (equal is in order, 1 s
+  resolution; absent or unparseable is UNKNOWN), and one whose `record-sync` is of another operation,
+  app, environment, task or tree. A `record-sync` run again after the walkthrough was written makes that
+  verdict NOT_RUN: write it again. A task with no import needs `--skip runtime:<reason>` or a no-op
+  `record-sync` (basis `builder-unchanged`). The Sync gate is unchanged (`check-import` alone), and
+  `--exit runtime:<code>` and the single-result contrast now speak for `runtime-<key>.json` only. A
+  `record-sync` PASS does not prove the import ran, nor tell it from an export.
+- **Every manifest now lists the `package` gate**, between `validation` and `sync`: `required: false`,
+  `excludedBy: "config"` with a reason, unless the app sets `packageGate`. A validator that uses a 0.7.x
+  copy of `verification-manifest.schema.json` **rejects** these manifests (the `gate` enum gains
+  `package`, `results[].kind` gains `package-result`, and `gate.excludedBy` is a new property under
+  `additionalProperties: false`). Additive for the schema, not for a strict reader: update the copy with
+  the plugin.
+- **stderr.** `delivery: not evaluated: <gate> (<config|skip>), … - not a statement about them` is
+  printed on every outcome and now names `package (config)` for each app without `packageGate`; a script
+  that greps the old line must be updated. With no `apex-sync.json`, one more line says so
+  (`apex-sync.json not found: Sync, Validation and Runtime cannot PASS; run apex-sync-check.sh apps`);
+  status and exit code (4) are unchanged. The full opt-in profile is `packageGate`, `securityGate` and
+  `uiGate` all `true` at the top of `apex-sync.json`.
+
+**Other scripts and criteria**
+- **`evidence.py write` refuses a contradictory `appId`.** A draft whose `app.appId` contradicts the one
+  in `apex-sync.json` (the environment's over the app's) exits 2 and writes nothing; before, the draft's
+  value overrode the config's and the result was written with a PASS that contradicted it. A draft
+  `appId` is still kept when the config has none.
+- **OO-2 is retired from `skills/apex-ux/oracle-owned.json`.** A dialog that fails only `focusReturns` on
+  APEX 26.2 now gives `UX-DIALOG-FOCUS` FAIL; it was an advisory (`UX-ORACLE-OWNED`) and PASS. The
+  version comparison stays exact (`26.2.0` does not match `26.2`). Who notices: the absences example and
+  any app with the refresh-on-close dialog pattern (`apexafterclosedialog` refreshing the opener's region)
+  can now FAIL intermittently on 26.2. A new entry in that list must cite a minimal reproduction with a
+  negative control and the version measured. Not re-measured here.
+- **`sec-probe.py --anon` reads APEX's error page as UNKNOWN.** The page that keeps the requested page id
+  (class `a-Error-back` or `t-Alert-errorTitle`, a dialog URL with no session) used to read as FAIL (served);
+  it is UNKNOWN until its HTML is measured. A served page with a hidden `#APEX_ERROR_MESSAGE` is still FAIL.
+  Whether stock APEX serves that page for a dialog URL with no session is unmeasured.
+- **`FORM-SOFT-DELETE` applies only to soft retention.** Retention is a decision declared in the
+  `architecture-result` (a `rule` decision whose subject begins `retention:`); none means soft, as before.
+  With a declared hard retention `FORM-SOFT-DELETE` is NOT_RUN and the new `FORM-HARD-DELETE` applies.
+  `FORM-REFUSED-SUBMIT` and `MODAL-REFUSED-SUBMIT` now also require that the same form or dialog accepts
+  the corrected values exactly once, and a submit control left disabled after a server error is a FAIL of
+  `MODAL-REFUSED-SUBMIT`.
+- **`BROWSE-FACET-COUNT` is redefined.** It compares the region's **total** (its own count text) with the
+  SQL count of the predicate, for a facet value strictly between 0 and the baseline total and for an AND
+  across two groups; rendered rows alone never satisfy it, and a page with no count text and more than one
+  page of data is NOT_RUN. Before, "the count dropped" was enough.
+
+### Added
+
+- **The Package gate** (seventh gate; result kind `package-result`; owner apex-sentinel; opt-in per app
+  with `packageGate`, top-level or per app, until 1.0.0). Order: Architecture → build → Validation →
+  **Package** → Sync → import → `record-sync` → Runtime → Security → UI.
+  `skills/apex-sentinel/scripts/pkg-check.py` (269 lines) reads the app's saved SQLcl connection with
+  read-only `SELECT`s (`apex_applications`, `ALL_OBJECTS`, `ALL_ERRORS`, `ALL_PROCEDURES`,
+  `ALL_SYNONYMS`) and looks up the packages and procedures an `.apx` names: `invokeApi` processes,
+  workflow activities and named-notation calls inside sql/plsql code blocks. It never runs DDL or a
+  recompile, and may read a `protected` environment. Criteria `PKG-EXISTS`, `PKG-COMPILED`,
+  `PKG-PROC-EXISTS`; a PASS needs all three. Absent object or non-empty `ALL_ERRORS` is FAIL; INVALID
+  with no visible error, a package not visible to the session user, a synonym (DB link included), an
+  unresolved code-block call, a set `invoke.owner`, a remote `source.location`, an unknown `invoke.type`
+  and a parsing schema the source changes are UNKNOWN; zero pairs is `BLOCKED (NO_PAIRS)`, an app not
+  visible to the connection (a first import) `BLOCKED (APP_NOT_VISIBLE)`. Synonyms are not followed: a
+  call to a shared or Oracle package by public synonym is UNKNOWN until `--skip package:<reason>`.
+  `delivery.py` integrates it with the same identity table, `--skip package:<reason>` and
+  `--exit package:<code>`. Docs: GATES.md (column, order, section), `checks/package.md`, the
+  apex-sentinel and apexlang-delivery skills, setup.md. GAP-4 is **mitigated, not closed**: the SQL has
+  never met an Oracle database (live L7 is written, not run).
+- `framework/schemas/package-result.schema.json` (experimental, 105 lines). `apx.code_blocks()` (extracted
+  from `plsql-scan.py`, same behavior) and `result.RE_CONN` in the core.
+- **Recipe** `apexlang-architecture/recipes/attachments-to-package.md` (upload, replace, preview,
+  download through the owning package; keep, replace, remove, cancel). Its two thin `executeCode`
+  wrappers are **NOT VALIDATED** and recorded as KC-9 in `CAPABILITIES.md`. `back-end-conventions.md`
+  §4 defines "Unit of work" once and the nine recipes that write state it in one line; §6 makes
+  retention a declared decision. Two recipes gain one sentence each (`dashboard-kpis-charts`: a time
+  series orders by the date key; `modal-crud-to-package`: re-enable a disabled submit on server errors).
+  The recipes are now 14.
+- **Criteria.** apex-sentinel: `MODAL-NO-SESSION` (a second, login-less `pw.sh` session),
+  `DASH-CHART-ORDER` (a label that repeats or is not drawn is UNKNOWN), `FORM-HARD-DELETE`,
+  `BROWSE-SEARCH-STATES`, `SPLIT-EMPTY-RETURN`, `SPLIT-PAGE-RECONCILES`, and the `PKG-*` ones. Each
+  criterion about a feature the page lacks is recorded `required: false`, NOT_RUN, with a
+  `notApplicableReason`. apex-ux, all ADVISE, no existing severity changed: `UX-NAME-LANGUAGE`,
+  `UXDASH-CHART-SERIES`, `UXBRW-SEARCH-STATES`; `UX-FOCUS-VISIBLE` adds 3:1 (WCAG 1.4.11);
+  `UX-REFLOW` and `UX-TARGET-SIZE` are clarified; three data-entry rows are marked "card text only".
+  apex-security, ADVISE: `SEC-UPLOAD-SERVER-RULES`, and `SEC-DOWNLOAD-AUTHZ` extended to a stored file
+  served per record.
+- **Manual procedure** `skills/apex-ux/references/by-hand.md`: three read-only DOM snippets (reflow,
+  accessible names, live regions) for `pw.sh eval`, plus a `run-code` wrapper for a dialog's iframe. The
+  snippets ran once in a real Chrome through playwright-core against a local fixture; not through
+  `pw.sh`, not on an APEX app. Reflow, focus contrast and accessible-name language remain unbuilt in
+  `ux-check.py` (GAP-13).
+- **Activation, documented.** apexlang-delivery has a step 0 "Preflight" (`apex-sync-check.sh apps`, then
+  `doctor`; with no `apex-sync.json`, stop and ask for the values, never invent them); apex-sync-guard has
+  a red flag for importing or exporting in a repo with no `apex-sync.json`. `setup.md` documents a
+  permission `ask` rule on `delivery.py * --skip` as the authority for skipping a gate (P9). Live
+  protocol L6 (activation, bounded to L6a/b/c, n = 3) and L7 (Package gate) in `tests/live/README.md`:
+  written, not run.
+- `framework/CAPABILITIES.md`: §Updating Oracle's skills (a six-step procedure that compares git trees
+  with `git rev-parse <commit>:apex`), KC-9, GAP-11 to GAP-13, and Recorded runs rows. One of them records
+  a read-only check made with network access on 2026-11-04: `apex/` is the same tree (`860fd38c`) at the
+  lock `014cdb2` and at oracle/skills `0779f03`, 93/93 anchors at each, and the 12 newer commits touch only
+  `oci/`. It is not the owner's verification of the lock: `oracle-skills.lock.json` is unchanged.
+
+### Frozen interface: additions only
+
+- `delivery.py --page <page>[:dialog]` (repeatable); new stop reasons `NO_JSONSCHEMA` and `BAD_PAGE`.
+- New script `skills/apex-sentinel/scripts/pkg-check.py [--app <alias>] [--env <name>] [--task <id>]
+  <file-or-dir>…`, exit 0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN; environment variables `SQLCL_BIN` and
+  `PKG_CHECK_TIMEOUT`.
+- New config key `packageGate` (boolean, top-level default or per app), accepted by the readers of
+  `apex-sync.json` that list keys (`sync-config.sh`, with a boolean check, and `pw.sh`); `result.py` needed no change.
+- New result path `<evidenceDir>/<task>/package-<alias>[.<env>].json`, kind `package-result`.
+- `verification-manifest` (stable): `gate` enum `package`, `results[].kind` `package-result`, the optional
+  property `gate.excludedBy` (`config` | `skip`), and two rules appended at the end of `$defs/gate/allOf`
+  (one for `excludedBy`, one for a Package PASS citing only a `package-result`), so the rule indexes the
+  negatives cite did not move. The rule "a gate with its own producer PASSes on that producer's result
+  file" now covers `package`. Optional properties and new rules only; see the first Behavior change for
+  what a strict reader sees. `STATUSES` and `structural()` are gone from `delivery.py` (not interface).
+- `CONTRACTS.md` also records `[.<env>]` in the result paths of sync and runtime, `evidence.py write`'s
+  refusal, and `delivery.py`'s full usage line.
+
+### Fixed
+
+- **Documentary drift.** `PRINCIPLES.md` P8 says five minutes for the sync marker (the guard's TTL), and
+  `surface.py` now fails a document that gives the marker another figure; P2 says `result.py` is the third
+  reader that `config-parity.sh` holds equal (it still said "does not cover yet", which 0.7.1 had made false); `CONTRACTS.md` and `setup.md` carry `[.<env>]` in result
+  paths and `_<ENV>` in the test-user variables; `README.md` and `setup.md` no longer say the hook "polices
+  nothing" without `apex-sync.json` (it polices no import there, and can still refuse a `cd` to a path
+  computed at run time); `tests/live/README.md` L2 says five rows, as `setup.md` §4 does; `README.md` says
+  14 recipes.
+- **The structural fallback passed 55 of 74 results (as measured in the audit) that the schemas reject** (a PASS manifest, exit 0),
+  across all five result kinds, and rejected valid documents (a PASS with an optional criterion in FAIL, a
+  criterion in BLOCKED or UNKNOWN). It is gone with the fallback.
+- `delivery.py`'s Runtime hint names `apex-sync-check.sh record-sync` and says the walkthrough comes after it.
+- Criteria text: `UXENT-BULK-SCOPE` cites WCAG 3.3.4 for the confirmation and keeps the count
+  as a repo convention; `UXENT-WIZARD` also cites `recipes/wizard-multi-step.md`; `criteria/README.md` and the
+  skill say `('x')` without a suffix is an implemented region.
+
+### Tests and CI
+
+- New suite `tests/integration/pkg-check.sh` (101 assertions) in the CI integration job, Ubuntu and
+  Windows. The CI integration job installs `jsonschema` on both legs (apt on Ubuntu; pip into the
+  interpreter the suites pick on Windows). `delivery.sh` replaces its structural-path cases with
+  `NO_JSONSCHEMA` ones (a stub `jsonschema.py` next to the copied `delivery.py`) and exits 2 itself when
+  `jsonschema` is missing.
+- Measured on the working tree with `bash tests/contract/run.sh` and the integration suites that run
+  outside it, all rc 0, 0 failed: sync-guard-e2e 343 (0.7.1: 325), pw-wrapper-smoke 67, config-parity 68
+  (63), evidence 51 (45), arch-scan 11, ux-scan 9, ux-check 41 (30), sec-scan 15, plsql-scan 13, sec-probe 34
+  (30), secrets-scan 8, pkg-check 101 (new), delivery 325 (64), ci-example 13; the contract tier's schemas,
+  fixtures, negatives and emitted results 153 and `surface.py` 31. The 0.7.1 figures are the baseline
+  recorded before the changes. `tests/contract/surface.py` gains checks for the marker minutes, the
+  unit-of-work sentence, `page_name` parity between `ux-check.py` and `delivery.py`, `result.py`'s
+  connection-name pattern, `delivery.py`'s and `pkg-check.py`'s usage in `CONTRACTS.md`, and recipes
+  referenced by the skills.
+- Fixtures and negatives: `package-result` (3 fixtures, 22 negatives), `partial.json`, `pass-package.json`
+  and `pass-record-sync.json` for the manifest, `valid-package-gate` for config parity, an own-dialog
+  fixture for `ux-check`, and `pkg-check/` canned rows. `sync-guard-e2e` gains cases for `packageGate` in the
+  config readers; `evidence.sh` for the `appId` refusal; `sec-probe.sh` for the error page; `ux-check.sh` for OO-2.
+- `tests/upstream/citations.md` gains 7 anchors (now 100); `verify-citations.sh` at the installed lock
+  passes 100/100 (offline, 2026-11-05).
+
+### Not verified
+
+- Nothing in this section ran against a real SQLcl, APEX instance or Oracle database. The Package gate's
+  SQL (L7), the activation of the gates by an agent (L6), the two attachments wrappers (KC-9), the
+  `by-hand.md` snippets through `pw.sh`, and OO-2's cause on APEX 26.2 are unmeasured.
+- GAP-11 (the UI gate trusts the caller's list of pages), GAP-12 (record-sync order is a timestamp, not an
+  observation) and GAP-13 (no automatic reflow, focus-contrast or name-language probe) are declared, not closed.
+
 ## 0.7.1 — 2026-10-14
 
 A documentary audit of 0.7.0, and the decisions it forced. No gate changes its rules; one

@@ -26,7 +26,7 @@
 RE_APP_ID='^[1-9][0-9]{0,9}$'
 RE_APP_ALIAS='^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
 RE_CONNECTION='^[^/@[:space:]\"'"'"']{1,128}$'   # a saved-connection NAME: never user/password@host
-APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl|uiGate|securityGate|publicPages|lowPrivUser|environments'
+APP_KEYS='appId|appAlias|apexlangDir|sqlclConnection|ignorePaths|testUser|runtimeUrl|uiGate|securityGate|packageGate|publicPages|lowPrivUser|environments'
 # An environment of an app (R-1): its own Builder, runtime and test user. How many and
 # what they are called is each project's choice; a name follows the alias pattern.
 ENV_KEYS='sqlclConnection|appId|runtimeUrl|testUser|protected'
@@ -212,9 +212,9 @@ cfg_app() {  # $1 = JSON path of the app object; appends one app or records erro
   cfg_string "$at" runtimeUrl "$label"; url=$CS
   [[ "$url" != *session=* ]] || cfg_err "$label: runtimeUrl must not carry a session token (session=…): the file is committed"
   cfg_string "$at" testUser "$label"; user=$CS
-  # uiGate, securityGate, publicPages, lowPrivUser: read by apex-ux / apex-security and the orchestrator, not by
+  # uiGate, securityGate, packageGate, publicPages, lowPrivUser: read by apex-ux / apex-security / apex-sentinel and the orchestrator, not by
   # the guard; only their types are checked here, so a typo blocks instead of passing silently
-  for k in uiGate securityGate; do
+  for k in uiGate securityGate packageGate; do
     cfg_get "$at.$k"
     [[ -z "$CT" || "$CT" == boolean ]] || cfg_err "$label: $k must be true or false (got a $CT)"
   done
@@ -393,7 +393,7 @@ cfg_load() {
     done
   fi
   if [[ "$t" == array ]]; then          # the top-level default under apps[]; one app's own is checked above
-    for k in uiGate securityGate; do
+    for k in uiGate securityGate packageGate; do
       cfg_get "\$.$k"
       [[ -z "$CT" || "$CT" == boolean ]] || cfg_err "apex-sync.json: $k must be true or false (got a $CT)"
     done

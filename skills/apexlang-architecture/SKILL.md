@@ -52,9 +52,8 @@ DML in page processes                  All DML behind the package API
 
 ## Which file to open
 
-Read the **one** recipe the signal points to, plus its background file below. Two recipes at most,
-and only when the screen genuinely combines archetypes (a faceted list that opens a drawer). Never
-the whole folder "just in case".
+Read the **one** recipe the signal points to, plus its background file. Two recipes at most,
+and only when the screen combines archetypes (a faceted list that opens a drawer).
 
 **The screen writes** — what shape is the edit?
 
@@ -67,6 +66,7 @@ the whole folder "just in case".
 | The value has a validity period and history matters | vigency, rate/price history, `valid_from`/`valid_to`, append-only | `recipes/versioned-vigency-record.md` |
 | Input the user cannot give in one screen | wizard, multi-step, `@/wizard-modal-dialog`, draft row, staging | `recipes/wizard-multi-step.md` |
 | The verb is approve / reject / cancel, not "save" | workflow, state machine, status badge, transition guard | `recipes/workflow-state-transitions.md` |
+| A file attached to a record | upload, `fileUpload`, BLOB | `recipes/attachments-to-package.md` |
 
 **The screen only reads** — how does the user find the row?
 
@@ -83,7 +83,7 @@ the whole folder "just in case".
 
 | Read when | File |
 |---|---|
-| Anything writes | `back-end-conventions.md` — the write path, the validation ladder, `-20xxx` catalog, no COMMIT, views, soft delete, vigencies, version token |
+| Anything writes | `back-end-conventions.md` — the write path, validation, `-20xxx` catalog, no COMMIT, views, retention, vigencies, version token |
 | Anything reads | `ui-contracts.md` — state tokens, drill-down URLs, derived columns, `cards` vs `contentRow`, selection state, deviating from an official default |
 | The page has a UI to judge | `../apex-ux/SKILL.md` — criteria by ID and the static scan; this skill does not judge the UI |
 | An operation writes more than one table | `package-boundaries.md` — which layer owns it, the satellite and cross-entity tests, when NOT a package, the god-package threshold |
