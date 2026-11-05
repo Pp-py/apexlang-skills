@@ -1,79 +1,133 @@
-# GAP-14 — identity of the attempt and the producer (proposed design, 2026-11-05)
+# GAP-14 — identity of the attempt and the producer (design, revision 2, 2026-11-05)
 
-Status: **proposal, not built.** It needs the owner's decision on the points in "Decisions needed". The
-frozen interface (`framework/CONTRACTS.md`) allows additions only; everything below is additive.
+Status: **design to be accepted, not built.** Revision 2 answers the review of the first draft (blocking: the
+single-use run id, and a false schema claim). Build only after the owner accepts "Decisions needed", test first.
+The frozen interface (`framework/CONTRACTS.md`) allows additions only; what follows adds, and none of it is
+needed for the gates that work today.
 
 ## What is built, what is left
 
-Built (PR #38): an optional `context.runId` written by every producer from `APEX_RUN_ID` (and into
-Validation's `.exit.json`), and `delivery.py --run <id>`: a result of another run, or none, is `NOT_RUN`
-(stale). Fail-closed backstop: a gate whose command exited non-zero is never PASS.
+Built (PR #38): an optional `context.runId`, written by every producer from `APEX_RUN_ID` (and into
+Validation's `.exit.json`), and `delivery.py --run <id>`: a result of another run, or none, is `NOT_RUN`.
+Backstop: a gate whose command exited non-zero is never PASS.
 
-Left, from the 2026-11-05 reviews (reports 08 and 09):
+Left: **(A)** `--exit` speaks for a whole gate; **(B)** a producer that dies before writing leaves its previous
+file in the task dir. Not proposed, and left open on purpose: **(C)** detecting that one run id was used for two
+attempts (see "Out of scope").
 
-1. **Exit codes speak for the whole gate.** `--exit security:2` cannot say which of the four scopes (or which
-   UI page) failed. The aggregator can only turn an all-PASS gate into UNKNOWN.
-2. **A retry that dies before writing leaves the earlier result of the same run.** A producer that crashes or
-   times out leaves its previous file in the task dir. With the same `runId` it still reads as fresh.
-3. **A reused id is not detected.** Two attempts under one id are indistinguishable.
+## A. Exit per producer
 
-## Design
+`delivery.py --exit <gate>[/<producer>]:<code>`; the gate-only form keeps today's meaning.
 
-### A. A producer key (answers 1)
+### Producer keys
 
-The producer of a result is already named by its file: `security-<alias or key>-<scope>.json`
-(`scope` ∈ static, plsql, secrets, runtime), `ui-<alias>-static.json`, `ui-<key>-runtime-<page>.json`,
-`package-<key>.json`, `sync-<key>-<op>.json`. Define the **producer key** as the part after the gate:
-`security/runtime`, `ui/runtime-orders`. No new field in the results.
+| Gate | Producer keys | Result it speaks for |
+|---|---|---|
+| architecture | `architecture` | `architecture.json` |
+| validation | `validation` | the capture and its `.exit.json` |
+| package | `package` | `package-<key>.json` |
+| sync | `check-import` | `sync-<key>-check-import.json` |
+| runtime | `walkthrough`, `record-sync` | `runtime-<key>.json`; `sync-<key>-record-sync.json` |
+| security | `static`, `plsql`, `secrets`, `runtime` | `security-<alias>-<scope>.json`; `security-<key>-runtime.json` |
+| ui | `static`; `runtime-<page>` for every page declared with `--page` and every `ui-<key>-runtime-<page>.json` found | `ui-<alias>-static.json`; `ui-<key>-runtime-<page>.json` |
 
-`delivery.py --exit <gate>[/<producer>]:<code>` (additive; the gate-only form keeps today's meaning):
+Written `--exit security/runtime:2`, `--exit runtime/record-sync:1`, `--exit ui/runtime-orders:3`; the key
+after `/` is the one in the table, resolved with the app and environment already selected (`--app`, `--env`),
+so it names that app's file and the destination checks (misfiled, appId, environment) still run.
+A declared page is a recognized producer **even when its file is missing**: a producer that died without
+leaving a file is the case this exists for, so it must not turn into `BAD_EXIT`. A key not in the table for
+that gate is BLOCKED `BAD_EXIT`, naming the keys the gate has.
 
-- `security/runtime:2` with that scope's result PASS → that result reads UNKNOWN, naming the producer; the
-  other scopes keep their own verdicts.
-- The same producer FAIL keeps FAIL; a producer with no result and a non-zero exit reads UNKNOWN (BLOCKED for 2),
-  as the gate-level form does today.
-- An unknown producer key → BLOCKED `BAD_EXIT`, naming the producers that gate has.
+### Combining forms
 
-### B. A result is claimed before it is made (answers 2)
+- Global (`--exit security:2`) applies to every producer of the gate; a specific one adds a restriction for its
+  producer. **A specific exit 0 never neutralizes a global non-zero.**
+- The same key given twice with the same code is accepted; with different codes it is BLOCKED `BAD_EXIT`.
+- `runtime` today: the global exit speaks for the walkthrough alone, not for `record-sync`. That stays;
+  `runtime/record-sync:<code>` is the only way to report record-sync's exit, and it affects the order rule
+  (`after_record_sync`) only as its own result's status does: a record-sync that exited non-zero is UNKNOWN or
+  BLOCKED, never attributed to the walkthrough.
 
-At start, a producer that writes into a task dir moves its own destination file to `<name>.prev` and writes
-the new one atomically at the end. A producer that dies leaves no current file, so the gate reads `NOT_RUN`
-("not in the task"), never the previous attempt. `.prev` is evidence, never read by `delivery.py`.
+### Result × exit, per producer
 
-Cost: every producer touches its output path twice, and `evidence.py capture` must do the same for the
-capture and its `.exit.json`. Behavior changes only for a producer that did not finish.
+| The producer's result | exit 0 | exit that matches its status | any other non-zero exit |
+|---|---|---|---|
+| PASS | PASS | n/a | UNKNOWN: it ran and failed, the file is not its output |
+| FAIL / CONFLICT / BLOCKED / UNKNOWN | UNKNOWN (disagrees) | keeps its status | UNKNOWN (disagrees) |
+| missing, stale or misfiled | as today (NOT_RUN) | n/a | BLOCKED when the exit is 2, UNKNOWN otherwise (`ran_without`) |
+| invalid | UNKNOWN | UNKNOWN | UNKNOWN |
 
-### C. An id used once (answers 3)
+The gate's status stays the worst of its producers' statuses; severity (a FAIL stays FAIL) and the existing
+aggregation are unchanged, and each note names its producer (`security/runtime: ran (exit 2) but ...`).
+The gate-level backstop (all results PASS and the gate's exit non-zero → UNKNOWN) stays for the global form.
 
-`delivery.py` records in the manifest the `runId` and, per cited result, its `timestamp`. A second
-`delivery.py --run R` whose results are older than the first manifest of `R` for that task reads `UNKNOWN`
-("run R was already aggregated; start a new run"). This detects reuse after aggregation, not before it.
-Detection before aggregation would need a run registry; not proposed.
+## B. A result is invalidated before the work, and published as one unit
 
-## Compatibility
+Goal: for **every** producer, a run that dies after it started cannot leave the previous attempt's file readable
+as current. Delivered in stages (Security and UI first, since they have several producers), but GAP-14 is not
+closed until all producers are covered.
 
-- No schema change: `--exit` and the manifest gain nothing the schemas forbid (the manifest's `gates[].results[]`
-  already cite each file). The only new surface is the `<gate>/<producer>` syntax, the `.prev` file and the
-  `BAD_EXIT` message.
-- Without `--run` and without a producer-qualified `--exit`, behavior is unchanged except B.
-- `negatives.json` rules are cited by index: no new `allOf` rule is needed.
+1. **Where.** After the destination is resolved and validated (task id, app, key, path) and **before** the work
+   that can fail, the producer claims it: it moves the current file to `<name>.prev` (replace). If the move
+   fails the producer stops (BLOCKED `STATE_UNWRITABLE`, exit 2) and says so; it never continues as if the old
+   file had been invalidated. A producer that never starts leaves the old file: that case is for an external
+   exit (A) or a new run id (built), not for the producer.
+2. **Claim.** The claim is an exclusive create of `<name>.lock` (`O_EXCL`) holding the pid and the run id. A
+   second producer for the same destination finds it and refuses (BLOCKED, exit 2), naming the lock. A lock whose
+   pid no longer exists is replaced with a note; a lock that cannot be judged is left and reported. The lock is
+   removed on every exit path of the producer. This is local, one machine; two machines on one shared task dir
+   are out of scope and stated as such.
+3. **One unit.** A producer that writes a file plus metadata (`evidence.py capture`: the output and its
+   `.exit.json`) publishes the **metadata last**, and the metadata carries the output's sha256. A reader accepts
+   the pair only if the hash matches; output without metadata, or metadata whose hash differs, is not a result
+   (UNKNOWN, never PASS). Single-file results are written to a temporary file and renamed.
+4. **`.prev`.** One file, replaced by the next attempt: a temporary backup for diagnosis, **not** an audit
+   archive. References by path and hash to an overwritten `.prev` break. An archive, if wanted, is the evidence
+   dir's job (a timestamped copy by the orchestrator), not the producer's.
+5. **Sync.** The task-dir copies (`sync-<key>-<op>.json`) are evidence and are claimed like any result. The
+   guard's `.git/apex-sync/<alias>/last-<op>.json`, the `check-ok.*` markers and the `refs/apex-sync/` refs are
+   **not** touched: rotating evidence does not revoke a marker, and a marker's authority keeps coming from its own
+   TTL and the existing invariants. This section must be re-audited against `apex-sync-check.sh` before building.
+
+Expected outcomes, not promises of NOT_RUN everywhere: no file and no reported exit → NOT_RUN; a reported exit 2
+→ BLOCKED, and any other non-zero exit → UNKNOWN (A); a claim that failed → the producer's own BLOCKED.
+
+## Compatibility and schemas
+
+- **No schema change is needed or made.** The manifest keeps `results[]` references as `kind`, `path`, `sha256`
+  (`additionalProperties: false`), and no field is added to the results. The first draft's per-result timestamps
+  were dropped for that reason.
+- If a later revision wants a new manifest field, it is a schema evolution to be defined and tested: a validator
+  holding the old schema rejects it, so it needs the minor version and a migration note, not "additive".
+- New surface: the `<gate>/<producer>` syntax, `BAD_EXIT` messages, the `.prev` and `.lock` files, and the
+  metadata hash. Existing `negatives.json` rules (cited by index) are untouched.
+- Version: the interface change calls for **0.8.0** (`CONTRACTS.md`), with migration notes: producers now claim
+  their destination; a dead producer reads NOT_RUN instead of reusing a previous file.
 
 ## Tests (negatives first)
 
-- `--exit security/runtime:2`: runtime PASS → UNKNOWN naming `security/runtime`; static PASS stays PASS.
-- `--exit ui/runtime-billing:1`: only billing's page reads UNKNOWN.
-- A bad producer key → BLOCKED `BAD_EXIT`.
-- B: a producer killed after start leaves no current result; `delivery.py` reads NOT_RUN, not the old PASS.
-- C: a second aggregation of the same run id over older results → UNKNOWN; a new id → normal.
+- A: scopes independent (`security/runtime:2` with every scope PASS → only runtime UNKNOWN); two UI pages; a
+  declared page with no file; invalid keys; wrong app or environment; global and specific together (specific 0
+  vs global non-zero; duplicate contradictory); `runtime/record-sync` apart from the walkthrough; every row of
+  the matrix.
+- B: producer killed after the claim → no current file → NOT_RUN; failure to move the old file → BLOCKED and the
+  old file untouched; interruption between output and metadata, and between metadata and rename → never PASS;
+  output with a mismatched hash; existing `.prev`; a reader while writing; a second producer for one destination
+  (refused, then recoverable after the first ends or its pid is gone); read-only task dir.
+- Existing suites unchanged; a producer run with no claim support (old script version) still reads as today.
 
 ## Decisions needed
 
-1. Producer key syntax: `gate/producer` (proposed), or a separate flag.
-2. B changes every producer's write path: accept it, or limit it to the Security and UI producers (the
-   multi-producer gates) first.
-3. C: detect reuse after aggregation only (proposed), or build a run registry.
-4. Version: this and #38 change flags under 0.7.1 Unreleased; 0.8.0 per `CONTRACTS.md`, or a patch.
+1. Accept the table and precedence of A as written, or change them.
+2. B for all producers in stages (proposed), with the lock and the hash as specified, or a smaller first step.
+3. Version 0.8.0 and the migration notes (recommended).
 
-## Not covered
+## Out of scope (stays open in GAP-14)
 
-An identity per producer *instance* (two concurrent runs of one producer) and cross-machine runs.
+- **Detecting that one run id served two attempts.** Aggregation must stay idempotent: the skill asks for
+  `delivery.py` after every gate, so reading the same run again is normal and must give the same answer. Any
+  "consumed" state needs an explicit open/close of a run (who closes it, what happens after) and persistent
+  state with atomic writes; neither exists and a timestamp comparison (1-second resolution; Validation captures
+  have none) is not uniqueness. If wanted, it is its own design.
+- An identity per producer *instance* (two concurrent runs of one producer) beyond the local lock; cross-machine
+  runs.
