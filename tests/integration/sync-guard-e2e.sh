@@ -576,6 +576,11 @@ expect_out "its result records the basis and the new syncpoint"  "^PASS fresh-ch
 EV="$WORK/proj/.apex-evidence"
 expect     "--task: the result also goes to the evidence dir"    0 "$CHK" check-import --task T-1
 expect_out "under the task, with the task in its context"        '^PASS T-1$' rget "$EV/T-1/sync-demo-check-import.json" status context.task
+expect_out "no run id in the result without APEX_RUN_ID (GAP-14)" '^null$' rget "$EV/T-1/sync-demo-check-import.json" context.runId
+APEX_RUN_ID=R-3 "$CHK" check-import --task T-1 >/dev/null 2>&1 || true
+expect_out "APEX_RUN_ID is written to context.runId"             '^R-3$' rget "$EV/T-1/sync-demo-check-import.json" context.runId
+APEX_RUN_ID='bad id' "$CHK" check-import --task T-1 >/dev/null 2>&1 || true
+expect_out "an invalid APEX_RUN_ID is left out"                  '^null$' rget "$EV/T-1/sync-demo-check-import.json" context.runId
 expect_out "the evidence dir is created ignored"                 '^\*$' cat "$EV/.gitignore"
 expect_out_not "so the project repo stays clean"                 'apex-evidence' git status --porcelain
 expect     "a task id that would leave the evidence dir -> 2"    2 "$CHK" check-import --task ../x

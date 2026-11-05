@@ -90,6 +90,9 @@ def tree():
                 pass
 
 
+RE_RUN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")      # a run id (APEX_RUN_ID, delivery.py --run)
+
+
 def context(task, skill):
     head = git("rev-parse", "HEAD")
     repo = {"commit": head if head and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head) else None,
@@ -97,11 +100,15 @@ def context(task, skill):
     t = tree()
     if t:
         repo["tree"] = t
-    return {"task": task,
-            "repo": repo,
-            "frameworkVersion": FRAMEWORK_VERSION,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "producer": {"skill": skill, "method": "tool"}}
+    ctx = {"task": task,
+           "repo": repo,
+           "frameworkVersion": FRAMEWORK_VERSION,
+           "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "producer": {"skill": skill, "method": "tool"}}
+    run = os.environ.get("APEX_RUN_ID", "")
+    if RE_RUN.fullmatch(run):       # GAP-14: the attempt this result belongs to; an invalid id is left out, never guessed
+        ctx["runId"] = run
+    return ctx
 
 
 def target(app, task, env=None):

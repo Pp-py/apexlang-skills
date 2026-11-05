@@ -94,6 +94,11 @@ what the same inputs produce, so it reads as a minor. No version was bumped and 
   before the rows and a trailer after them are ignored. The check that the answer ended is unchanged: padded rows
   with no closing tag are still UNKNOWN. Seen live on a real database, not only on the stub; the invalid-compilation,
   privilege and synonym cases of that protocol were not exercised.
+- **A run id ties results to their attempt (GAP-14, partial).** Every producer writes the optional
+  `context.runId` from `APEX_RUN_ID` (a valid id only), and `delivery.py --run <id>` (default `$APEX_RUN_ID`) reads
+  only results of that run: another run, or none, is NOT_RUN (stale). A retry that fails on one scope no longer keeps
+  the other scopes' results from an earlier attempt. Without a run id nothing changes. Not covered: `--exit` is still
+  per gate, and Validation's raw captures carry no run id.
 - **`FORM-SOFT-DELETE` applies only to soft retention.** Retention is a decision declared in the
   `architecture-result` (a `rule` decision whose subject begins `retention:`); none means soft, as before.
   With a declared hard retention `FORM-SOFT-DELETE` is NOT_RUN and the new `FORM-HARD-DELETE` applies.
@@ -164,6 +169,7 @@ what the same inputs produce, so it reads as a minor. No version was bumped and 
 
 - `delivery.py --page <page>[:dialog]` (repeatable); new stop reasons `NO_JSONSCHEMA` and `BAD_PAGE`.
 - `sec-probe.py --auth-host <host[:port]>` (repeatable).
+- `delivery.py --run <id>` (default `$APEX_RUN_ID`), new stop reason `BAD_RUN`; optional `context.runId` in the result envelope, written from `APEX_RUN_ID`.
 - New script `skills/apex-sentinel/scripts/pkg-check.py [--app <alias>] [--env <name>] [--task <id>]
   <file-or-dir>…`, exit 0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN; environment variables `SQLCL_BIN` and
   `PKG_CHECK_TIMEOUT`.

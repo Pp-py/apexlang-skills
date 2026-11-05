@@ -853,6 +853,7 @@ result_json() {  # → RJ: the sync-result for the current R_* state; never fail
   d+="},"$'\n'
   d+="    \"frameworkVersion\": \"$FRAMEWORK_VERSION\","$'\n'
   now_iso; d+="    \"timestamp\": \"$ISO\","$'\n'
+  [[ "${APEX_RUN_ID:-}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] && d+="    \"runId\": \"$APEX_RUN_ID\","$'\n'     # GAP-14
   d+=$'    "producer": {"skill": "apex-sync-guard", "method": "tool"},\n'
   jstr "$CONN"; tgt="\"connectionName\": $J"
   [[ -n "$R_SQLCL_VERSION" ]] && tgt+=", \"sqlclVersion\": \"$R_SQLCL_VERSION\""

@@ -58,7 +58,7 @@ from urllib.parse import urlsplit
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "framework", "lib"))
-from result import RE_TASK, Stop, context, rel, runtime_target, scrub, tree  # noqa: E402
+from result import RE_RUN, RE_TASK, Stop, context, rel, runtime_target, scrub, tree  # noqa: E402
 
 SCHEMAS = os.path.join(HERE, "..", "..", "..", "framework", "schemas")
 ORDER = ["architecture", "validation", "package", "sync", "runtime", "security", "ui"]
@@ -172,8 +172,8 @@ def misfiled(doc, want):
 
 
 class Reader:
-    def __init__(self, task, task_dir, check):
-        self.task, self.dir, self.check, self.now = task, task_dir, check, tree()
+    def __init__(self, task, task_dir, check, run=None):
+        self.task, self.dir, self.check, self.now, self.run = task, task_dir, check, tree(), run
         self.doc = {}                      # file name -> the result, once valid, fresh and this destination's
 
     def result(self, name, kind, want=None, also=None):
@@ -195,7 +195,10 @@ class Reader:
             return "UNKNOWN", cite, f"{name}: invalid — {why}"
         ctx = doc["context"]
         then = ctx.get("repo", {}).get("tree")
+        got_run = ctx.get("runId")
         stale = (f"made for task {ctx.get('task')}" if ctx.get("task") != self.task
+                 else f"made in run {got_run}, this is run {self.run}" if self.run and got_run and got_run != self.run
+                 else f"records no run, this is run {self.run}" if self.run and not got_run
                  else "records no working tree" if not then
                  else "the working tree changed since" if then != self.now else "")
         if stale:
@@ -302,6 +305,8 @@ def main(argv):
     ap.add_argument("--env")
     ap.add_argument("--skip", action="append", default=[], metavar="GATE:REASON")
     ap.add_argument("--exit", action="append", default=[], metavar="GATE:CODE", dest="exits")
+    ap.add_argument("--run", default=os.environ.get("APEX_RUN_ID") or None, metavar="ID",
+                    help="read only the results written in this run (context.runId; default $APEX_RUN_ID): GAP-14")
     ap.add_argument("--page", action="append", default=[], metavar="PAGE[:dialog]",
                     help="a page the change touched, as in ui-<key>-runtime-<page>.json; :dialog if it opens a dialog")
     a = ap.parse_args(argv)
@@ -310,6 +315,10 @@ def main(argv):
     try:
         if not RE_TASK.match(a.task):
             raise Stop("BLOCKED", "BAD_TASK", f"--task must match {RE_TASK.pattern}")
+        if a.run is not None and not RE_RUN.fullmatch(a.run):
+            raise Stop("BLOCKED", "BAD_RUN", "--run (or APEX_RUN_ID) must be 1-64 letters, digits, '.', '_' or '-', starting with a letter or digit")
+        if a.run:
+            manifest["context"]["runId"] = a.run
         skips = {}
         for s in a.skip:
             g, sep, why = s.partition(":")
@@ -339,7 +348,7 @@ def main(argv):
                   file=sys.stderr)
         name, check = schema_checker()
         manifest["schemaCheck"] = name
-        reader = Reader(a.task, task_dir, check)
+        reader = Reader(a.task, task_dir, check, a.run)
         if not reader.now:
             raise Stop("UNKNOWN", "NO_TREE", "git cannot hash the working tree here: no result can be proven fresh")
         opt = {"package": "packageGate", "security": "securityGate", "ui": "uiGate"}

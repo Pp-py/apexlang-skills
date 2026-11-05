@@ -678,6 +678,34 @@ run "package: a result of another working tree → NOT_RUN (stale)" 4 "${PK[@]}"
 if says "package-hr.json: stale — the working tree changed since"; then ok "  ...stale, tree"; else bad "package: other tree"; fi
 stampm package-result/pass package-hr.json
 run "package: control — the PASS restored → PASS" 0 "${PK[@]}"
+# GAP-14: with --run <id> the aggregator reads only the results written in that run (context.runId, set from
+# APEX_RUN_ID by each producer); without it nothing changes
+run "run id: no --run, a result with a runId is read as before → PASS" 0 "${PK[@]}"
+stampm package-result/pass package-hr.json "d['context']['runId'] = 'R-1'"
+run "run id: no --run, a result with a runId is read as before → PASS" 0 "${PK[@]}"
+# every result of the task written in the one run R-1 (the fixtures of the other gates carry no run id)
+for f in "$T"/*.json; do "$PY" - "$f" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["context"]["runId"] = "R-1"
+json.dump(d, open(sys.argv[1], "w"))
+PY
+done
+run "run id: --run R-1 and every result carries R-1 → PASS, and the manifest records the run" 0 "${PK[@]}" --run R-1
+if q "d['context']['runId'] == 'R-1' and g['package']['status'] == 'PASS'"; then ok "  ...manifest context.runId is R-1"; else bad "run id: manifest does not record the run"; fi
+run "run id: --run R-2, the result is from R-1 → NOT_RUN (stale), naming both" 4 "${PK[@]}" --run R-2
+if says "package-hr.json: stale — made in run R-1, this is run R-2" && q "g['package']['status'] == 'NOT_RUN'"; then ok "  ...stale, naming both runs"; else bad "run id: other run not stale"; fi
+stampm package-result/pass package-hr.json
+run "run id: --run R-1, the result records no run → NOT_RUN (stale)" 4 "${PK[@]}" --run R-1
+if says "package-hr.json: stale — records no run, this is run R-1"; then ok "  ...stale, no run recorded"; else bad "run id: result with no run not stale"; fi
+# the producers write it: the python envelope and the guard's sync-result, from APEX_RUN_ID; an invalid id is left out
+got=$(APEX_RUN_ID=R-7 "$PY" -c "import sys; sys.path.insert(0, '$(dirname "$DLV")/../../../framework/lib'); from result import context; print(context('T-1', 'x').get('runId'))")
+if [[ "$got" == R-7 ]]; then ok "a producer's context carries APEX_RUN_ID"; else bad "context() lost the run id: $got"; fi
+got=$(APEX_RUN_ID='bad id' "$PY" -c "import sys; sys.path.insert(0, '$(dirname "$DLV")/../../../framework/lib'); from result import context; print(context('T-1', 'x').get('runId'))")
+if [[ "$got" == None ]]; then ok "an invalid APEX_RUN_ID is left out, not guessed"; else bad "an invalid run id was written: $got"; fi
+run "run id: --run with an id that is not one → BLOCKED (BAD_RUN)" 2 "${PK[@]}" --run 'bad id'
+if says "BAD_RUN"; then ok "  ...BAD_RUN named"; else bad "run id: BAD_RUN not named"; fi
+APEX_RUN_ID=R-9 run "run id: APEX_RUN_ID is the default of --run" 4 "${PK[@]}"
+if says "stale — records no run, this is run R-9"; then ok "  ...the environment names the run"; else bad "run id: env default"; fi
 # identity (C2's table): another app, another appId, another environment, or none at all → NOT_RUN "misfiled"
 neg "package-result of another app (fin, id 200)" package-hr.json package-result/pass "$(who fin 200)" "${PK[@]}"
 neg "package-result of hr with another appId" package-hr.json package-result/pass "$(who hr 999)" "${PK[@]}"
