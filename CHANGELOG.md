@@ -51,6 +51,11 @@ what the same inputs produce, so it reads as a minor. No version was bumped and 
   `record-sync` (basis `builder-unchanged`). The Sync gate is unchanged (`check-import` alone), and
   `--exit runtime:<code>` and the single-result contrast now speak for `runtime-<key>.json` only. A
   `record-sync` PASS does not prove the import ran, nor tell it from an export.
+- **A gate whose command exited non-zero is never PASS.** `--exit <gate>:<code>` with a code other than 0
+  turns a gate that would read PASS into UNKNOWN: a Validation capture of the same task and tree left by an
+  earlier run, or Security results and UI page results that every read PASS while the producer that just
+  failed left nothing (the run cannot be told apart from the earlier results). A FAIL keeps its severity.
+  Rerun the producers. Still not built: tying each result to the attempt and producer that wrote it (GAP-14).
 - **Every manifest now lists the `package` gate**, between `validation` and `sync`: `required: false`,
   `excludedBy: "config"` with a reason, unless the app sets `packageGate`. A validator that uses a 0.7.x
   copy of `verification-manifest.schema.json` **rejects** these manifests (the `gate` enum gains
@@ -79,6 +84,10 @@ what the same inputs produce, so it reads as a minor. No version was bumped and 
   (class `a-Error-back` or `t-Alert-errorTitle`, a dialog URL with no session) used to read as FAIL (served);
   it is UNKNOWN until its HTML is measured. A served page with a hidden `#APEX_ERROR_MESSAGE` is still FAIL.
   Whether stock APEX serves that page for a dialog URL with no session is unmeasured.
+- **`sec-probe.py --anon` no longer reads another host as a login.** A redirect to another host was PASS by
+  itself; it now needs a password field on the final page, a `/login` path, or the host named with the new
+  `--auth-host <host[:port]>` (repeatable); otherwise UNKNOWN, naming the host. A legitimate SSO whose page has
+  no password field must be declared.
 - **`FORM-SOFT-DELETE` applies only to soft retention.** Retention is a decision declared in the
   `architecture-result` (a `rule` decision whose subject begins `retention:`); none means soft, as before.
   With a declared hard retention `FORM-SOFT-DELETE` is NOT_RUN and the new `FORM-HARD-DELETE` applies.
@@ -148,6 +157,7 @@ what the same inputs produce, so it reads as a minor. No version was bumped and 
 ### Frozen interface: additions only
 
 - `delivery.py --page <page>[:dialog]` (repeatable); new stop reasons `NO_JSONSCHEMA` and `BAD_PAGE`.
+- `sec-probe.py --auth-host <host[:port]>` (repeatable).
 - New script `skills/apex-sentinel/scripts/pkg-check.py [--app <alias>] [--env <name>] [--task <id>]
   <file-or-dir>…`, exit 0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN; environment variables `SQLCL_BIN` and
   `PKG_CHECK_TIMEOUT`.
@@ -165,6 +175,8 @@ what the same inputs produce, so it reads as a minor. No version was bumped and 
 
 ### Fixed
 
+- `AGENTS.md` gives the loop with the opt-in Package check (`packageGate`) between validate and sync-check, and
+  `surface.py` fails an entry loop that omits it.
 - **Documentary drift.** `PRINCIPLES.md` P8 says five minutes for the sync marker (the guard's TTL), and
   `surface.py` now fails a document that gives the marker another figure; P2 says `result.py` is the third
   reader that `config-parity.sh` holds equal (it still said "does not cover yet", which 0.7.1 had made false); `CONTRACTS.md` and `setup.md` carry `[.<env>]` in result

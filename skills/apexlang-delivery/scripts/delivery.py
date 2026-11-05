@@ -35,7 +35,7 @@ fresh: made for this task, on the working tree as it is now. Invalid → UNKNOWN
 or misfiled (valid and fresh, but its operation, scope, app alias, environment or appId is
 another destination's) → NOT_RUN — unless --exit says the gate's command just ran: then a result it did not
 leave is BLOCKED when it exited 2 and UNKNOWN otherwise (GATES.md §The orchestration contract),
-and a single producer's exit code that disagrees with its result's status is UNKNOWN (for the
+and a single producer's exit code that disagrees with its result's status is UNKNOWN (so is a PASS, in any gate, whose command exited non-zero: results an earlier run left cannot absorb a failed one) (for the
 runtime gate, --exit speaks for runtime-<key>.json alone, not for record-sync). A gate's status is the worst of its results. Package, Security and UI are required
 when the app sets packageGate / securityGate / uiGate; --skip records any gate required: false, with why. A gate left out carries
 excludedBy (config: the app did not opt in; skip: --skip) and stderr names it: "not evaluated: ...".
@@ -359,6 +359,8 @@ def main(argv):
                     st, ev, note = validation(reader, list(dict.fromkeys([alias, key])))
                     if st == "NOT_RUN" and gate in exits:
                         st, note = ran_without(exits[gate]), f"the capture ran (exit {exits[gate]}) but {note}"
+                    elif st == "PASS" and exits.get(gate, 0) != 0:     # a capture left by an earlier run, a command that failed since
+                        st, note = "UNKNOWN", f"{note}, but its command exited {exits[gate]}"
                     entry["status"] = st
                     if ev:
                         entry["evidence"] = ev
@@ -400,6 +402,12 @@ def main(argv):
                                for i, (s, cite, note) in enumerate(got)]
                         if (len(got) == 1 or gate == "runtime") and got[0][0] in EXIT and EXIT[got[0][0]] != c and got[0][1]:
                             got[0] = ("UNKNOWN", got[0][1], f"{got[0][2]}, but its command exited {c}")
+                    if exits.get(gate, 0) != 0 and all(s == "PASS" for s, _, _ in got):
+                        # one exit code for the gate's producers (security has four, ui one per page): if every result
+                        # reads PASS, a producer that failed without leaving a result is indistinguishable from the
+                        # results an earlier run left. It cannot be PASS (R2-01, R2-02).
+                        got.append(("UNKNOWN", None, f"ran (exit {exits[gate]}) but every result reads PASS: a failed run cannot be "
+                                                     "told apart from the results an earlier run left; run the producers again"))
                     entry["status"] = worst(s for s, _, _ in got)
                     cites = [c for _, c, _ in got if c]
                     if cites:

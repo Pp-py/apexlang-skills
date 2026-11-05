@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """sec-probe — apex-security's runtime probes, through apex-sentinel's pw.sh (never a copy).
 
-Usage: python3 sec-probe.py [--app <alias>] [--env <name>] [--task <id>] [--anon <url>]... [--tamper] [--role <url>]... [--xss <token>]
+Usage: python3 sec-probe.py [--app <alias>] [--env <name>] [--task <id>] [--anon <url>]... [--tamper] [--role <url>]... [--xss <token>] [--auth-host <host[:port]>]...
 
 Run it after `pw.sh [--app X] [--env E] login` and `pw.sh goto <page>`, as the test user. Each probe is
 asked for; one not asked is NOT_RUN. What APEX rendered is read from the page id
@@ -9,7 +9,8 @@ asked for; one not asked is NOT_RUN. What APEX rendered is read from the page id
 against a CONTROL: the same URL loaded by the test user must render that page without an error,
 or the probe is UNKNOWN — never a PASS on a broken link.
   SEC-ANON-REDIRECT    --anon <url>: fetched over plain HTTP with an empty cookie jar, redirects followed;
-                       PASS on a login page (a password field, /login, another host),
+                       PASS on a login page (a password field, /login, or a host named with --auth-host: another
+                       host alone is UNKNOWN, since a redirect elsewhere proves no sign-in),
                        FAIL if the control's page is served; APEX's error page that keeps the page
                        id (a dialog URL with no session) is UNKNOWN, never FAIL or PASS
   SEC-CHECKSUM-TAMPER  --tamper: the first link with cs= on the held page, loaded in a new tab
@@ -136,8 +137,10 @@ def probe(a, alias, settings, crit, add):
         final, html = anonymous(url)
         m = STEP.search(html)
         served = (m.group(1) or m.group(2)) if m else None
+        fhost, other = urlsplit(final).netloc.lower(), urlsplit(final).netloc != urlsplit(url).netloc
+        # another host is a login only if it shows a password field, a login path, or the caller named it
         login = bool(re.search(r"""type=["']?password""", html, re.I)) or "/login" in urlsplit(final).path.lower() \
-            or urlsplit(final).netloc != urlsplit(url).netloc
+            or (other and fhost in {h.lower() for h in a.auth_host})
         # an error page keeps the requested page's id: without the flag it reads as "served" (a false FAIL)
         err = bool(ERRPAGE.search(html))
         r = refused(ctl.get(url), {"step": served, "error": err})
@@ -148,6 +151,7 @@ def probe(a, alias, settings, crit, add):
         elif not login:
             add("SEC-ANON-REDIRECT", None, f"{clean(url)}: ended on {clean(final)}, " + (
                 "APEX's error page, no login and no content: UNKNOWN until its HTML is measured" if err
+                else f"another host ({fhost}) that shows no login: name it with --auth-host if it is the sign-in" if other
                 else "neither the page nor a login"))
         else:
             add("SEC-ANON-REDIRECT", True, None)
@@ -202,6 +206,7 @@ def main(argv):
     ap.add_argument("--tamper", action="store_true")
     ap.add_argument("--role", action="append", default=[])
     ap.add_argument("--xss")
+    ap.add_argument("--auth-host", action="append", default=[], metavar="HOST[:PORT]")
     a = ap.parse_args(argv)
     result = {"kind": "security-result", "schemaVersion": 1, "status": "UNKNOWN", "reasons": [],
               "context": context(a.task, "apex-security"), "scope": "runtime", "criteria": [], "advisories": []}

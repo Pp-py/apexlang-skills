@@ -131,7 +131,7 @@ entry; removing any of it, a major one.
   [--env <name>] [--task <id>] [--dialog <selector>]… [--raw <file>]`, `skills/apex-security/scripts/sec-scan.py
   [--app <alias>] [--task <id>] <file-or-dir>…` and `plsql-scan.py` with the same arguments,
   `sec-probe.py [--app <alias>] [--env <name>] [--task <id>] [--anon <url>]… [--tamper]
-  [--role <url>]… [--xss <token>]`, `secrets-scan.py [--app <alias>] [--task <id>] [<path>…]` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
+  [--role <url>]… [--xss <token>] [--auth-host <host[:port]>]…`, `secrets-scan.py [--app <alias>] [--task <id>] [<path>…]` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
   3 UNKNOWN). `skills/apexlang-architecture/scripts/arch-scan.py <file-or-dir>…` (python3; JSON on
   stdout, no result file; exit 0 no red flag · 1 red flags · 2 BLOCKED · 3 UNKNOWN).
   `framework/scripts/evidence.py capture --gate runtime|architecture|validation [--app <alias>] [--env <name>]

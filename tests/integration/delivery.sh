@@ -157,6 +157,11 @@ stamp security-result/runtime-pass security-hr-runtime.json
 stamp ui-result/static-pass ui-hr-static.json
 run "Security PASS on four scopes; UI static only → NOT_RUN (a page is needed)" 4 --task T-1
 if q "g['security']['status'] == 'PASS' and len(g['security']['results']) == 4 and g['ui']['status'] == 'NOT_RUN'"; then ok "security: four results cited"; else bad "security: wrong"; fi
+# R2-02: several producers, one exit code: PASSes an earlier run left cannot absorb a failed run
+run "R2-02: --exit security:2 while all four scopes read PASS → UNKNOWN" 3 --task T-1 --exit security:2
+if q "g['security']['status'] == 'UNKNOWN'" && says "every result reads PASS"; then ok "  ...a failed run is not told apart from the earlier results"; else bad "R2-02: security exit 2 kept PASS"; fi
+run "R2-02: --exit security:0 with the four PASS → the gate stays PASS" 4 --task T-1 --exit security:0
+if q "g['security']['status'] == 'PASS'"; then ok "  ...control"; else bad "R2-02: security exit 0"; fi
 "$PY" - "$FIX/ui-result/runtime-fail.json" "$T/ui-hr-runtime-orders.json" "$REPO/framework/lib" <<'PY'
 import json, sys
 sys.path.insert(0, sys.argv[3])
@@ -203,6 +208,12 @@ stamp runtime-result/editable-ig-pass runtime-hr.json
 run "conformance: a PASS whose command exited 1 → UNKNOWN" 3 --task T-1 --exit runtime:1
 if says "but its command exited 1"; then ok "conformance: the disagreement is named"; else bad "conformance: disagreement not named"; fi
 run "conformance: a PASS whose command exited 0 → PASS" 0 --task T-1 --page orders --exit runtime:0
+# R2-01: the capture on disk is fresh (same task, same tree) but the command that just ran exited otherwise
+for c in 1 2 3; do
+  run "R2-01: a fresh Validation PASS capture, the command exited $c → UNKNOWN (never PASS)" 3 --task T-1 --page orders --exit validation:$c
+  if q "g['validation']['status'] == 'UNKNOWN' and d['status'] == 'UNKNOWN'" && says "but its command exited $c"; then ok "  ...named"; else bad "R2-01: validation exit $c kept PASS"; fi
+done
+run "R2-01: a fresh Validation PASS capture, the command exited 0 → PASS" 0 --task T-1 --page orders --exit validation:0
 mv "$T/raw/validation-hr" "$WORK/validation.keep"
 run "conformance: no Validation capture, it exited 2 → BLOCKED" 2 --task T-1 --exit validation:2
 if q "g['validation']['status'] == 'BLOCKED'"; then ok "conformance: Validation BLOCKED in the manifest"; else bad "conformance: validation exit 2"; fi
@@ -436,6 +447,8 @@ if q "g['ui']['status'] == 'BLOCKED'" && says "ran (exit 2) but ui-hr-runtime-bi
 run "ui pages: --exit ui:1, a declared page has no result → UNKNOWN (never FAIL, never PASS)" 3 "${UIP[@]}" --page orders --page billing --exit ui:1
 run "ui pages: --exit ui:2, no --page → BLOCKED (the declaration is what is missing)" 2 "${UIP[@]}" --exit ui:2
 run "ui pages: --exit ui:0, every declared page has its PASS → PASS" 0 "${UIP[@]}" --page orders --exit ui:0
+run "R2-02: --exit ui:2 while the declared page reads PASS → UNKNOWN" 3 "${UIP[@]}" --page orders --exit ui:2
+if q "g['ui']['status'] == 'UNKNOWN'" && says "every result reads PASS"; then ok "  ...not told apart from the earlier page result"; else bad "R2-02: ui exit 2 kept PASS"; fi
 page billing "$URLB"
 # bad declarations are refused before anything is read
 for bad_page in "" "orders:" "orders:modal" "orders:dialog:x" "a b" "a:b" "orders:#open" "orders:a b" "../x" "a/b" "$(printf 'x%.0s' $(seq 1 41))"; do

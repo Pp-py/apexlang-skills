@@ -50,6 +50,8 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/ords/r/ws/app/orders":
             self.send_response(302); self.send_header("Location", "/ords/r/ws/app/login?session=123456789"); self.end_headers(); return
+        if self.path in ("/ords/r/ws/app/sso", "/ords/r/ws/app/sso2"):   # another HOST (localhost, not 127.0.0.1), same server
+            self.send_response(302); self.send_header("Location", "http://localhost:%d%s" % (self.server.server_address[1], self.path.replace("sso", "idp"))); self.end_headers(); return
         if self.path == "/ords/r/ws/app/cookied":   # APEX 26.2: redirects again until its cookie comes back
             self.send_response(302)
             if "ORA_WWV_APP=1" in (self.headers.get("Cookie") or ""):
@@ -60,6 +62,9 @@ class H(http.server.BaseHTTPRequestHandler):
         body = {"/ords/r/ws/app/login?session=123456789": '<form><input type="password" name="p"></form>',
                 "/ords/r/ws/app/open": '<input type="hidden" name="p_flow_step_id" id="pFlowStepId" value="10">',
                 "/ords/r/ws/app/odd": '<p>maintenance</p>',
+                # what another host shows: a sign-in button only (no password field, no page id), and a password form
+                "/ords/r/ws/app/idp": '<a href="/go">Sign in with your company account</a>',
+                "/ords/r/ws/app/idp2": '<form><input type="password" name="p"></form>',
                 # APEX's own error page (a dialog URL with no session) keeps the requested page's id
                 "/ords/r/ws/app/dlg": '<input type="hidden" id="pFlowStepId" value="10"><div class="a-Error-back">Session ended</div>',
                 "/ords/r/ws/app/dlg2": '<input type="hidden" id="pFlowStepId" value="10"><h2 class="t-Alert-title t-Alert-errorTitle">Error</h2>',
@@ -99,10 +104,14 @@ assert $assert, (c, d['status'], d['reasons'])" "$WORK/out.json" 2>/dev/null; th
   ok "$label (exit $rc)"
 }
 
-main "$(O "$BASE/orders" '"10"'),$(O "$BASE/open" '"10"'),$(O "$BASE/odd" '"10"')"
+main "$(O "$BASE/orders" '"10"'),$(O "$BASE/open" '"10"'),$(O "$BASE/odd" '"10"'),$(O "$BASE/sso" '"10"'),$(O "$BASE/sso2" '"10"')"
 check "anon: redirected to the login → PASS" 0 "c['SEC-ANON-REDIRECT'] == 'PASS' and c['SEC-ROLE-REFUSED'] == 'NOT_RUN'" --anon "$BASE/orders"
 check "anon: the page served with no login → FAIL" 1 "c['SEC-ANON-REDIRECT'] == 'FAIL'" --anon "$BASE/open"
 check "anon: neither the page nor a login → UNKNOWN" 3 "d['status'] == 'UNKNOWN'" --anon "$BASE/odd"
+# R2-03: leaving the app's host is not, by itself, a login
+check "anon: another host, no password field, not declared → UNKNOWN (not PASS)" 3 "c['SEC-ANON-REDIRECT'] == 'NOT_RUN' and d['status'] == 'UNKNOWN'" --anon "$BASE/sso"
+check "anon: another host, declared with --auth-host → PASS" 0 "c['SEC-ANON-REDIRECT'] == 'PASS'" --anon "$BASE/sso" --auth-host "localhost:$(tr -d '\r\n' < "$WORK/port")"
+check "anon: another host that shows a password form → PASS" 0 "c['SEC-ANON-REDIRECT'] == 'PASS'" --anon "$BASE/sso2"
 main "$(O "$BASE/dlg" '"10"'),$(O "$BASE/dlg2" '"10"'),$(O "$BASE/hid" '"10"'),$(O "$BASE/hid2" '"10"')"
 check "anon: APEX's error page under the requested id (a dialog, no session) → UNKNOWN, never FAIL or PASS" 3 "c['SEC-ANON-REDIRECT'] == 'NOT_RUN' and d['status'] == 'UNKNOWN'" --anon "$BASE/dlg"
 check "anon: the same error page by its other class → UNKNOWN" 3 "c['SEC-ANON-REDIRECT'] == 'NOT_RUN' and d['status'] == 'UNKNOWN'" --anon "$BASE/dlg2"

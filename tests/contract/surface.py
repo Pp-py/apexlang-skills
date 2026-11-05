@@ -188,6 +188,13 @@ def check_skill_shape():
         bad(f"AGENTS.md is {size} bytes — over the {AGENTS_BUDGET}-byte budget")
     else:
         ok(f"AGENTS.md: {size} bytes ≤ {AGENTS_BUDGET}")
+    # the entry instructions give the loop the gates run in: it must name the Package gate and say it is opt-in
+    agents = " ".join(read("AGENTS.md").split())
+    loop = agents[agents.find("They form one loop"):agents.find("(plus sync-check before any export)")]
+    if "package check" in loop and "packageGate" in loop and loop.index("validate") < loop.index("package check") < loop.index("sync-check"):
+        ok("AGENTS.md: the loop puts the opt-in Package check (packageGate) between validate and sync-check")
+    else:
+        bad("AGENTS.md: the loop omits the Package gate (opt-in packageGate, between validate and sync-check)")
 
 
 def check_versions_and_lock():
