@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-The changes of an external audit of 0.7.1, on branch `fix/audit-2026-11-04`: the aggregator reads
+The changes of an external audit of 0.7.1: the aggregator reads
 less than it used to trust, a seventh gate (Package) exists, and a set of recipes, criteria and
 documents were corrected. Several behaviors change for the same inputs (below). Nothing here is
 live-verified: every new script was tested with SQLcl and the browser stubbed, and the live

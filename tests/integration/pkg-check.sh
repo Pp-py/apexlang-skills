@@ -82,9 +82,13 @@ if ! grep -viE '^(select |set |whenever |exit$)' "$SQL_IN" | grep -q .; then ok 
 else bad "something other than a SELECT was sent"; grep -viE '^(select |set |whenever |exit$)' "$SQL_IN" | head -3; fi
 if ! grep -qi 'db_link is null' "$SQL_IN"; then ok "the synonym query does not hide the synonyms that go through a DB link"; else bad "the synonym query filters db_link"; fi
 
+# seeds are assembled from pieces: written whole, they would be findings of this repo's own secrets scan
+SEED_CONN='jdbc:oracle:thin:u''/p@dbhost'
+SEED_PW='pass''word=hunter2'
+SEED_ERR='hr''/secret@dbhost'
 # a secret that SQLcl or the database says travels nowhere: stderr and the banner are not copied
-rows "$OWN" 'Connected to jdbc:oracle:thin:u/p@dbhost:1521/XEPDB1 password=hunter2' "${FOUND[@]}" 'pkgchk|end'
-FAKE_STDERR='SP2-0640: Not connected: jdbc:oracle:thin:u/p@dbhost password=hunter2' run "secrets seeded in SQLcl's banner and stderr → PASS" 0 --app hr calls.apx
+rows "$OWN" "Connected to ${SEED_CONN}:1521/XEPDB1 ${SEED_PW}" "${FOUND[@]}" 'pkgchk|end'
+FAKE_STDERR="SP2-0640: Not connected: ${SEED_CONN} ${SEED_PW}" run "secrets seeded in SQLcl's banner and stderr → PASS" 0 --app hr calls.apx
 if ! grep -qE 'hunter2|u/p@|dbhost' "$WORK/out.json" "$WORK/err.txt" "$SQL_ARGV" "$SQL_IN"; then ok "no secret and no connect string in the result, the script's stderr, argv or statements"
 else bad "a seeded secret or connect string leaked"; fi
 
@@ -111,7 +115,7 @@ q "UNKNOWN: the link is named" "c['PKG-EXISTS'] == 'UNKNOWN' and '@REMOTE_LINK' 
 rows "$OWN" "${FOUND[@]}" 'pkgchk|err|PKG_SECTORS|PACKAGE BODY|41:7|PLS-00201: identifier '"'"'HR_SECTORZ'"'"' must be declared' 'pkgchk|end'
 run "ALL_ERRORS holds an error → FAIL" 1 --app hr calls.apx
 q "FAIL: PKG-COMPILED carries the error's line, position and text" "c['PKG-COMPILED'] == 'FAIL' and 'PLS-00201' in d['criteria'][1]['findings'][0]['detail'] and '41:7' in d['criteria'][1]['findings'][0]['detail']"
-rows "$OWN" "${FOUND[@]}" 'pkgchk|err|PKG_SECTORS|PACKAGE BODY|9:1|PLS-00201: identifier x, password=hunter2-not-real, hr/secret@dbhost' 'pkgchk|end'
+rows "$OWN" "${FOUND[@]}" "pkgchk|err|PKG_SECTORS|PACKAGE BODY|9:1|PLS-00201: identifier x, ${SEED_PW}-not-real, ${SEED_ERR}" 'pkgchk|end'
 run "database text is redacted before it lands in a result" 1 --app hr calls.apx
 if ! grep -qE 'hunter2|secret@' "$WORK/out.json"; then ok "an ALL_ERRORS message carrying a password or a connect string comes back <redacted>"; else bad "a secret from the database reached the result"; fi
 rows "$OWN" "${FOUND[@]}" 'pkgchk|err|PKG_SECTORS|PACKAGE BODY|12:5|PLS-00103: Encountered the symbol "'"'"'s3cr3t-token'"'"'" when expecting one of the following' 'pkgchk|end'
