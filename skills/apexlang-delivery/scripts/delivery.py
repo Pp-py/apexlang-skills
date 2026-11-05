@@ -275,6 +275,8 @@ def validation(reader, keys):
     except (OSError, ValueError, KeyError, TypeError):
         return "UNKNOWN", [], "the Validation capture is unreadable"
     stale = (f"made for task {m.get('task')}" if m.get("task") != reader.task
+             else f"made in run {m.get('runId')}, this is run {reader.run}" if reader.run and m.get("runId") and m.get("runId") != reader.run
+             else f"records no run, this is run {reader.run}" if reader.run and not m.get("runId")
              else "records no working tree" if not m.get("tree")
              else "the working tree changed since" if m.get("tree") != reader.now else "")
     if stale:

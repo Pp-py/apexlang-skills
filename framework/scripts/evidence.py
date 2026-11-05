@@ -39,7 +39,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
-from result import RE_TASK, ROOT, Stop, context, rel, runtime_target, scrub, target, tree  # noqa: E402
+from result import RE_RUN, RE_TASK, ROOT, Stop, context, rel, runtime_target, scrub, target, tree  # noqa: E402
 
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 SESSION = [(re.compile(r"([?&])session=[0-9]+&?"), r"\1"), (re.compile(r"(f\?p=[^:\s]*:[^:\s]*:)[0-9]{6,}"), r"\1"),
@@ -109,7 +109,11 @@ def capture(a, rest):
             fh.write(text)
         os.replace(path + ".tmp", path)
         with open(path + ".exit.json", "w", encoding="utf-8", newline="\n") as fh:
-            json.dump({"command": command, "exitCode": p.returncode, "task": a.task, "tree": tree()}, fh)
+            meta = {"command": command, "exitCode": p.returncode, "task": a.task, "tree": tree()}
+            run = os.environ.get("APEX_RUN_ID", "")
+            if RE_RUN.fullmatch(run):       # GAP-14: the attempt this capture belongs to (an invalid id is left out)
+                meta["runId"] = run
+            json.dump(meta, fh)
     except OSError as e:
         raise Stop("UNKNOWN", "STATE_UNWRITABLE", f"could not save the evidence: {e.__class__.__name__}")
     print(json.dumps({"evidence": {"kind": "file", "path": rel(path), "sha256": sha256(path)},

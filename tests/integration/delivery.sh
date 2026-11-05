@@ -690,13 +690,17 @@ d = json.load(open(sys.argv[1])); d["context"]["runId"] = "R-1"
 json.dump(d, open(sys.argv[1], "w"))
 PY
 done
+APEX_RUN_ID=R-1 validate 'Validation successful' 0       # the Validation capture too is made in run R-1
 run "run id: --run R-1 and every result carries R-1 → PASS, and the manifest records the run" 0 "${PK[@]}" --run R-1
 if q "d['context']['runId'] == 'R-1' and g['package']['status'] == 'PASS'"; then ok "  ...manifest context.runId is R-1"; else bad "run id: manifest does not record the run"; fi
 run "run id: --run R-2, the result is from R-1 → NOT_RUN (stale), naming both" 4 "${PK[@]}" --run R-2
 if says "package-hr.json: stale — made in run R-1, this is run R-2" && q "g['package']['status'] == 'NOT_RUN'"; then ok "  ...stale, naming both runs"; else bad "run id: other run not stale"; fi
+if says "the Validation capture is stale — made in run R-1, this is run R-2" && q "g['validation']['status'] == 'NOT_RUN'"; then ok "  ...the Validation capture of R-1 is stale in R-2"; else bad "run id: Validation of another run not stale"; fi
 stampm package-result/pass package-hr.json
+validate 'Validation successful' 0                        # a capture that records no run
 run "run id: --run R-1, the result records no run → NOT_RUN (stale)" 4 "${PK[@]}" --run R-1
 if says "package-hr.json: stale — records no run, this is run R-1"; then ok "  ...stale, no run recorded"; else bad "run id: result with no run not stale"; fi
+if says "the Validation capture is stale — records no run, this is run R-1" && q "g['validation']['status'] == 'NOT_RUN'"; then ok "  ...a Validation capture with no run is stale under --run"; else bad "run id: Validation with no run not stale"; fi
 # the producers write it: the python envelope and the guard's sync-result, from APEX_RUN_ID; an invalid id is left out
 got=$(APEX_RUN_ID=R-7 "$PY" -c "import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(sys.argv[1]), '..', '..', '..', 'framework', 'lib')); from result import context; print(context('T-1', 'x').get('runId'))" "$DLV")
 if [[ "$got" == R-7 ]]; then ok "a producer's context carries APEX_RUN_ID"; else bad "context() lost the run id: $got"; fi

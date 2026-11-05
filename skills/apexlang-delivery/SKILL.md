@@ -19,6 +19,10 @@ description: Use when a change to an APEXlang app is to be delivered and called 
 
 Pick a task id (`T-42`) and use it for every command; start at step 0. After each gate, run `delivery.py`: it reads the task dir and prints the next gate to run, or the gate to stop at.
 
+Optional (GAP-14): `export APEX_RUN_ID=<id>` (letters, digits, `.`, `_`, `-`; up to 64) before the first
+producer, then `delivery.py --task <id> --run <id>`: a result written without that id is `NOT_RUN` (stale);
+`--run` alone labels nothing. A new attempt takes a new id and reruns every required producer.
+
 0. **Preflight** — before the first gate, once per task and per machine:
    `apex-sync-check.sh apps` (offline: alias, `appId`, source dir, connection, test user, URL, per app and
    environment) and `apex-sync-check.sh doctor` (tools and connectivity). Exit 2, or no `apex-sync.json` at

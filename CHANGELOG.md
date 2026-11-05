@@ -97,8 +97,9 @@ what the same inputs produce, so it reads as a minor. No version was bumped and 
 - **A run id ties results to their attempt (GAP-14, partial).** Every producer writes the optional
   `context.runId` from `APEX_RUN_ID` (a valid id only), and `delivery.py --run <id>` (default `$APEX_RUN_ID`) reads
   only results of that run: another run, or none, is NOT_RUN (stale). A retry that fails on one scope no longer keeps
-  the other scopes' results from an earlier attempt. Without a run id nothing changes. Not covered: `--exit` is still
-  per gate, and Validation's raw captures carry no run id.
+  the other scopes' results from an earlier attempt. `evidence.py capture` writes it into Validation's
+  `.exit.json` too, and `delivery.py --run` checks it there. Without a run id nothing changes. Not covered:
+  `--exit` is still per gate, and an id reused for two attempts is not detected.
 - **`FORM-SOFT-DELETE` applies only to soft retention.** Retention is a decision declared in the
   `architecture-result` (a `rule` decision whose subject begins `retention:`); none means soft, as before.
   With a declared hard retention `FORM-SOFT-DELETE` is NOT_RUN and the new `FORM-HARD-DELETE` applies.

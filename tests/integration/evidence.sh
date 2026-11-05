@@ -50,6 +50,10 @@ if q "import hashlib; assert d['evidence']['path'] == '$RAW/render'; assert d['e
   ok "capture: the path and sha256 it prints are the file's"; else bad "capture: wrong evidence ref"; fi
 if ! grep -qE "1234567890|987654321|$SECRET_PW|tiger$$" "$RAW/render" && ! grep -qF "$H" "$RAW/render" && grep -q 'home=~' "$RAW/render"; then
   ok "capture: no session id, password, connect string or home dir in the file"; else bad "capture: a value reached the file"; cat "$RAW/render"; fi
+APEX_RUN_ID=R-5 run "capture: APEX_RUN_ID is recorded in the capture's .exit.json (GAP-14)" 0 capture --gate runtime --task T-1 runid -- printf 'x\n'
+if q "import json; assert json.load(open('$RAW/runid.exit.json')).get('runId') == 'R-5'"; then ok "  ...runId R-5"; else bad "capture: runId not recorded"; fi
+APEX_RUN_ID='bad id' run "capture: an invalid APEX_RUN_ID is left out" 0 capture --gate runtime --task T-1 runid -- printf 'x\n'
+if q "import json; assert 'runId' not in json.load(open('$RAW/runid.exit.json'))"; then ok "  ...omitted"; else bad "capture: invalid run id written"; fi
 # The other places APEX puts a session id: a page submit's URL, an encoded dialog link, the
 # per-submit token in its JSON answer (seen on a live 26.2 app, R-8).
 run "capture: an APEX submit's session forms" 0 capture --gate runtime --task T-1 submit -- \
