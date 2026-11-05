@@ -88,6 +88,12 @@ what the same inputs produce, so it reads as a minor. No version was bumped and 
   itself; it now needs a password field on the final page, a `/login` path, or the host named with the new
   `--auth-host <host[:port]>` (repeatable); otherwise UNKNOWN, naming the host. A legitimate SSO whose page has
   no password field must be declared.
+- **`pkg-check.py` reads the padded output of a real SQLcl.** The first run against a real SQLcl 26.1 stopped at
+  `BAD_ANSWER`: SQLcl pads every line to the width of its widest column, so the closing `pkgchk|end` arrived
+  followed by spaces and no tag matched. Each line and each tag is now stripped before it is read; CRLF, a banner
+  before the rows and a trailer after them are ignored. The check that the answer ended is unchanged: padded rows
+  with no closing tag are still UNKNOWN. Seen live on a real database, not only on the stub; the invalid-compilation,
+  privilege and synonym cases of that protocol were not exercised.
 - **`FORM-SOFT-DELETE` applies only to soft retention.** Retention is a decision declared in the
   `architecture-result` (a `rule` decision whose subject begins `retention:`); none means soft, as before.
   With a declared hard retention `FORM-SOFT-DELETE` is NOT_RUN and the new `FORM-HARD-DELETE` applies.

@@ -135,8 +135,10 @@ def ask(conn, app_id, names):
         raise Stop("BLOCKED", "NO_BASH", f"cannot run bash to reach SQLcl: {e.__class__.__name__}")
     if p.returncode == 127:
         raise Stop("BLOCKED", "NO_SQLCL", "SQLcl (sql) is required on PATH, or SQLCL_BIN")
-    out = p.stdout.decode("utf-8", "replace").replace("\r", "").split("\n")
-    rows = [ln.split("|", 5) for ln in out if ln.startswith("pkgchk|")]
+    # SQLcl pads each line to the width of its widest column (seen live: the closing tag arrives as "pkgchk|end" + spaces):
+    # padding is not content, so each line is stripped at both ends before it is read, and so is each field's tag
+    out = [ln.strip() for ln in p.stdout.decode("utf-8", "replace").replace("\r", "").split("\n")]
+    rows = [[f if i > 1 else f.strip() for i, f in enumerate(ln.split("|", 5))] for ln in out if ln.startswith("pkgchk|")]
     arity = {"ctx": 4, "obj": 5, "err": 6, "proc": 4, "syn": 4, "end": 2}      # fields a row of each tag has
     if any(len(r) < arity.get(r[1], 99) for r in rows):
         raise Stop("UNKNOWN", "BAD_ANSWER", "SQLcl answered with a row this reader does not understand: the answer is not trusted")
