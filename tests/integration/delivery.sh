@@ -698,9 +698,9 @@ stampm package-result/pass package-hr.json
 run "run id: --run R-1, the result records no run → NOT_RUN (stale)" 4 "${PK[@]}" --run R-1
 if says "package-hr.json: stale — records no run, this is run R-1"; then ok "  ...stale, no run recorded"; else bad "run id: result with no run not stale"; fi
 # the producers write it: the python envelope and the guard's sync-result, from APEX_RUN_ID; an invalid id is left out
-got=$(APEX_RUN_ID=R-7 "$PY" -c "import sys; sys.path.insert(0, '$(dirname "$DLV")/../../../framework/lib'); from result import context; print(context('T-1', 'x').get('runId'))")
+got=$(APEX_RUN_ID=R-7 "$PY" -c "import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(sys.argv[1]), '..', '..', '..', 'framework', 'lib')); from result import context; print(context('T-1', 'x').get('runId'))" "$DLV")
 if [[ "$got" == R-7 ]]; then ok "a producer's context carries APEX_RUN_ID"; else bad "context() lost the run id: $got"; fi
-got=$(APEX_RUN_ID='bad id' "$PY" -c "import sys; sys.path.insert(0, '$(dirname "$DLV")/../../../framework/lib'); from result import context; print(context('T-1', 'x').get('runId'))")
+got=$(APEX_RUN_ID='bad id' "$PY" -c "import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(sys.argv[1]), '..', '..', '..', 'framework', 'lib')); from result import context; print(context('T-1', 'x').get('runId'))" "$DLV")
 if [[ "$got" == None ]]; then ok "an invalid APEX_RUN_ID is left out, not guessed"; else bad "an invalid run id was written: $got"; fi
 run "run id: --run with an id that is not one → BLOCKED (BAD_RUN)" 2 "${PK[@]}" --run 'bad id'
 if says "BAD_RUN"; then ok "  ...BAD_RUN named"; else bad "run id: BAD_RUN not named"; fi
