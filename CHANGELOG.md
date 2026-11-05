@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 — 2026-11-05
 
 The changes of an external audit of 0.7.1: the aggregator reads
 less than it used to trust, a seventh gate (Package) exists, and a set of recipes, criteria and
@@ -8,10 +8,24 @@ documents were corrected. Several behaviors change for the same inputs (below). 
 live-verified: every new script was tested with SQLcl and the browser stubbed, and the live
 protocols (`tests/live/README.md` L6 and L7) are written, not run.
 
-**Version classification is the owner's call.** `framework/CONTRACTS.md` says a change to the frozen
-interface is a minor release (0.8.0); 0.7.1 shipped a `delivery.py` behavior change as a patch under
-"Behavior changes". This section adds interface (new flag, script, config key, result path) and changes
-what the same inputs produce, so it reads as a minor. No version was bumped and no tag made.
+**This is a minor release (0.8.0).** `framework/CONTRACTS.md` says a change to the frozen interface is a
+minor release; this section adds interface (new flags, a script, a config key, result paths, `.prev` and `.lock`
+files) and changes what the same inputs produce. The version is bumped in `plugin.json`, `marketplace.json` and
+the two scripts that write `frameworkVersion`; **no tag has been made** (the owner's call).
+
+### Migrating from 0.7.x
+
+- Install `jsonschema` where `delivery.py` runs (`pip install jsonschema`); without it the aggregator is BLOCKED.
+- A producer now claims its destination: `<result>.lock` while it runs, and the previous result as
+  `<result>.prev`. Add `*.prev` and `*.lock` to anything that collects the evidence dir; neither is ever read as a
+  result. A producer killed mid-run leaves a lock whose pid is gone: the next run replaces it (stderr says so); a
+  lock that cannot be read, or whose pid runs, is `CLAIM_HELD` until you remove it or the other producer ends.
+- A gate whose command exited non-zero is never PASS, and `--exit <gate>/<producer>:<code>` exists: update an
+  orchestrator that passes one `--exit` for a multi-producer gate if it should name the producer.
+- Opt in to run identity when the same task is retried: `export APEX_RUN_ID=<id>` before the producers and pass
+  `delivery.py --run <id>`. Without it nothing changes.
+- `sec-probe.py --anon`: declare a single-sign-on host with `--auth-host`, or the redirect reads UNKNOWN.
+- Validation captures made by 0.7.x carry no output hash or run id: they still read as before without `--run`.
 
 ### Behavior changes — read before upgrading
 
@@ -99,13 +113,24 @@ what the same inputs produce, so it reads as a minor. No version was bumped and 
   only results of that run: another run, or none, is NOT_RUN (stale). A retry that fails on one scope no longer keeps
   the other scopes' results from an earlier attempt. `evidence.py capture` writes it into Validation's
   `.exit.json` too, and `delivery.py --run` checks it there. Without a run id nothing changes. Not covered:
-  `--exit` is still per gate, and an id reused for two attempts is not detected.
+  an id reused for two attempts is not detected (see GAP-14 in `framework/CAPABILITIES.md`).
 - **`--exit` can speak for one producer (GAP-14 A).** `delivery.py --exit <gate>/<producer>:<code>`
   (`security/runtime:2`, `ui/runtime-orders:1`, `runtime/record-sync:1`, ...): only that producer's result is
   judged against it, so a failed retry of one scope no longer hides behind the other scopes' PASS. A page declared
   with `--page` is a producer even when its file is missing. A specific exit 0 never neutralizes the gate's
   non-zero exit; the same key with two codes, and a key the task has no such producer for, are BLOCKED `BAD_EXIT`.
   The gate-only form is unchanged.
+- **A producer claims its destination before the work (GAP-14 B).** `sec-scan`, `plsql-scan`, `secrets-scan`,
+  `sec-probe`, `ux-scan`, `pkg-check`, `evidence.py capture` and the guard's task-dir copy create
+  `<result>.lock` (exclusive: pid and run id) and move the previous result to `<result>.prev` before the work that
+  can fail, so a producer that dies leaves no file that reads as fresh. A second producer for the same destination,
+  or an unreadable lock, is BLOCKED `CLAIM_HELD` and writes nothing over the other's file; a lock whose pid is
+  gone is replaced with a note; a result that cannot be moved is BLOCKED `STATE_UNWRITABLE`. `evidence.py
+  capture` publishes the metadata last, whole, with the output's sha256, and `delivery.py` reads a pair that
+  disagrees as UNKNOWN. `.prev` is one file replaced by the next attempt, a temporary backup, not an archive.
+  Not covered, by design: `ux-check.py` (its page is known only after the page is measured: use `--exit
+  ui/runtime-<page>`), `evidence.py write` (the verdict is made before the command starts), concurrent producers
+  on different machines, and the guard's `last-*.json`, markers and refs, which are not touched.
 - **`FORM-SOFT-DELETE` applies only to soft retention.** Retention is a decision declared in the
   `architecture-result` (a `rule` decision whose subject begins `retention:`); none means soft, as before.
   With a declared hard retention `FORM-SOFT-DELETE` is NOT_RUN and the new `FORM-HARD-DELETE` applies.
@@ -176,7 +201,8 @@ what the same inputs produce, so it reads as a minor. No version was bumped and 
 
 - `delivery.py --page <page>[:dialog]` (repeatable); new stop reasons `NO_JSONSCHEMA` and `BAD_PAGE`.
 - `sec-probe.py --auth-host <host[:port]>` (repeatable).
-- `delivery.py --exit <gate>/<producer>:<code>` (the gate-only form is unchanged).
+- `delivery.py --exit <gate>/<producer>:<code>` (the gate-only form is unchanged); stop reasons `CLAIM_HELD` and `STATE_UNWRITABLE` for the producers; `<result>.lock`, `<result>.prev` files and `sha256` in a capture's `.exit.json`.
+- `sync-result.schema.json`: the reason catalog gains `CLAIM_HELD`. A validator holding the 0.7.x schema rejects a sync-result with that reason: update the schemas with the scripts.
 - `delivery.py --run <id>` (default `$APEX_RUN_ID`), new stop reason `BAD_RUN`; optional `context.runId` in the result envelope, written from `APEX_RUN_ID`.
 - New script `skills/apex-sentinel/scripts/pkg-check.py [--app <alias>] [--env <name>] [--task <id>]
   <file-or-dir>…`, exit 0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN; environment variables `SQLCL_BIN` and

@@ -728,6 +728,19 @@ run "package: a result of another working tree → NOT_RUN (stale)" 4 "${PK[@]}"
 if says "package-hr.json: stale — the working tree changed since"; then ok "  ...stale, tree"; else bad "package: other tree"; fi
 stampm package-result/pass package-hr.json
 run "package: control — the PASS restored → PASS" 0 "${PK[@]}"
+# GAP-14 B: output and metadata are one unit; .prev and .lock are never read
+"$PY" - "$T/raw/validation-hr/validate" <<'PY'
+import sys
+open(sys.argv[1], "a").write("changed after the metadata was published\n")
+PY
+run "B: a Validation output that no longer matches its metadata → UNKNOWN" 3 "${PK[@]}"
+if says "does not match its metadata" && q "g['validation']['status'] == 'UNKNOWN'"; then ok "  ...named, never PASS"; else bad "B: tampered capture"; fi
+validate "Validation successful" 0
+cp "$T/package-hr.json" "$WORK/pk.cur"
+mv "$T/package-hr.json" "$T/package-hr.json.prev"; : > "$T/package-hr.json.lock"
+run "B: a result that was moved to .prev, with a .lock beside it → NOT_RUN (neither is read)" 4 "${PK[@]}"
+if says "package-hr.json: not in the task"; then ok "  ...not in the task"; else bad "B: .prev was read"; fi
+rm -f "$T/package-hr.json.prev" "$T/package-hr.json.lock"; mv "$WORK/pk.cur" "$T/package-hr.json"
 # GAP-14: with --run <id> the aggregator reads only the results written in that run (context.runId, set from
 # APEX_RUN_ID by each producer); without it nothing changes
 run "run id: no --run, a result with a runId is read as before → PASS" 0 "${PK[@]}"

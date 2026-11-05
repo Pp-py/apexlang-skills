@@ -295,6 +295,8 @@ def validation(reader, keys):
         rc, cmd = int(m["exitCode"]), str(m["command"]) or "validate"
     except (OSError, ValueError, KeyError, TypeError):
         return "UNKNOWN", [], "the Validation capture is unreadable"
+    if m.get("sha256") and m["sha256"] != sha256(out):      # GAP-14 B: output and metadata are one unit (metadata is published last)
+        return "UNKNOWN", [], "the Validation capture does not match its metadata (incomplete or changed since): run it again"
     stale = (f"made for task {m.get('task')}" if m.get("task") != reader.task
              else f"made in run {m.get('runId')}, this is run {reader.run}" if reader.run and m.get("runId") and m.get("runId") != reader.run
              else f"records no run, this is run {reader.run}" if reader.run and not m.get("runId")

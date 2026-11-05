@@ -1,6 +1,6 @@
 # GAP-14 — identity of the attempt and the producer (design, revision 2, 2026-11-05)
 
-Status: **design to be accepted, not built.** Revision 2 answers the review of the first draft (blocking: the
+Status: **accepted 2026-11-05; A and B built in PR #38 (0.8.0), C out of scope.** Exceptions to B, found while building it: `ux-check.py` (its destination page is known only after the page is measured; covered by A with a declared `--page`) and `evidence.py write` (the verdict is the agent's, made before the command starts). Original status line: Revision 2 answers the review of the first draft (blocking: the
 single-use run id, and a false schema claim). Build only after the owner accepts "Decisions needed", test first.
 The frozen interface (`framework/CONTRACTS.md`) allows additions only; what follows adds, and none of it is
 needed for the gates that work today.

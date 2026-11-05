@@ -42,7 +42,7 @@ from urllib.parse import urlsplit
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
 import pw as pwlib  # noqa: E402
 from pw import pw, redact, run_code  # noqa: E402
-from result import ROOT, Stop, context, runtime_target, scrub, write  # noqa: E402
+from result import ROOT, Stop, claim, context, runtime_target, scrub, write  # noqa: E402
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sec-probe.js")
 TIMEOUT = int(os.environ.get("SEC_PROBE_TIMEOUT", "300"))
@@ -219,6 +219,7 @@ def main(argv):
         if a.xss is not None and not re.fullmatch(r"[A-Za-z0-9_-]{4,40}", a.xss):
             raise Stop("BLOCKED", "BAD_TOKEN", "--xss takes a token of 4-40 letters, digits, '_' or '-'")
         alias, task_dir, settings, key = runtime_target(a.app, a.task, a.env)
+        claim(task_dir, f"security-{key or 'app'}-runtime.json")      # GAP-14 B: before the work
         pwlib.ENV = a.env
         if alias:
             result["app"] = {"appAlias": alias, **({"environment": a.env} if a.env else {})}

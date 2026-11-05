@@ -177,6 +177,10 @@ rc=0; "$PY" "$PROBE" --task T-1 --xss T0KEN1 > "$WORK/out.json" 2>/dev/null || r
 if [[ $rc -eq 0 ]] && cmp -s "$WORK/out.json" .apex-evidence/T-1/security-demo-runtime.json; then
   ok "--task writes .apex-evidence/T-1/security-demo-runtime.json"; else bad "--task: exit $rc, or no file"; fi
 
+# GAP-14 B: a second run takes the destination first: the first result is .prev, no lock is left
+sleep 1; rc=0; "$PY" "$PROBE" --task T-1 --xss T0KEN1 > "$WORK/out.json" 2>/dev/null || rc=$?
+if [[ $rc -eq 0 && -f .apex-evidence/T-1/security-demo-runtime.json.prev && ! -e .apex-evidence/T-1/security-demo-runtime.json.lock ]]; then
+  ok "a second --task run: the first result is .prev, no lock is left"; else bad "claim: no .prev, or a lock stayed"; fi
 # An app with environments (R-1): the probes name the one they ran against.
 config '{ "appId": 100, "appAlias": "demo", "testUser": "QA", "lowPrivUser": "QA_LOW", "environments": { "dev": { "sqlclConnection": "x", "runtimeUrl": "https://apex.example/ords/r/ws/app/" } } }'
 main "" ',"xss":{"elements":0,"text":true}'

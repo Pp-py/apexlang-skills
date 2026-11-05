@@ -38,7 +38,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
 from apx import ParseError, code_blocks, collect, parse, prop, walk  # noqa: E402
 from plsql import LexError, mask  # noqa: E402
-from result import RE_CONN, Stop, context, rel, runtime_target, write  # noqa: E402
+from result import RE_CONN, Stop, claim, context, rel, runtime_target, write  # noqa: E402
 
 EXTS = (".apx",)
 NAME = r"[A-Za-z][A-Za-z0-9_$#]{0,127}(?![A-Za-z0-9_$#])"      # a plain Oracle identifier, never longer than Oracle allows
@@ -168,6 +168,7 @@ def main(argv):
         if settings is None:
             raise Stop("BLOCKED", "APP_REQUIRED", "apex-sync.json lists several apps: pass --app <alias>")
         name = f"package-{key}.json"
+        claim(task_dir, name)      # GAP-14 B: before the work
         app_id, conn = settings.get("appId"), settings.get("sqlclConnection")
         result["app"] = {k: v for k, v in (("appAlias", alias), ("environment", a.env)) if v}
         if isinstance(app_id, int) and not isinstance(app_id, bool) and 1 <= app_id <= 9999999999:

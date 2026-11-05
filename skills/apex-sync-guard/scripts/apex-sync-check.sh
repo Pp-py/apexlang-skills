@@ -39,7 +39,7 @@
 set -euo pipefail
 
 TTL_SECONDS=300   # how long a check PASS authorizes; must equal TTL in apex-sync-hook.sh
-FRAMEWORK_VERSION="0.7.1"   # the apexlang-skills release this script belongs to (.claude-plugin/plugin.json)
+FRAMEWORK_VERSION="0.8.0"   # the apexlang-skills release this script belongs to (.claude-plugin/plugin.json)
 
 # --- verdicts. A gate command (check-import, check-export, record-sync) ends in
 # exactly one status, and the EXIT trap (on_exit, below) turns it into the exit
@@ -105,6 +105,7 @@ lines_of() {  # $1 = text → LINES: its non-empty lines (word splitting on newl
 TMP_KEEP=""                       # scratch dirs preserved on FAIL for resolution
 TMPS=()
 RESULT_FILES=()                   # where this run's sync-result goes (results_init)
+TASK_LOCK=""                      # the lock this run holds on its task-dir copy (claim_task_copy, GAP-14 B)
 ROOT=""; STATE_DIR=""             # known once the repo and the app are
 GIT_DIR_ABS=""; GIT_COMMON=""; STATE_REL=".git"   # this worktree's git dir, the shared one
 
@@ -171,6 +172,7 @@ on_exit() {
       fi
     fi
   fi
+  [[ -z "$TASK_LOCK" ]] || rm -f "$TASK_LOCK"       # the claim ends with the run, whatever its verdict
   f=(); for t in "${TMPS[@]:-}"; do [[ -n "$t" && "$t" != "$TMP_KEEP" ]] && f+=("$t"); done
   (( ${#f[@]} )) && rm -rf "${f[@]}"
   exit "$rc"
@@ -888,6 +890,28 @@ write_results() {  # the current verdict → every result file, each replaced at
   fi
 }
 
+# GAP-14 B: before the work, the run takes its task-dir copy: <file>.lock (created exclusively, pid and run id)
+# and the previous copy moved to <file>.prev. A live lock, or one that cannot be read, is BLOCKED CLAIM_HELD
+# (the other producer's file is never overwritten); a lock whose pid is gone is replaced, with a note. The
+# guard's own state (last-*.json, check-ok.* markers, refs/apex-sync/) is not touched by this.
+claim_task_copy() {  # $1 = the task-dir copy
+  local f=$1 lock=$1.lock pid=""
+  mk_lock() { ( set -C; printf '%s %s\n' "$$" "${APEX_RUN_ID:--}" > "$lock" ) 2>/dev/null; }
+  if ! mk_lock; then
+    pid=$(sed -n '1s/ .*//p' "$lock" 2>/dev/null) || pid=""
+    [[ "$pid" =~ ^[0-9]+$ ]] || blocked CLAIM_HELD "$(basename "$lock") exists and cannot be read: another producer may be writing it; remove the lock only when no producer is running"
+    if kill -0 "$pid" 2>/dev/null; then blocked CLAIM_HELD "$(basename "$lock") is held by a running producer (pid $pid): wait for it, or stop it"; fi
+    echo "claim: stale lock of pid $pid (not running) on $(basename "$f"): replaced" >&2
+    rm -f "$lock"
+    mk_lock || blocked CLAIM_HELD "$(basename "$lock") could not be replaced"
+  fi
+  TASK_LOCK=$lock
+  if [[ -e "$f" ]] && ! mv -f "$f" "$f.prev"; then
+    rm -f "$lock"; TASK_LOCK=""
+    blocked STATE_UNWRITABLE "cannot move the previous $(basename "$f") out of the way: not going on as if it were invalidated"
+  fi
+}
+
 # Once the app is known: where the result goes, and a placeholder there. Should the
 # run die without reaching the EXIT trap (SIGKILL, power loss), the file says
 # UNKNOWN — never the verdict of an earlier run.
@@ -903,6 +927,7 @@ results_init() {
       blocked STATE_UNWRITABLE "cannot create the evidence dir $EVIDENCE_DIR"
     fi
     mkdir -p "$ev/$OPT_TASK" || blocked STATE_UNWRITABLE "cannot create $EVIDENCE_DIR/$OPT_TASK"
+    claim_task_copy "$ev/$OPT_TASK/sync-$KEY-$R_OP.json"       # before the placeholder, and before it is a result file
     RESULT_FILES+=("$ev/$OPT_TASK/sync-$KEY-$R_OP.json")
   fi
   classify UNKNOWN INTERRUPTED "the run did not finish: this is the placeholder written when it started."

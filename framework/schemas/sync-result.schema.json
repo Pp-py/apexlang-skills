@@ -67,7 +67,7 @@
       "then": { "properties": { "reasons": { "prefixItems": [{ "properties": { "code": { "enum": [
         "USAGE", "UNSUPPORTED_SHELL", "NO_GIT", "NO_SQLCL", "NO_JSON_PARSER", "NO_CONFIG", "CONFIG_INVALID",
         "APP_REQUIRED", "APP_UNKNOWN",
-        "STATE_UNWRITABLE", "SOURCE_DIR_MISSING", "APP_ID_MISMATCH", "SYNCPOINT_WITHOUT_APP", "NO_FRESH_CHECK"
+        "STATE_UNWRITABLE", "SOURCE_DIR_MISSING", "APP_ID_MISMATCH", "SYNCPOINT_WITHOUT_APP", "NO_FRESH_CHECK", "CLAIM_HELD"
       ] } } }] } } }
     },
     {

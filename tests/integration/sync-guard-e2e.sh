@@ -576,6 +576,23 @@ expect_out "its result records the basis and the new syncpoint"  "^PASS fresh-ch
 EV="$WORK/proj/.apex-evidence"
 expect     "--task: the result also goes to the evidence dir"    0 "$CHK" check-import --task T-1
 expect_out "under the task, with the task in its context"        '^PASS T-1$' rget "$EV/T-1/sync-demo-check-import.json" status context.task
+# GAP-14 B: the run takes its task-dir copy before the work
+ok()  { echo "ok   $1"; pass=$((pass+1)); }
+bad() { echo "FAIL $1"; fail=$((fail+1)); }
+expect     "a second check-import --task T-1"                    0 "$CHK" check-import --task T-1
+if [[ -f "$EV/T-1/sync-demo-check-import.json.prev" && ! -e "$EV/T-1/sync-demo-check-import.json.lock" && -f "$EV/T-1/sync-demo-check-import.json" ]]; then
+  ok "the previous task copy is .prev, the new one is current, no lock is left"; else bad "claim: .prev or lock wrong"; fi
+sleep 30 & HOLD=$!
+printf '%s R-1\n' "$HOLD" > "$EV/T-1/sync-demo-check-import.json.lock"
+CUR=$(cat "$EV/T-1/sync-demo-check-import.json")
+expect     "a live lock on the task copy -> BLOCKED"            2 "$CHK" check-import --task T-1
+if [[ "$(cat "$EV/T-1/sync-demo-check-import.json")" == "$CUR" && -f "$EV/T-1/sync-demo-check-import.json.lock" ]]; then ok "  ...the other producer's file and lock are untouched"; else bad "claim: a live lock was overridden"; fi
+kill "$HOLD" 2>/dev/null || true; wait "$HOLD" 2>/dev/null || true
+expect     "a lock of a pid that is gone is replaced"            0 "$CHK" check-import --task T-1
+if [[ ! -e "$EV/T-1/sync-demo-check-import.json.lock" ]]; then ok "  ...and no lock is left"; else bad "claim: a stale lock stayed"; fi
+printf 'junk\n' > "$EV/T-1/sync-demo-check-import.json.lock"
+expect     "an unreadable lock -> BLOCKED"                       2 "$CHK" check-import --task T-1
+rm -f "$EV/T-1/sync-demo-check-import.json.lock"
 expect_out "no run id in the result without APEX_RUN_ID (GAP-14)" '^null$' rget "$EV/T-1/sync-demo-check-import.json" context.runId
 APEX_RUN_ID=R-3 "$CHK" check-import --task T-1 >/dev/null 2>&1 || true
 expect_out "APEX_RUN_ID is written to context.runId"             '^R-3$' rget "$EV/T-1/sync-demo-check-import.json" context.runId

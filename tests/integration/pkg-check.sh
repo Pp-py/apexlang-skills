@@ -77,6 +77,9 @@ q "PASS: standalone procedures (untyped, and type plsqlProcedureOrFunction) are 
 q "PASS: the executeCode call is looked up, Oracle's own package and a collection method are not" "'PKG_SECTORS' in sql and 'APEX_ERROR' not in sql and 'L_TAB' not in sql.upper()"
 q "PASS: the query evidence ran and says how many rows" "len(d['evidence']) == 5 and all(e['kind'] == 'sql' and e['exitCode'] == 0 for e in d['evidence'])"
 if [[ -f .apex-evidence/T-1/package-hr.json ]]; then ok "--task writes package-<alias>.json"; else bad "--task wrote no package-hr.json"; fi
+# GAP-14 B: a second run takes the destination first
+sleep 1; run "a second --task run" 0 --app hr --task T-1 calls.apx
+if [[ -f .apex-evidence/T-1/package-hr.json.prev && ! -e .apex-evidence/T-1/package-hr.json.lock ]]; then ok "claim: the first result is .prev, no lock is left"; else bad "claim: no .prev, or a lock stayed"; fi
 if [[ "$(cat "$SQL_ARGV")" == "-S -name dev_hr" ]]; then ok "SQLcl got the saved connection's NAME and nothing else in argv"; else bad "argv was: $(cat "$SQL_ARGV")"; fi
 if ! grep -viE '^(select |set |whenever |exit$)' "$SQL_IN" | grep -q .; then ok "only SELECTs (and SQLcl settings) were sent: no DDL, no DML, no compile"
 else bad "something other than a SELECT was sent"; grep -viE '^(select |set |whenever |exit$)' "$SQL_IN" | head -3; fi

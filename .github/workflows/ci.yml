@@ -77,5 +77,7 @@ jobs:
         run: bash tests/integration/pkg-check.sh
       - name: apexlang-delivery aggregator (stamped results, a real Validation capture)
         run: bash tests/integration/delivery.sh
+      - name: producers claim their destination (GAP-14 B: .prev, lock, killed producer)
+        run: bash tests/integration/claim.sh
       - name: the CI example's scan step, verbatim, over the examples
         run: bash tests/integration/ci-example.sh

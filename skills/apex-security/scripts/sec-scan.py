@@ -35,7 +35,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
 from apx import RE_FENCE, ParseError, collect, is_destructive, parse, prop, walk  # noqa: E402
-from result import ROOT, Stop, context, rel, target, write  # noqa: E402
+from result import ROOT, Stop, claim, context, rel, target, write  # noqa: E402
 
 CRITERIA = ["SEC-PAGE-AUTHZ", "SEC-PUBLIC-DECLARED", "SEC-PAGE-CHECKSUM", "SEC-APP-SSP",
             "SEC-ITEM-SSP", "SEC-ESCAPE-COLUMN", "SEC-ESCAPE-SUBST", "SEC-URL-SAFE", "SEC-ACTION-AUTHZ"]
@@ -237,6 +237,7 @@ def main(argv):
         alias, task_dir, settings = target(a.app, a.task)
         if alias:
             result["app"] = {"appAlias": alias}
+        claim(task_dir, f"security-{alias or 'app'}-static.json")      # GAP-14 B: before the work
         if settings is None:
             raise Stop("BLOCKED", "APP_REQUIRED", "apex-sync.json lists several apps: pass --app <alias> (its publicPages apply)")
         pages = settings.get("publicPages", [])
