@@ -77,6 +77,9 @@ q "PASS: standalone procedures (untyped, and type plsqlProcedureOrFunction) are 
 q "PASS: the executeCode call is looked up, Oracle's own package and a collection method are not" "'PKG_SECTORS' in sql and 'APEX_ERROR' not in sql and 'L_TAB' not in sql.upper()"
 q "PASS: the query evidence ran and says how many rows" "len(d['evidence']) == 5 and all(e['kind'] == 'sql' and e['exitCode'] == 0 for e in d['evidence'])"
 if [[ -f .apex-evidence/T-1/package-hr.json ]]; then ok "--task writes package-<alias>.json"; else bad "--task wrote no package-hr.json"; fi
+# GAP-14 B: a second run takes the destination first
+sleep 1; run "a second --task run" 0 --app hr --task T-1 calls.apx
+if [[ -f .apex-evidence/T-1/package-hr.json.prev && ! -e .apex-evidence/T-1/package-hr.json.lock ]]; then ok "claim: the first result is .prev, no lock is left"; else bad "claim: no .prev, or a lock stayed"; fi
 if [[ "$(cat "$SQL_ARGV")" == "-S -name dev_hr" ]]; then ok "SQLcl got the saved connection's NAME and nothing else in argv"; else bad "argv was: $(cat "$SQL_ARGV")"; fi
 if ! grep -viE '^(select |set |whenever |exit$)' "$SQL_IN" | grep -q .; then ok "only SELECTs (and SQLcl settings) were sent: no DDL, no DML, no compile"
 else bad "something other than a SELECT was sent"; grep -viE '^(select |set |whenever |exit$)' "$SQL_IN" | head -3; fi
@@ -187,6 +190,20 @@ run "no appId → BLOCKED" 2 --app hr calls.apx
 config '{ "appId": 100, "appAlias": "hr", "apexlangDir": "src", "sqlclConnection": "-S" }'
 run "a connection name that reads as an option → BLOCKED" 2 --app hr calls.apx
 config '{ "appId": 100, "appAlias": "hr", "apexlangDir": "src", "sqlclConnection": "dev_hr" }'
+
+# the real SQLcl pads every line to the width of its widest column and may print CRLF, a banner or an echo:
+# padding is not content (found live on a real SQLcl 26.1: the closing tag arrived as "pkgchk|end" + spaces)
+PAD="$(printf '%*s' 120 '')"
+rows "$OWN${PAD}" "${FOUND[@]/%/${PAD}}" "pkgchk|end${PAD}"
+run "rows padded with trailing spaces, as the real SQLcl prints them → PASS" 0 --app hr calls.apx
+q "padded: the owner and every package read as in the unpadded run" "d['status'] == 'PASS' and d['database'] == {'owner': 'HR', 'sessionUser': 'HR'} and set(c.values()) == {'PASS'}"
+printf '%s\r\n' 'Connected.' "$OWN${PAD}" "${FOUND[@]}" "pkgchk|end${PAD}" 'Disconnected from Oracle Database' > "$FAKE_ROWS"
+run "CRLF, a banner before and a trailer after the rows → PASS" 0 --app hr calls.apx
+rows "$OWN${PAD}" "${FOUND[@]}" "pkgchk|err|PKG_SECTORS|PACKAGE BODY|41:7|PLS-00201: identifier 'X' must be declared${PAD}" "pkgchk|end${PAD}"
+run "padding after an error text is not part of it → FAIL" 1 --app hr calls.apx
+q "padded err: the text is kept without the padding" "'PLS-00201: identifier' in raw and not any(len(v) - len(v.rstrip()) for x in d['criteria'] for f in x['findings'] for v in f.values() if isinstance(v, str))"
+rows "$OWN${PAD}" "${FOUND[@]}"
+run "padded rows and no closing tag stay UNKNOWN (the check of the end remains)" 3 --app hr calls.apx
 
 # SQLcl answers badly: never a crash that reads as FAIL, never a half answer that reads as PASS
 rows ''; FAKE_RC=1 run "SQLcl that never answers (connection failed, or a view it cannot read) → BLOCKED" 2 --app hr calls.apx

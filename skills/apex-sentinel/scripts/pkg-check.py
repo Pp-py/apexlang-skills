@@ -38,7 +38,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
 from apx import ParseError, code_blocks, collect, parse, prop, walk  # noqa: E402
 from plsql import LexError, mask  # noqa: E402
-from result import RE_CONN, Stop, context, rel, runtime_target, write  # noqa: E402
+from result import RE_CONN, Stop, claim, context, rel, runtime_target, write  # noqa: E402
 
 EXTS = (".apx",)
 NAME = r"[A-Za-z][A-Za-z0-9_$#]{0,127}(?![A-Za-z0-9_$#])"      # a plain Oracle identifier, never longer than Oracle allows
@@ -135,8 +135,10 @@ def ask(conn, app_id, names):
         raise Stop("BLOCKED", "NO_BASH", f"cannot run bash to reach SQLcl: {e.__class__.__name__}")
     if p.returncode == 127:
         raise Stop("BLOCKED", "NO_SQLCL", "SQLcl (sql) is required on PATH, or SQLCL_BIN")
-    out = p.stdout.decode("utf-8", "replace").replace("\r", "").split("\n")
-    rows = [ln.split("|", 5) for ln in out if ln.startswith("pkgchk|")]
+    # SQLcl pads each line to the width of its widest column (seen live: the closing tag arrives as "pkgchk|end" + spaces):
+    # padding is not content, so each line is stripped at both ends before it is read, and so is each field's tag
+    out = [ln.strip() for ln in p.stdout.decode("utf-8", "replace").replace("\r", "").split("\n")]
+    rows = [[f if i > 1 else f.strip() for i, f in enumerate(ln.split("|", 5))] for ln in out if ln.startswith("pkgchk|")]
     arity = {"ctx": 4, "obj": 5, "err": 6, "proc": 4, "syn": 4, "end": 2}      # fields a row of each tag has
     if any(len(r) < arity.get(r[1], 99) for r in rows):
         raise Stop("UNKNOWN", "BAD_ANSWER", "SQLcl answered with a row this reader does not understand: the answer is not trusted")
@@ -166,6 +168,7 @@ def main(argv):
         if settings is None:
             raise Stop("BLOCKED", "APP_REQUIRED", "apex-sync.json lists several apps: pass --app <alias>")
         name = f"package-{key}.json"
+        claim(task_dir, name)      # GAP-14 B: before the work
         app_id, conn = settings.get("appId"), settings.get("sqlclConnection")
         result["app"] = {k: v for k, v in (("appAlias", alias), ("environment", a.env)) if v}
         if isinstance(app_id, int) and not isinstance(app_id, bool) and 1 <= app_id <= 9999999999:

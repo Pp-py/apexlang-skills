@@ -141,7 +141,9 @@ may not do. It orchestrates the gates; the rules below apply the gates' own to w
   authenticity — results are not signed (`delivery.py`);
 - read a missing result — or one whose `context.timestamp` predates the command it just ran,
   left by an earlier run — as `BLOCKED` when the command exited 2, `UNKNOWN` otherwise
-  (`delivery.py --exit <gate>:<code>`: it sees files, the agent tells it the exit);
+  (`delivery.py --exit <gate>:<code>`: it sees files, the agent tells it the exit); never read a gate as `PASS`
+  when its command exited non-zero, even if every result on disk reads `PASS` — an earlier run left them and
+  the failed run cannot be told apart (`UNKNOWN`);
 - read the Runtime gate's two results, `runtime-<key>.json` and `sync-<key>-record-sync.json`, in order: `NOT_RUN`
   when `record-sync` is missing, is not `operation: record-sync`, or when the runtime verdict's `context.timestamp`
   (parsed as a UTC time; absent or unreadable is `UNKNOWN`) is earlier than the `record-sync`'s. The Sync gate stays

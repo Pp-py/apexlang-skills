@@ -39,7 +39,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
-from result import RE_TASK, ROOT, Stop, context, rel, runtime_target, scrub, target, tree  # noqa: E402
+from result import RE_RUN, RE_TASK, ROOT, Stop, claim, context, release, rel, runtime_target, scrub, target, tree  # noqa: E402
 
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 SESSION = [(re.compile(r"([?&])session=[0-9]+&?"), r"\1"), (re.compile(r"(f\?p=[^:\s]*:[^:\s]*:)[0-9]{6,}"), r"\1"),
@@ -91,6 +91,11 @@ def capture(a, rest):
     alias, task_dir, _, key = where(a)
     raw = os.path.join(task_dir, "raw", f"{a.gate}-{key}")
     try:
+        os.makedirs(raw, exist_ok=True)
+    except OSError as e:
+        raise Stop("UNKNOWN", "STATE_UNWRITABLE", f"could not save the evidence: {e.__class__.__name__}")
+    claim(raw, a.name, (".exit.json",))      # GAP-14 B: the previous capture is out of the way before the command runs
+    try:
         p = subprocess.run(rest, stdout=subprocess.PIPE, timeout=600)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise Stop("UNKNOWN", "COMMAND_DID_NOT_RUN", f"the command did not run: {e.__class__.__name__}")
@@ -108,8 +113,15 @@ def capture(a, rest):
         with open(path + ".tmp", "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
         os.replace(path + ".tmp", path)
-        with open(path + ".exit.json", "w", encoding="utf-8", newline="\n") as fh:
-            json.dump({"command": command, "exitCode": p.returncode, "task": a.task, "tree": tree()}, fh)
+        # the metadata is published last, whole (tmp + rename), and carries the output's hash: a reader takes the pair only if they agree
+        meta = {"command": command, "exitCode": p.returncode, "task": a.task, "tree": tree(), "sha256": sha256(path)}
+        run = os.environ.get("APEX_RUN_ID", "")
+        if RE_RUN.fullmatch(run):       # GAP-14: the attempt this capture belongs to (an invalid id is left out)
+            meta["runId"] = run
+        with open(path + ".exit.json.tmp", "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(meta, fh)
+        os.replace(path + ".exit.json.tmp", path + ".exit.json")
+        release(path + ".lock")
     except OSError as e:
         raise Stop("UNKNOWN", "STATE_UNWRITABLE", f"could not save the evidence: {e.__class__.__name__}")
     print(json.dumps({"evidence": {"kind": "file", "path": rel(path), "sha256": sha256(path)},

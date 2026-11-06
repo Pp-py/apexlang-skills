@@ -24,7 +24,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
-from result import ROOT, Stop, context, rel, target, write  # noqa: E402
+from result import ROOT, Stop, claim, context, rel, target, write  # noqa: E402
 
 SECRET_FILES = re.compile(r"(?i)(^|/)(\.env(\.(?!example$|sample$)[^/]+)?|cwallet\.sso|ewallet\.p12|[^/]+\.jks|[^/]+\.keystore|id_rsa|id_ed25519)$")
 ALLOW = re.compile(r"secrets-scan:\s*allow\s+\S")
@@ -103,6 +103,7 @@ def main(argv):
     task_dir = None
     try:
         alias, task_dir, _ = target(a.app, a.task)
+        claim(task_dir, f"security-{alias or 'app'}-secrets.json")      # GAP-14 B: before the work
         if alias:
             result["app"] = {"appAlias": alias}
         files = []

@@ -58,12 +58,12 @@ injection; anything at runtime.
 ## Runtime probes
 
 After `pw.sh [--app X] [--env E] login` and `pw.sh goto <page>`, as the test user:
-`python3 scripts/sec-probe.py [--app X] [--env E] [--task <id>] [--anon <url>]… [--tamper] [--role <url>]… [--xss <token>]`.
+`python3 scripts/sec-probe.py [--app X] [--env E] [--task <id>] [--anon <url>]… [--tamper] [--role <url>]… [--xss <token>] [--auth-host <host[:port]>]…`.
 Each probe runs only when asked; one not asked is `NOT_RUN`. A refusal is read from the page id
 APEX renders (`#pFlowStepId`), or its error page — APEX refuses a checksum or an authorization
 under the requested page's id — against a control: the same URL loaded by the test user, in its
 session, must render without an error, so a broken link is `UNKNOWN`, never a PASS. `--anon`
-fetches over plain HTTP with an empty cookie jar; `--tamper` takes the first `cs=` link of the
+fetches over plain HTTP with an empty cookie jar (a redirect to another host is a login only with a password field, a login path, or `--auth-host`; else `UNKNOWN`); `--tamper` takes the first `cs=` link of the
 held page, a modal page's link included, into a new tab (intact, without `cs`, with a value
 changed); `--role` logs the app's `lowPrivUser` into its own session (password from
 `$APEX_TEST_PASSWORD_LOW[_<ALIAS>[_<ENV>]]` or the `.env`, never argv) and closes it after.

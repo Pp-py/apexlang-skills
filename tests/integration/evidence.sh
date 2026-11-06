@@ -50,6 +50,25 @@ if q "import hashlib; assert d['evidence']['path'] == '$RAW/render'; assert d['e
   ok "capture: the path and sha256 it prints are the file's"; else bad "capture: wrong evidence ref"; fi
 if ! grep -qE "1234567890|987654321|$SECRET_PW|tiger$$" "$RAW/render" && ! grep -qF "$H" "$RAW/render" && grep -q 'home=~' "$RAW/render"; then
   ok "capture: no session id, password, connect string or home dir in the file"; else bad "capture: a value reached the file"; cat "$RAW/render"; fi
+APEX_RUN_ID=R-5 run "capture: APEX_RUN_ID is recorded in the capture's .exit.json (GAP-14)" 0 capture --gate runtime --task T-1 runid -- printf 'x\n'
+if q "import json; assert json.load(open('$RAW/runid.exit.json')).get('runId') == 'R-5'"; then ok "  ...runId R-5"; else bad "capture: runId not recorded"; fi
+APEX_RUN_ID='bad id' run "capture: an invalid APEX_RUN_ID is left out" 0 capture --gate runtime --task T-1 runid -- printf 'x\n'
+if q "import json; assert 'runId' not in json.load(open('$RAW/runid.exit.json'))"; then ok "  ...omitted"; else bad "capture: invalid run id written"; fi
+# GAP-14 B: a capture claims its destination; output and metadata are one unit
+run "capture: first" 0 capture --gate runtime --task T-1 pair -- printf 'one\n'
+run "capture: second" 0 capture --gate runtime --task T-1 pair -- printf 'two\n'
+if [[ -f "$RAW/pair.prev" && -f "$RAW/pair.exit.json.prev" && ! -e "$RAW/pair.lock" && "$(cat "$RAW/pair.prev")" == one && "$(cat "$RAW/pair")" == two ]]; then
+  ok "capture: the previous output and its metadata are .prev; no lock is left"; else bad "capture: .prev or lock wrong"; fi
+if q "import hashlib, sys; assert d['sha256'] == hashlib.sha256(open('$RAW/pair','rb').read()).hexdigest()" "$RAW/pair.exit.json"; then
+  ok "capture: the metadata carries the output's sha256"; else bad "capture: metadata without the output's hash"; fi
+# a live holder as the producers see it: a python process, whose pid is the one os.getpid() reports (on Git Bash $! is not)
+"$PY" -c "import os, time; print(os.getpid(), flush=True); time.sleep(120)" > "$WORK/holder.pid" & HOLD=$!
+for _ in $(seq 1 50); do [[ -s "$WORK/holder.pid" ]] && break; sleep 0.1; done
+printf '%s R-1\n' "$(tr -d '\r\n' < "$WORK/holder.pid")" > "$RAW/pair.lock"
+rm -f "$WORK/ran"
+run "capture: a live lock on the destination → BLOCKED, the command does not run" 2 capture --gate runtime --task T-1 pair -- sh -c "touch '$WORK/ran'; echo three"
+if [[ ! -e "$WORK/ran" && "$(cat "$RAW/pair")" == two ]]; then ok "  ...the command did not run and the output is untouched"; else bad "capture: ran under a live lock"; fi
+kill "$HOLD" 2>/dev/null || true; wait "$HOLD" 2>/dev/null || true; rm -f "$RAW/pair.lock"
 # The other places APEX puts a session id: a page submit's URL, an encoded dialog link, the
 # per-submit token in its JSON answer (seen on a live 26.2 app, R-8).
 run "capture: an APEX submit's session forms" 0 capture --gate runtime --task T-1 submit -- \

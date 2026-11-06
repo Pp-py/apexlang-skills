@@ -9,6 +9,7 @@ security-result): the envelope's context, the app and its config, and where a re
   write()     the result on stdout and, with --task, in the task dir (and in
               $RESULT_CAPTURE_DIR, for the contract tier)
 """
+import atexit
 import datetime
 import json
 import os
@@ -17,7 +18,7 @@ import shutil
 import subprocess
 import sys
 
-FRAMEWORK_VERSION = "0.7.1"   # the apexlang-skills release (.claude-plugin/plugin.json)
+FRAMEWORK_VERSION = "0.8.0"   # the apexlang-skills release (.claude-plugin/plugin.json)
 RE_ALIAS = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")   # common.schema.json appAlias
 RE_TASK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")   # common.schema.json taskId
 RE_CONN = re.compile(r"^[^/@\s\\\"'-][^/@\s\\\"']{0,127}$")   # common.schema.json connectionName, and no leading '-' (it would read as an option)
@@ -90,6 +91,9 @@ def tree():
                 pass
 
 
+RE_RUN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")      # a run id (APEX_RUN_ID, delivery.py --run)
+
+
 def context(task, skill):
     head = git("rev-parse", "HEAD")
     repo = {"commit": head if head and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head) else None,
@@ -97,11 +101,15 @@ def context(task, skill):
     t = tree()
     if t:
         repo["tree"] = t
-    return {"task": task,
-            "repo": repo,
-            "frameworkVersion": FRAMEWORK_VERSION,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "producer": {"skill": skill, "method": "tool"}}
+    ctx = {"task": task,
+           "repo": repo,
+           "frameworkVersion": FRAMEWORK_VERSION,
+           "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "producer": {"skill": skill, "method": "tool"}}
+    run = os.environ.get("APEX_RUN_ID", "")
+    if RE_RUN.fullmatch(run):       # GAP-14: the attempt this result belongs to; an invalid id is left out, never guessed
+        ctx["runId"] = run
+    return ctx
 
 
 def target(app, task, env=None):
@@ -183,12 +191,138 @@ def app_settings(cfg, app):
     return merged
 
 
+_HELD = {}              # lock path -> (destination, token) while this process holds it
+_REFUSED = set()        # destinations this process was refused: write() must not put its own result there
+
+
+def _alive(pid):
+    """Is a process with this pid running? (os.kill(pid, 0) would terminate it on Windows.)"""
+    if os.name == "nt":
+        import ctypes
+        h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)      # PROCESS_QUERY_LIMITED_INFORMATION
+        if h:
+            ctypes.windll.kernel32.CloseHandle(h)
+        return bool(h)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def release(lock=None):
+    """Remove the lock(s) this process holds (all of them, or one). A lock is removed only if it still carries
+    this process's token: an earlier owner can never delete the lock of whoever replaced it."""
+    for path in [lock] if lock else list(_HELD):
+        held = _HELD.pop(path, None)
+        if held is None:
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                mine = fh.read() == held[1]
+            if mine:
+                os.remove(path)
+        except OSError:
+            pass
+
+
+atexit.register(release)
+
+
+def claim(task_dir, name, companions=()):
+    """GAP-14 B. Before the work that can fail, a producer takes its destination <task_dir>/<name>: it creates
+    <name>.lock exclusively (pid and run id) and moves the current result to <name>.prev. A producer that dies
+    afterwards leaves no file that reads as fresh. A live lock, or one that cannot be judged, is BLOCKED
+    CLAIM_HELD (never guessed); a lock whose pid is gone is replaced, with a note on stderr. If the old result
+    cannot be moved the producer stops BLOCKED STATE_UNWRITABLE — it never goes on as if it had been invalidated.
+    `companions` are suffixes of files published with it (an `.exit.json`): moved the same way.
+    The lock is removed by write() and at exit. Local to one machine. A producer with no task dir has nothing to claim."""
+    if not task_dir:
+        return
+    dest = os.path.join(task_dir, name)
+    lock = dest + ".lock"
+    refuse = lambda code, msg: (_REFUSED.add(dest), (_ for _ in ()).throw(Stop("BLOCKED", code, msg)))      # noqa: E731
+    me = f"{os.getpid()} {os.environ.get('APEX_RUN_ID', '-')} {os.urandom(6).hex()}\n"      # the token: ours alone
+    guard = lock + ".recover"
+
+    def judge():        # (pid, text) of the lock as it is now; a lock that cannot be read is never guessed
+        try:
+            with open(lock, encoding="utf-8") as fh:
+                text = fh.read()
+            return int(text.split()[0]), text
+        except FileNotFoundError:
+            return None, None
+        except (OSError, ValueError, IndexError):
+            refuse("CLAIM_HELD", f"{name}.lock exists and cannot be read: another producer may be writing {name}; "
+                                 f"remove the lock only when no producer is running")
+
+    def live(pid):
+        if pid != os.getpid() and _alive(pid):
+            refuse("CLAIM_HELD", f"{name}.lock is held by a running producer (pid {pid}): wait for it, or stop it")
+
+    fd = None
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        pid, seen = judge()
+        if pid is not None:
+            live(pid)
+        # A stale lock is replaced only under <lock>.recover, taken exclusively: the second contender is refused,
+        # and under it the lock is read again, so nobody removes the lock of a producer that took it meanwhile.
+        try:
+            gfd = os.open(guard, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            refuse("CLAIM_HELD", f"{name}.lock is being recovered by another producer: wait and retry "
+                                 f"(remove {name}.lock.recover only when no producer is running)")
+        except OSError as e:
+            refuse("STATE_UNWRITABLE", f"cannot recover {name}.lock: {e.__class__.__name__}")
+        try:
+            os.close(gfd)
+            pid2, now = judge()
+            if pid2 is not None:
+                live(pid2)
+                print(f"claim: stale lock of pid {pid2} (not running) on {name}: replaced", file=sys.stderr)
+                try:
+                    os.remove(lock)
+                except OSError as e:
+                    refuse("STATE_UNWRITABLE", f"cannot replace the stale {name}.lock: {e.__class__.__name__}")
+            try:
+                fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                refuse("CLAIM_HELD", f"{name}.lock could not be replaced")
+            except OSError as e:
+                refuse("STATE_UNWRITABLE", f"cannot create {name}.lock: {e.__class__.__name__}")
+        finally:
+            try:
+                os.remove(guard)
+            except OSError:
+                pass
+    except OSError as e:
+        refuse("STATE_UNWRITABLE", f"cannot create {name}.lock: {e.__class__.__name__}")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(me)
+    _HELD[lock] = (dest, me)
+    try:
+        for suffix in ("",) + tuple(companions):
+            if os.path.exists(dest + suffix):
+                os.replace(dest + suffix, dest + suffix + ".prev")
+    except OSError as e:
+        release(lock)
+        refuse("STATE_UNWRITABLE", f"cannot move the previous {name} out of the way ({e.__class__.__name__}): "
+                                   f"not going on as if it were invalidated")
+
+
 def write(result, task_dir, name):
     """stdout always; the task dir and the capture dir when set. Returns the exit code."""
     doc = json.dumps(result, indent=2)
     print(doc)
     for d in (task_dir, os.environ.get("RESULT_CAPTURE_DIR")):
         if not d:
+            continue
+        if d == task_dir and os.path.join(task_dir, name) in _REFUSED:    # refused a claim: the other producer's file stays
+            print(f"{result['kind']}: {name} is not written: this producer was refused its destination", file=sys.stderr)
             continue
         f = os.path.join(d, name if d == task_dir else f"{os.getpid()}-{name}")
         try:
@@ -199,6 +333,8 @@ def write(result, task_dir, name):
             print(f"{result['kind']}: could not write {scrub(f)}: {e.__class__.__name__}", file=sys.stderr)
             if d == task_dir:
                 return 3                    # a gate whose result is not on disk has no verdict
+    if task_dir:
+        release(os.path.join(task_dir, name) + ".lock")        # the result is published: the claim ends
     failed = [c["id"] for c in result["criteria"] if c["status"] == "FAIL"]
     print(f"{result.get('scope') or result['kind']}: {result['status']}"
           + (f"; FAIL {', '.join(failed)}" if failed else "")

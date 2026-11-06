@@ -26,7 +26,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "framework", "lib"))
 from apx import RE_FENCE, RE_PROP, ParseError, collect, is_destructive, parse, prop, walk  # noqa: E402
-from result import Stop, context, rel, target, write  # noqa: E402
+from result import Stop, claim, context, rel, target, write  # noqa: E402
 
 CRITERIA = ["UX-ITEM-NAME", "UX-CONTROL-NAME", "UX-DESTRUCTIVE-CONFIRM",
             "UX-NO-INLINE-STYLE", "UX-NO-COMPOSED-CLASS"]
@@ -122,6 +122,7 @@ def main(argv):
     task_dir = None
     try:
         alias, task_dir, _ = target(a.app, a.task)
+        claim(task_dir, f"ui-{alias or 'app'}-static.json")      # GAP-14 B: before the work
         if alias:
             result["app"] = {"appAlias": alias}
         result.update(scan(a.paths))

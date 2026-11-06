@@ -188,6 +188,13 @@ def check_skill_shape():
         bad(f"AGENTS.md is {size} bytes — over the {AGENTS_BUDGET}-byte budget")
     else:
         ok(f"AGENTS.md: {size} bytes ≤ {AGENTS_BUDGET}")
+    # the entry instructions give the loop the gates run in: it must name the Package gate and say it is opt-in
+    agents = " ".join(read("AGENTS.md").split())
+    loop = agents[agents.find("They form one loop"):agents.find("(plus sync-check before any export)")]
+    if "package check" in loop and "packageGate" in loop and loop.index("validate") < loop.index("package check") < loop.index("sync-check"):
+        ok("AGENTS.md: the loop puts the opt-in Package check (packageGate) between validate and sync-check")
+    else:
+        bad("AGENTS.md: the loop omits the Package gate (opt-in packageGate, between validate and sync-check)")
 
 
 def check_versions_and_lock():
@@ -495,7 +502,7 @@ def check_interface():
                          ("apex-security/scripts/sec-probe.py", "[--app <alias>] [--env <name>] [--task <id>] [--anon <url>]... [--tamper]"),
                          ("apex-security/scripts/secrets-scan.py", "[--app <alias>] [--task <id>] [<path>...]"),
                          ("apexlang-delivery/scripts/delivery.py", "--task <id> [--app <alias>] [--env <name>] [--skip <gate>:<reason>]..."),
-                         ("apexlang-delivery/scripts/delivery.py", "[--exit <gate>:<code>]..."),
+                         ("apexlang-delivery/scripts/delivery.py", "[--exit <gate>[/<producer>]:<code>]..."),
                          ("apexlang-delivery/scripts/delivery.py", "[--page <page>[:dialog]]...")):
         if args not in read(f"skills/{script}"):
             missing.append(f"{script} usage: {args}")
@@ -515,7 +522,7 @@ def check_interface():
     contracts = read("framework/CONTRACTS.md")
     for args in ("pkg-check.py [--app <alias>] [--env <name>] [--task <id>] <file-or-dir>…",
                  "delivery.py --task <id> [--app <alias>] [--env <name>]", "[--skip <gate>:<reason>]…",
-                 "[--exit <gate>:<code>]…", "[--page <page>[:dialog]]…"):
+                 "[--exit <gate>[/<producer>]:<code>]…", "[--page <page>[:dialog]]…"):
         if args not in " ".join(contracts.split()):      # the usage line wraps in the document
             missing.append(f"CONTRACTS.md does not state delivery.py's usage: {args}")
     for path in re.findall(r"`(skills/[^`\s]+\.sh)", contracts):

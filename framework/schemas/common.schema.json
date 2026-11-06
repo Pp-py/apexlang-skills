@@ -148,6 +148,11 @@
         },
         "frameworkVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$" },
         "timestamp": { "$ref": "#/$defs/utcTimestamp" },
+        "runId": {
+          "description": "The run (one attempt at a task's gates) the result was written in, from APEX_RUN_ID (GAP-14). Optional: a result without it is still valid; apexlang-delivery --run <id> reads only the results that carry that id.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        },
         "producer": { "$ref": "#/$defs/producer" },
         "target": { "$ref": "#/$defs/target" }
       }

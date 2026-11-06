@@ -113,7 +113,7 @@ earlier than its own (one second resolution; a timestamp it cannot parse is `UNK
 `check-import` alone, and `--exit runtime:<code>` speaks for the runtime-result only. No schema changed: the stable
 `verification-manifest` already admits several results under a gate.
 
-## The frozen interface (0.7.x)
+## The frozen interface (0.8.x)
 
 What a consumer may rely on. Changing any of it is a minor release with a `CHANGELOG.md`
 entry; removing any of it, a major one.
@@ -131,7 +131,7 @@ entry; removing any of it, a major one.
   [--env <name>] [--task <id>] [--dialog <selector>]… [--raw <file>]`, `skills/apex-security/scripts/sec-scan.py
   [--app <alias>] [--task <id>] <file-or-dir>…` and `plsql-scan.py` with the same arguments,
   `sec-probe.py [--app <alias>] [--env <name>] [--task <id>] [--anon <url>]… [--tamper]
-  [--role <url>]… [--xss <token>]`, `secrets-scan.py [--app <alias>] [--task <id>] [<path>…]` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
+  [--role <url>]… [--xss <token>] [--auth-host <host[:port]>]…`, `secrets-scan.py [--app <alias>] [--task <id>] [<path>…]` (python3; exit 0 PASS · 1 FAIL · 2 BLOCKED ·
   3 UNKNOWN). `skills/apexlang-architecture/scripts/arch-scan.py <file-or-dir>…` (python3; JSON on
   stdout, no result file; exit 0 no red flag · 1 red flags · 2 BLOCKED · 3 UNKNOWN).
   `framework/scripts/evidence.py capture --gate runtime|architecture|validation [--app <alias>] [--env <name>]
@@ -140,7 +140,7 @@ entry; removing any of it, a major one.
   0 PASS · 1 FAIL · 2 BLOCKED · 3 UNKNOWN; a refused draft 2, nothing written — a draft whose `app.appId` contradicts apex-sync.json's is refused); `evidence.py fresh
   --task <id> <result.json>…` (exit 0 fresh · 1 stale · 2 not a result · 3 no tree).
   `skills/apexlang-delivery/scripts/delivery.py --task <id> [--app <alias>] [--env <name>]
-  [--skip <gate>:<reason>]… [--exit <gate>:<code>]… [--page <page>[:dialog]]…` (`--page` declares a page the change
+  [--skip <gate>:<reason>]… [--exit <gate>[/<producer>]:<code>]… [--page <page>[:dialog]]… [--run <id>]` (`--exit <gate>/<producer>:<code>` speaks for one producer — security `static|plsql|secrets|runtime`, ui `static|runtime-<page>`, runtime `walkthrough|record-sync`, sync `check-import`, and `architecture`, `validation`, `package` — a specific exit 0 never neutralizes the gate's non-zero one, duplicates with two codes and unknown keys are BLOCKED `BAD_EXIT`; `--run`, default `$APEX_RUN_ID` — GAP-14 — reads only the results whose optional `context.runId` is that id: another id or none is `NOT_RUN` (stale), a bad id BLOCKED `BAD_RUN`, and the manifest records it; a producer claims its destination before the work (`<result>.lock`, `<result>.prev`; `CLAIM_HELD`, `STATE_UNWRITABLE`) and `evidence.py capture` writes the output's `sha256` in its `.exit.json`; every producer writes `context.runId` from `APEX_RUN_ID` when it is a valid id, and `evidence.py capture` writes `runId` in the capture's `.exit.json`; `--page` declares a page the change
   touched: the `<page>` of `ui-<key>-runtime-<page>.json`, repeatable, once each, `:dialog` when it opens a dialog — under
   `uiGate` the UI gate reads that file for that page and is `NOT_RUN` with no `--page`; python3 and the `jsonschema` package, required — without it, or without `framework/schemas/`, exit 2 BLOCKED
   (`NO_JSONSCHEMA`, `NO_SCHEMAS`) and no manifest; the manifest on stdout and in the task dir, a gate that is not required

@@ -39,8 +39,8 @@ Codex, opencode, Cursor, aider, …) working on an APEXlang app, load the releva
 6. **`skills/apexlang-delivery/SKILL.md`** — read it to deliver a change: it runs the loop below
    for one task and `scripts/delivery.py` writes its `verification-manifest`.
 
-They form one loop: **architect → build (`.apx` + package) → validate → sync-check → import →
-record-sync → verify in the browser → security probes → UI checks** (plus sync-check before any export).
+They form one loop: **architect → build (`.apx` + package) → validate → package check (opt-in `packageGate`) →
+sync-check → import → record-sync → verify in the browser → security probes → UI checks** (plus sync-check before any export).
 
 ## Gates, statuses, evidence
 
@@ -54,7 +54,7 @@ record-sync → verify in the browser → security probes → UI checks** (plus 
   verdicts go through `framework/scripts/evidence.py`.
 - Never write a marker, a ref under `refs/apex-sync/` or a result by hand, and never run
   `record-sync --force`: those are the user's calls.
-- What each gate establishes and does not, and how an orchestrator may use them: `framework/GATES.md`.
+- What each gate establishes and does not: `framework/GATES.md`.
 
 ## Hard requirements (apex-sync-guard)
 

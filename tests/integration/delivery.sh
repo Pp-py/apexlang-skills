@@ -157,6 +157,11 @@ stamp security-result/runtime-pass security-hr-runtime.json
 stamp ui-result/static-pass ui-hr-static.json
 run "Security PASS on four scopes; UI static only → NOT_RUN (a page is needed)" 4 --task T-1
 if q "g['security']['status'] == 'PASS' and len(g['security']['results']) == 4 and g['ui']['status'] == 'NOT_RUN'"; then ok "security: four results cited"; else bad "security: wrong"; fi
+# R2-02: several producers, one exit code: PASSes an earlier run left cannot absorb a failed run
+run "R2-02: --exit security:2 while all four scopes read PASS → UNKNOWN" 3 --task T-1 --exit security:2
+if q "g['security']['status'] == 'UNKNOWN'" && says "every result reads PASS"; then ok "  ...a failed run is not told apart from the earlier results"; else bad "R2-02: security exit 2 kept PASS"; fi
+run "R2-02: --exit security:0 with the four PASS → the gate stays PASS" 4 --task T-1 --exit security:0
+if q "g['security']['status'] == 'PASS'"; then ok "  ...control"; else bad "R2-02: security exit 0"; fi
 "$PY" - "$FIX/ui-result/runtime-fail.json" "$T/ui-hr-runtime-orders.json" "$REPO/framework/lib" <<'PY'
 import json, sys
 sys.path.insert(0, sys.argv[3])
@@ -203,6 +208,16 @@ stamp runtime-result/editable-ig-pass runtime-hr.json
 run "conformance: a PASS whose command exited 1 → UNKNOWN" 3 --task T-1 --exit runtime:1
 if says "but its command exited 1"; then ok "conformance: the disagreement is named"; else bad "conformance: disagreement not named"; fi
 run "conformance: a PASS whose command exited 0 → PASS" 0 --task T-1 --page orders --exit runtime:0
+# R2-01: the capture on disk is fresh (same task, same tree) but the command that just ran exited otherwise
+for c in 1 2 3; do
+  run "R2-01: a fresh Validation PASS capture, the command exited $c → UNKNOWN (never PASS)" 3 --task T-1 --page orders --exit validation:$c
+  if q "g['validation']['status'] == 'UNKNOWN' and d['status'] == 'UNKNOWN'" && says "but its command exited $c"; then ok "  ...named"; else bad "R2-01: validation exit $c kept PASS"; fi
+done
+run "R2-01: a fresh Validation PASS capture, the command exited 0 → PASS" 0 --task T-1 --page orders --exit validation:0
+run "M38-02: validation:2 then validation:0 → BLOCKED (BAD_EXIT), never PASS" 2 --task T-1 --page orders --exit validation:2 --exit validation:0
+if says "(BAD_EXIT)"; then ok "  ...BAD_EXIT named"; else bad "M38-02: validation:2 validation:0"; fi
+run "M38-02: validation:0 then validation:2 → BLOCKED (BAD_EXIT)" 2 --task T-1 --page orders --exit validation:0 --exit validation:2
+run "M38-02: validation:0 twice → PASS (identical duplicates are accepted)" 0 --task T-1 --page orders --exit validation:0 --exit validation:0
 mv "$T/raw/validation-hr" "$WORK/validation.keep"
 run "conformance: no Validation capture, it exited 2 → BLOCKED" 2 --task T-1 --exit validation:2
 if q "g['validation']['status'] == 'BLOCKED'"; then ok "conformance: Validation BLOCKED in the manifest"; else bad "conformance: validation exit 2"; fi
@@ -388,6 +403,62 @@ run "ui pages: orders and billing, each file names its own page → PASS" 0 "${U
 if q "len(g['ui']['results']) == 3"; then ok "  ...three results cited"; else bad "ui pages: two pages not cited"; fi
 run "ui pages: control — billing exists but only orders is declared → PASS (an undeclared PASS is cited)" 0 "${UIP[@]}" --page orders
 if q "len(g['ui']['results']) == 3"; then ok "  ...and still cited"; else bad "ui pages: undeclared file not cited"; fi
+# GAP-14 A: --exit <gate>/<producer>:<code>, one producer's exit code (security has four, ui one per page)
+PEX=("${UIP[@]}" --page orders --page billing)
+run "A: control — every producer PASS, no --exit → PASS" 0 "${PEX[@]}"
+run "A: security/runtime:2, every scope PASS → UNKNOWN, naming that producer only" 3 "${PEX[@]}" --exit security/runtime:2
+if q "g['security']['status'] == 'UNKNOWN' and len(g['security']['results']) == 4 and g['ui']['status'] == 'PASS'" && says "security/runtime: .*exited 2" \
+   && [[ $(grep -c 'exited 2' "$WORK/err.txt") -eq 1 ]]; then ok "  ...one producer named, the other three scopes and the UI gate keep their PASS"; else bad "A: security/runtime:2"; fi
+run "A: security/static:0, every scope PASS → PASS" 0 "${PEX[@]}" --exit security/static:0
+run "A: ui/runtime-billing:1, both pages PASS → UNKNOWN, only that page" 3 "${PEX[@]}" --exit ui/runtime-billing:1
+if q "g['ui']['status'] == 'UNKNOWN' and g['security']['status'] == 'PASS'" && says "ui/runtime-billing: .*exited 1" && [[ $(grep -c 'exited 1' "$WORK/err.txt") -eq 1 ]]; then
+  ok "  ...billing named, orders not"; else bad "A: ui/runtime-billing:1"; fi
+run "A: validation/validation:1, a PASS capture → UNKNOWN" 3 "${PEX[@]}" --exit validation/validation:1
+run "A: sync/check-import:1, a PASS result → UNKNOWN" 3 "${PEX[@]}" --exit sync/check-import:1
+# a declared page whose producer died leaves no file: it is a producer, never BAD_EXIT
+mv "$T/ui-hr-runtime-billing.json" "$WORK/billing.keep"
+run "A: a declared page with no file, ui/runtime-billing:2 → BLOCKED (not BAD_EXIT)" 2 "${PEX[@]}" --exit ui/runtime-billing:2
+if q "g['ui']['status'] == 'BLOCKED'" && ! says "BAD_EXIT"; then ok "  ...BLOCKED, the missing producer is recognized"; else bad "A: declared page with no file"; fi
+run "A: the same page, ui/runtime-billing:3 → UNKNOWN" 3 "${PEX[@]}" --exit ui/runtime-billing:3
+run "A: the same page, ui/runtime-billing:0 → UNKNOWN (it ran and left nothing)" 3 "${PEX[@]}" --exit ui/runtime-billing:0
+mv "$WORK/billing.keep" "$T/ui-hr-runtime-billing.json"
+# invalid keys, gates, shapes
+for bad_exit in security/nope:1 ui/runtime-ghost:1 "ui/runtime-bad key:1" architecture/x:1 security/:1 /runtime:1 security/runtime/x:1 runtime/walk:1; do
+  run "A: --exit $bad_exit → BLOCKED (BAD_EXIT)" 2 "${PEX[@]}" --exit "$bad_exit"
+  if says "(BAD_EXIT)"; then ok "  ...BAD_EXIT named"; else bad "A: $bad_exit not BAD_EXIT"; fi
+done
+run "A: an unknown key names the keys the gate has" 2 "${PEX[@]}" --exit security/nope:1
+if says "static" && says "plsql" && says "secrets" && says "runtime"; then ok "  ...the four security keys listed"; else bad "A: keys not listed"; fi
+# the global and the specific form together: a specific 0 never neutralizes a global non-zero
+run "A: --exit security:2 with security/runtime:0 → UNKNOWN (the global still holds)" 3 "${PEX[@]}" --exit security:2 --exit security/runtime:0
+run "A: --exit security:0 with security/runtime:2 → UNKNOWN (the specific still holds)" 3 "${PEX[@]}" --exit security:0 --exit security/runtime:2
+run "A: the same key twice with the same code → accepted" 3 "${PEX[@]}" --exit security/runtime:2 --exit security/runtime:2
+run "A: the same key twice with different codes → BLOCKED (BAD_EXIT)" 2 "${PEX[@]}" --exit security/runtime:2 --exit security/runtime:1
+if says "(BAD_EXIT)"; then ok "  ...BAD_EXIT named"; else bad "A: contradictory duplicate"; fi
+# M38-02 (review 11): the global form too — the order of the arguments never decides whether a reported failure survives
+run "A: --exit security:2 --exit security:0 → BLOCKED (BAD_EXIT)" 2 "${PEX[@]}" --exit security:2 --exit security:0
+if says "(BAD_EXIT)" && says "two different codes"; then ok "  ...BAD_EXIT named"; else bad "A: contradictory global duplicate"; fi
+run "A: --exit security:0 --exit security:2 → BLOCKED (BAD_EXIT), the other order" 2 "${PEX[@]}" --exit security:0 --exit security:2
+if says "(BAD_EXIT)"; then ok "  ...BAD_EXIT named"; else bad "A: contradictory global duplicate (reversed)"; fi
+run "A: --exit security:2 --exit security:2 → accepted (same code)" 3 "${PEX[@]}" --exit security:2 --exit security:2
+# runtime: the walkthrough and record-sync are two producers; the global form speaks for the walkthrough only
+run "A: runtime/record-sync:1, a PASS record-sync → UNKNOWN" 3 "${PEX[@]}" --exit runtime/record-sync:1
+if q "g['runtime']['status'] == 'UNKNOWN'" && says "runtime/record-sync: .*exited 1" && ! says "runtime/walkthrough"; then ok "  ...attributed to record-sync, not to the walkthrough"; else bad "A: runtime/record-sync:1"; fi
+run "A: runtime/walkthrough:0 and runtime/record-sync:0 → PASS" 0 "${PEX[@]}" --exit runtime/walkthrough:0 --exit runtime/record-sync:0
+run "A: runtime/walkthrough:1, a PASS walkthrough → UNKNOWN" 3 "${PEX[@]}" --exit runtime/walkthrough:1
+# a result that disagrees with its exit: FAIL with exit 0 is UNKNOWN; FAIL with exit 1 keeps its severity
+stamp security-result/static-fail security-hr-static.json
+run "A: security/static:0, its result is a FAIL → UNKNOWN (they disagree)" 3 "${PEX[@]}" --exit security/static:0
+run "A: security/static:1, its result is a FAIL → FAIL (severity kept)" 1 "${PEX[@]}" --exit security/static:1
+stamp security-result/static-pass security-hr-static.json
+# a missing result: the exit says how it reads
+mv "$T/security-hr-secrets.json" "$WORK/secrets.keep"
+run "A: security/secrets:2, no result → BLOCKED" 2 "${PEX[@]}" --exit security/secrets:2
+run "A: security/secrets:3, no result → UNKNOWN" 3 "${PEX[@]}" --exit security/secrets:3
+run "A: security/secrets:0, no result → UNKNOWN (it ran and left nothing)" 3 "${PEX[@]}" --exit security/secrets:0
+mv "$WORK/secrets.keep" "$T/security-hr-secrets.json"
+# a gate that is not evaluated does not read its --exit
+run "A: control — everything restored → PASS" 0 "${PEX[@]}"
 # an undeclared page's result still counts in the worst status
 page extra "$URLB" "$FAILED"
 run "ui pages: a FAIL on an undeclared page is still FAIL" 1 "${UIP[@]}" --page orders --page billing
@@ -436,6 +507,8 @@ if q "g['ui']['status'] == 'BLOCKED'" && says "ran (exit 2) but ui-hr-runtime-bi
 run "ui pages: --exit ui:1, a declared page has no result → UNKNOWN (never FAIL, never PASS)" 3 "${UIP[@]}" --page orders --page billing --exit ui:1
 run "ui pages: --exit ui:2, no --page → BLOCKED (the declaration is what is missing)" 2 "${UIP[@]}" --exit ui:2
 run "ui pages: --exit ui:0, every declared page has its PASS → PASS" 0 "${UIP[@]}" --page orders --exit ui:0
+run "R2-02: --exit ui:2 while the declared page reads PASS → UNKNOWN" 3 "${UIP[@]}" --page orders --exit ui:2
+if q "g['ui']['status'] == 'UNKNOWN'" && says "every result reads PASS"; then ok "  ...not told apart from the earlier page result"; else bad "R2-02: ui exit 2 kept PASS"; fi
 page billing "$URLB"
 # bad declarations are refused before anything is read
 for bad_page in "" "orders:" "orders:modal" "orders:dialog:x" "a b" "a:b" "orders:#open" "orders:a b" "../x" "a/b" "$(printf 'x%.0s' $(seq 1 41))"; do
@@ -665,6 +738,51 @@ run "package: a result of another working tree → NOT_RUN (stale)" 4 "${PK[@]}"
 if says "package-hr.json: stale — the working tree changed since"; then ok "  ...stale, tree"; else bad "package: other tree"; fi
 stampm package-result/pass package-hr.json
 run "package: control — the PASS restored → PASS" 0 "${PK[@]}"
+# GAP-14 B: output and metadata are one unit; .prev and .lock are never read
+"$PY" - "$T/raw/validation-hr/validate" <<'PY'
+import sys
+open(sys.argv[1], "a").write("changed after the metadata was published\n")
+PY
+run "B: a Validation output that no longer matches its metadata → UNKNOWN" 3 "${PK[@]}"
+if says "does not match its metadata" && q "g['validation']['status'] == 'UNKNOWN'"; then ok "  ...named, never PASS"; else bad "B: tampered capture"; fi
+validate "Validation successful" 0
+cp "$T/package-hr.json" "$WORK/pk.cur"
+mv "$T/package-hr.json" "$T/package-hr.json.prev"; : > "$T/package-hr.json.lock"
+run "B: a result that was moved to .prev, with a .lock beside it → NOT_RUN (neither is read)" 4 "${PK[@]}"
+if says "package-hr.json: not in the task"; then ok "  ...not in the task"; else bad "B: .prev was read"; fi
+rm -f "$T/package-hr.json.prev" "$T/package-hr.json.lock"; mv "$WORK/pk.cur" "$T/package-hr.json"
+# GAP-14: with --run <id> the aggregator reads only the results written in that run (context.runId, set from
+# APEX_RUN_ID by each producer); without it nothing changes
+run "run id: no --run, a result with a runId is read as before → PASS" 0 "${PK[@]}"
+stampm package-result/pass package-hr.json "d['context']['runId'] = 'R-1'"
+run "run id: no --run, a result with a runId is read as before → PASS" 0 "${PK[@]}"
+# every result of the task written in the one run R-1 (the fixtures of the other gates carry no run id)
+for f in "$T"/*.json; do "$PY" - "$f" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["context"]["runId"] = "R-1"
+json.dump(d, open(sys.argv[1], "w"))
+PY
+done
+APEX_RUN_ID=R-1 validate 'Validation successful' 0       # the Validation capture too is made in run R-1
+run "run id: --run R-1 and every result carries R-1 → PASS, and the manifest records the run" 0 "${PK[@]}" --run R-1
+if q "d['context']['runId'] == 'R-1' and g['package']['status'] == 'PASS'"; then ok "  ...manifest context.runId is R-1"; else bad "run id: manifest does not record the run"; fi
+run "run id: --run R-2, the result is from R-1 → NOT_RUN (stale), naming both" 4 "${PK[@]}" --run R-2
+if says "package-hr.json: stale — made in run R-1, this is run R-2" && q "g['package']['status'] == 'NOT_RUN'"; then ok "  ...stale, naming both runs"; else bad "run id: other run not stale"; fi
+if says "the Validation capture is stale — made in run R-1, this is run R-2" && q "g['validation']['status'] == 'NOT_RUN'"; then ok "  ...the Validation capture of R-1 is stale in R-2"; else bad "run id: Validation of another run not stale"; fi
+stampm package-result/pass package-hr.json
+validate 'Validation successful' 0                        # a capture that records no run
+run "run id: --run R-1, the result records no run → NOT_RUN (stale)" 4 "${PK[@]}" --run R-1
+if says "package-hr.json: stale — records no run, this is run R-1"; then ok "  ...stale, no run recorded"; else bad "run id: result with no run not stale"; fi
+if says "the Validation capture is stale — records no run, this is run R-1" && q "g['validation']['status'] == 'NOT_RUN'"; then ok "  ...a Validation capture with no run is stale under --run"; else bad "run id: Validation with no run not stale"; fi
+# the producers write it: the python envelope and the guard's sync-result, from APEX_RUN_ID; an invalid id is left out
+got=$(APEX_RUN_ID=R-7 "$PY" -c "import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(sys.argv[1]), '..', '..', '..', 'framework', 'lib')); from result import context; print(context('T-1', 'x').get('runId'))" "$DLV")
+if [[ "$got" == R-7 ]]; then ok "a producer's context carries APEX_RUN_ID"; else bad "context() lost the run id: $got"; fi
+got=$(APEX_RUN_ID='bad id' "$PY" -c "import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(sys.argv[1]), '..', '..', '..', 'framework', 'lib')); from result import context; print(context('T-1', 'x').get('runId'))" "$DLV")
+if [[ "$got" == None ]]; then ok "an invalid APEX_RUN_ID is left out, not guessed"; else bad "an invalid run id was written: $got"; fi
+run "run id: --run with an id that is not one → BLOCKED (BAD_RUN)" 2 "${PK[@]}" --run 'bad id'
+if says "BAD_RUN"; then ok "  ...BAD_RUN named"; else bad "run id: BAD_RUN not named"; fi
+APEX_RUN_ID=R-9 run "run id: APEX_RUN_ID is the default of --run" 4 "${PK[@]}"
+if says "stale — records no run, this is run R-9"; then ok "  ...the environment names the run"; else bad "run id: env default"; fi
 # identity (C2's table): another app, another appId, another environment, or none at all → NOT_RUN "misfiled"
 neg "package-result of another app (fin, id 200)" package-hr.json package-result/pass "$(who fin 200)" "${PK[@]}"
 neg "package-result of hr with another appId" package-hr.json package-result/pass "$(who hr 999)" "${PK[@]}"
