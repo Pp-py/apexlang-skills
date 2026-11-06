@@ -593,6 +593,14 @@ if [[ ! -e "$EV/T-1/sync-demo-check-import.json.lock" ]]; then ok "  ...and no l
 printf 'junk\n' > "$EV/T-1/sync-demo-check-import.json.lock"
 expect     "an unreadable lock -> BLOCKED"                       2 "$CHK" check-import --task T-1
 rm -f "$EV/T-1/sync-demo-check-import.json.lock"
+# M38-01: a stale lock is replaced only under <lock>.recover; a recovery already in progress refuses the second contender
+true & HOLD=$!; wait "$HOLD" 2>/dev/null || true; sleep 1       # a pid that is gone
+printf '%s R-0 x\n' "$HOLD" > "$EV/T-1/sync-demo-check-import.json.lock"; : > "$EV/T-1/sync-demo-check-import.json.lock.recover"
+expect     "a recovery in progress on the task copy -> BLOCKED"  2 "$CHK" check-import --task T-1
+if [[ -f "$EV/T-1/sync-demo-check-import.json.lock" && -f "$EV/T-1/sync-demo-check-import.json.lock.recover" ]]; then ok "  ...the stale lock and the recovery guard are untouched"; else bad "claim: a recovery in progress was overridden"; fi
+rm -f "$EV/T-1/sync-demo-check-import.json.lock" "$EV/T-1/sync-demo-check-import.json.lock.recover"
+expect     "no lock and no guard is left after a normal run"     0 "$CHK" check-import --task T-1
+if [[ ! -e "$EV/T-1/sync-demo-check-import.json.lock" && ! -e "$EV/T-1/sync-demo-check-import.json.lock.recover" ]]; then ok "  ...neither file stays"; else bad "claim: a lock or guard stayed"; fi
 expect_out "no run id in the result without APEX_RUN_ID (GAP-14)" '^null$' rget "$EV/T-1/sync-demo-check-import.json" context.runId
 APEX_RUN_ID=R-3 "$CHK" check-import --task T-1 >/dev/null 2>&1 || true
 expect_out "APEX_RUN_ID is written to context.runId"             '^R-3$' rget "$EV/T-1/sync-demo-check-import.json" context.runId

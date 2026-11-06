@@ -42,7 +42,8 @@ that gate is BLOCKED `BAD_EXIT`, naming the keys the gate has.
 
 - Global (`--exit security:2`) applies to every producer of the gate; a specific one adds a restriction for its
   producer. **A specific exit 0 never neutralizes a global non-zero.**
-- The same key given twice with the same code is accepted; with different codes it is BLOCKED `BAD_EXIT`.
+- The same key, or the same gate in its global form, given twice with the same code is accepted; with different
+  codes, in either order, it is BLOCKED `BAD_EXIT` (review 11, M38-02: the last argument must not erase a failure).
 - `runtime` today: the global exit speaks for the walkthrough alone, not for `record-sync`. That stays;
   `runtime/record-sync:<code>` is the only way to report record-sync's exit, and it affects the order rule
   (`after_record_sync`) only as its own result's status does: a record-sync that exited non-zero is UNKNOWN or
@@ -74,7 +75,11 @@ closed until all producers are covered.
    exit (A) or a new run id (built), not for the producer.
 2. **Claim.** The claim is an exclusive create of `<name>.lock` (`O_EXCL`) holding the pid and the run id. A
    second producer for the same destination finds it and refuses (BLOCKED, exit 2), naming the lock. A lock whose
-   pid no longer exists is replaced with a note; a lock that cannot be judged is left and reported. The lock is
+   pid no longer exists is replaced with a note, but only under `<lock>.recover`, created exclusively: a second
+   contender is refused, and under it the lock is read again, so nobody removes the lock of a producer that took it
+   meanwhile (review 11, M38-01). The lock carries a token; it is removed only while it still carries the remover's
+   token. A lock that cannot be judged, or a `.recover` left by a producer that died inside the recovery, is left and
+   reported (remove it by hand when no producer runs). The lock is
    removed on every exit path of the producer. This is local, one machine; two machines on one shared task dir
    are out of scope and stated as such.
 3. **One unit.** A producer that writes a file plus metadata (`evidence.py capture`: the output and its
@@ -94,7 +99,9 @@ Expected outcomes, not promises of NOT_RUN everywhere: no file and no reported e
 
 ## Compatibility and schemas
 
-- **No schema change is needed or made.** The manifest keeps `results[]` references as `kind`, `path`, `sha256`
+- **One schema change, an enum value:** `sync-result.schema.json` gains the reason `CLAIM_HELD` (a validator
+  holding the 0.7.x schema rejects a sync-result with it; update schemas and scripts together, hence 0.8.0).
+  Otherwise **no schema change is needed or made.** The manifest keeps `results[]` references as `kind`, `path`, `sha256`
   (`additionalProperties: false`), and no field is added to the results. The first draft's per-result timestamps
   were dropped for that reason.
 - If a later revision wants a new manifest field, it is a schema evolution to be defined and tested: a validator

@@ -106,6 +106,7 @@ TMP_KEEP=""                       # scratch dirs preserved on FAIL for resolutio
 TMPS=()
 RESULT_FILES=()                   # where this run's sync-result goes (results_init)
 TASK_LOCK=""                      # the lock this run holds on its task-dir copy (claim_task_copy, GAP-14 B)
+TASK_TOKEN=""                     # what this run wrote in it: the lock is removed only while it still says so
 ROOT=""; STATE_DIR=""             # known once the repo and the app are
 GIT_DIR_ABS=""; GIT_COMMON=""; STATE_REL=".git"   # this worktree's git dir, the shared one
 
@@ -172,7 +173,7 @@ on_exit() {
       fi
     fi
   fi
-  [[ -z "$TASK_LOCK" ]] || rm -f "$TASK_LOCK"       # the claim ends with the run, whatever its verdict
+  release_task_lock                                 # the claim ends with the run, whatever its verdict
   f=(); for t in "${TMPS[@]:-}"; do [[ -n "$t" && "$t" != "$TMP_KEEP" ]] && f+=("$t"); done
   (( ${#f[@]} )) && rm -rf "${f[@]}"
   exit "$rc"
@@ -894,20 +895,38 @@ write_results() {  # the current verdict → every result file, each replaced at
 # and the previous copy moved to <file>.prev. A live lock, or one that cannot be read, is BLOCKED CLAIM_HELD
 # (the other producer's file is never overwritten); a lock whose pid is gone is replaced, with a note. The
 # guard's own state (last-*.json, check-ok.* markers, refs/apex-sync/) is not touched by this.
+release_task_lock() {  # removes the lock only if it still carries this run's token: never another producer's
+  [[ -n "$TASK_LOCK" ]] || return 0
+  [[ "$(cat "$TASK_LOCK" 2>/dev/null)" == "${TASK_TOKEN%$'\n'}" ]] && rm -f "$TASK_LOCK"
+  TASK_LOCK=""; TASK_TOKEN=""
+}
+
 claim_task_copy() {  # $1 = the task-dir copy
-  local f=$1 lock=$1.lock pid=""
-  mk_lock() { ( set -C; printf '%s %s\n' "$$" "${APEX_RUN_ID:--}" > "$lock" ) 2>/dev/null; }
+  local f=$1 lock=$1.lock guard=$1.lock.recover pid="" pid2="" token
+  token="$$ ${APEX_RUN_ID:--} $RANDOM$RANDOM"
+  mk_lock() { ( set -C; printf '%s\n' "$token" > "$lock" ) 2>/dev/null; }
+  read_pid() { sed -n '1s/ .*//p' "$lock" 2>/dev/null; }
   if ! mk_lock; then
-    pid=$(sed -n '1s/ .*//p' "$lock" 2>/dev/null) || pid=""
+    pid=$(read_pid) || pid=""
     [[ "$pid" =~ ^[0-9]+$ ]] || blocked CLAIM_HELD "$(basename "$lock") exists and cannot be read: another producer may be writing it; remove the lock only when no producer is running"
     if kill -0 "$pid" 2>/dev/null; then blocked CLAIM_HELD "$(basename "$lock") is held by a running producer (pid $pid): wait for it, or stop it"; fi
-    echo "claim: stale lock of pid $pid (not running) on $(basename "$f"): replaced" >&2
-    rm -f "$lock"
-    mk_lock || blocked CLAIM_HELD "$(basename "$lock") could not be replaced"
+    # A stale lock is replaced only under <lock>.recover, taken exclusively (set -C): a second contender is refused,
+    # and under it the lock is read again, so nobody removes the lock of a producer that took it meanwhile.
+    if ! ( set -C; : > "$guard" ) 2>/dev/null; then
+      blocked CLAIM_HELD "$(basename "$lock") is being recovered by another producer: wait and retry (remove $(basename "$guard") only when no producer is running)"
+    fi
+    pid2=$(read_pid) || pid2=""
+    if [[ -e "$lock" ]]; then
+      if ! [[ "$pid2" =~ ^[0-9]+$ ]]; then rm -f "$guard"; blocked CLAIM_HELD "$(basename "$lock") exists and cannot be read: another producer may be writing it"; fi
+      if kill -0 "$pid2" 2>/dev/null; then rm -f "$guard"; blocked CLAIM_HELD "$(basename "$lock") is held by a running producer (pid $pid2): wait for it, or stop it"; fi
+      echo "claim: stale lock of pid $pid2 (not running) on $(basename "$f"): replaced" >&2
+      rm -f "$lock"
+    fi
+    if mk_lock; then rm -f "$guard"; else rm -f "$guard"; blocked CLAIM_HELD "$(basename "$lock") could not be replaced"; fi
   fi
-  TASK_LOCK=$lock
+  TASK_LOCK=$lock; TASK_TOKEN=$token
   if [[ -e "$f" ]] && ! mv -f "$f" "$f.prev"; then
-    rm -f "$lock"; TASK_LOCK=""
+    release_task_lock
     blocked STATE_UNWRITABLE "cannot move the previous $(basename "$f") out of the way: not going on as if it were invalidated"
   fi
 }

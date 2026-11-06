@@ -107,6 +107,75 @@ if [[ $(id -u) -ne 0 ]]; then
   else chmod u+w "$T"; rm -f "$T/probe"; ok "(read-only directories are not enforced here: case skipped)"; fi
 else ok "(running as root: the read-only case is skipped)"; fi
 
+# --- M38-01 (review 11): two contenders on one abandoned lock, in a controlled interleaving. B judges the lock stale
+# and is stopped (a barrier inside _alive) before it acts; A recovers the lock and holds it; B resumes. B must be
+# refused and A's lock left alone; only one of them is ever inside the protected section.
+rm -f "$DEST.lock" "$DEST.lock.recover"
+RACE="$WORK/race"; mkdir -p "$RACE"
+printf '%s R-0 x\n' "$DEAD" > "$DEST.lock"
+cat > "$WORK/race.py" <<'PY'
+import os, sys, time
+sys.path.insert(0, sys.argv[1])
+import result
+role, task, race = sys.argv[2], sys.argv[3], sys.argv[4]
+def wait(f):
+    for _ in range(300):
+        if os.path.exists(f):
+            return
+        time.sleep(0.1)
+    sys.exit("barrier timeout")
+if role == "B":
+    real = result._alive
+    def alive(pid):
+        r = real(pid)
+        open(os.path.join(race, "b-judged"), "w").close()
+        wait(os.path.join(race, "a-holds"))
+        return r
+    result._alive = alive
+try:
+    result.claim(task, "security-demo-static.json")
+except result.Stop as e:
+    print(role, "REFUSED", e.code, flush=True)
+    sys.exit(0)
+print(role, "ACQUIRED", flush=True)
+if role == "A":
+    open(os.path.join(race, "a-holds"), "w").close()
+    wait(os.path.join(race, "b-done"))
+PY
+"$PY" "$WORK/race.py" "$REPO/framework/lib" B "$T" "$RACE" > "$WORK/b.out" 2>&1 & BPID=$!
+for _ in $(seq 1 100); do [[ -e "$RACE/b-judged" ]] && break; sleep 0.1; done
+"$PY" "$WORK/race.py" "$REPO/framework/lib" A "$T" "$RACE" > "$WORK/a.out" 2>&1 & APID=$!
+for _ in $(seq 1 100); do [[ -e "$RACE/a-holds" ]] && break; sleep 0.1; done
+for _ in $(seq 1 100); do [[ -s "$WORK/b.out" ]] && break; sleep 0.1; done
+A_LOCK=$(cat "$DEST.lock" 2>/dev/null || true)
+touch "$RACE/b-done"; wait "$APID" || true; wait "$BPID" || true
+if grep -q "^A ACQUIRED" "$WORK/a.out" && grep -q "^B REFUSED CLAIM_HELD" "$WORK/b.out"; then ok "interleaved recovery: A acquires, B (which judged the same stale lock) is refused"; else bad "interleaved recovery: A=$(tr '\n' ' ' < "$WORK/a.out") B=$(tr '\n' ' ' < "$WORK/b.out")"; fi
+if [[ -n "$A_LOCK" && "$A_LOCK" != *"$DEAD R-0"* ]]; then ok "  ...B did not delete A's lock (it still carried A's token when B was refused)"; else bad "interleaved recovery: A's lock was removed or is the stale one"; fi
+rm -f "$DEST.lock" "$DEST.lock.recover"
+
+# a recovery already in progress: the second contender is refused, nothing removed
+printf '%s R-0 x\n' "$DEAD" > "$DEST.lock"; : > "$DEST.lock.recover"
+run "a recovery in progress → BLOCKED" 2 "$SCAN" --task T-1 pass
+if says "being recovered" && [[ -f "$DEST.lock" && -f "$DEST.lock.recover" ]]; then ok "  ...refused; the stale lock and the recovery guard are untouched"; else bad "recovery in progress: not refused"; fi
+rm -f "$DEST.lock" "$DEST.lock.recover"
+
+# a lock is released only by its owner: after another producer replaced it, the old owner's release leaves it
+REL=0
+"$PY" - "$REPO/framework/lib" "$T" <<'PY' || REL=1
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import result
+task = sys.argv[2]
+result.claim(task, "security-demo-static.json")
+lock = os.path.join(task, "security-demo-static.json.lock")
+open(lock, "w").write("999999 R-9 other-token\n")        # someone else took the lock over
+result.release(lock)
+assert open(lock).read() == "999999 R-9 other-token\n", "the other owner's lock was deleted"
+os.remove(lock)
+PY
+if [[ $REL -eq 0 ]]; then ok "release by an old owner leaves the new owner's lock"; else bad "release removed another producer's lock"; fi
+rm -f "$DEST.lock" "$DEST.lock.recover"
+
 # --- the other python producers claim too
 printf 'create or replace package body pkg is begin null; end;\n' > "$P/x.sql" 2>/dev/null || true
 for spec in "plsql|$PLS|security-demo-plsql.json|x.sql|0" "secrets|$SECR|security-demo-secrets.json|pass|0" "ux-static|$UXS|ui-demo-static.json|pass|1"; do

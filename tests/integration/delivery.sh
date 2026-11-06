@@ -214,6 +214,10 @@ for c in 1 2 3; do
   if q "g['validation']['status'] == 'UNKNOWN' and d['status'] == 'UNKNOWN'" && says "but its command exited $c"; then ok "  ...named"; else bad "R2-01: validation exit $c kept PASS"; fi
 done
 run "R2-01: a fresh Validation PASS capture, the command exited 0 → PASS" 0 --task T-1 --page orders --exit validation:0
+run "M38-02: validation:2 then validation:0 → BLOCKED (BAD_EXIT), never PASS" 2 --task T-1 --page orders --exit validation:2 --exit validation:0
+if says "(BAD_EXIT)"; then ok "  ...BAD_EXIT named"; else bad "M38-02: validation:2 validation:0"; fi
+run "M38-02: validation:0 then validation:2 → BLOCKED (BAD_EXIT)" 2 --task T-1 --page orders --exit validation:0 --exit validation:2
+run "M38-02: validation:0 twice → PASS (identical duplicates are accepted)" 0 --task T-1 --page orders --exit validation:0 --exit validation:0
 mv "$T/raw/validation-hr" "$WORK/validation.keep"
 run "conformance: no Validation capture, it exited 2 → BLOCKED" 2 --task T-1 --exit validation:2
 if q "g['validation']['status'] == 'BLOCKED'"; then ok "conformance: Validation BLOCKED in the manifest"; else bad "conformance: validation exit 2"; fi
@@ -431,6 +435,12 @@ run "A: --exit security:0 with security/runtime:2 → UNKNOWN (the specific stil
 run "A: the same key twice with the same code → accepted" 3 "${PEX[@]}" --exit security/runtime:2 --exit security/runtime:2
 run "A: the same key twice with different codes → BLOCKED (BAD_EXIT)" 2 "${PEX[@]}" --exit security/runtime:2 --exit security/runtime:1
 if says "(BAD_EXIT)"; then ok "  ...BAD_EXIT named"; else bad "A: contradictory duplicate"; fi
+# M38-02 (review 11): the global form too — the order of the arguments never decides whether a reported failure survives
+run "A: --exit security:2 --exit security:0 → BLOCKED (BAD_EXIT)" 2 "${PEX[@]}" --exit security:2 --exit security:0
+if says "(BAD_EXIT)" && says "two different codes"; then ok "  ...BAD_EXIT named"; else bad "A: contradictory global duplicate"; fi
+run "A: --exit security:0 --exit security:2 → BLOCKED (BAD_EXIT), the other order" 2 "${PEX[@]}" --exit security:0 --exit security:2
+if says "(BAD_EXIT)"; then ok "  ...BAD_EXIT named"; else bad "A: contradictory global duplicate (reversed)"; fi
+run "A: --exit security:2 --exit security:2 → accepted (same code)" 3 "${PEX[@]}" --exit security:2 --exit security:2
 # runtime: the walkthrough and record-sync are two producers; the global form speaks for the walkthrough only
 run "A: runtime/record-sync:1, a PASS record-sync → UNKNOWN" 3 "${PEX[@]}" --exit runtime/record-sync:1
 if q "g['runtime']['status'] == 'UNKNOWN'" && says "runtime/record-sync: .*exited 1" && ! says "runtime/walkthrough"; then ok "  ...attributed to record-sync, not to the walkthrough"; else bad "A: runtime/record-sync:1"; fi

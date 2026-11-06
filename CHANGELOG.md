@@ -4,9 +4,10 @@
 
 The changes of an external audit of 0.7.1: the aggregator reads
 less than it used to trust, a seventh gate (Package) exists, and a set of recipes, criteria and
-documents were corrected. Several behaviors change for the same inputs (below). Nothing here is
-live-verified: every new script was tested with SQLcl and the browser stubbed, and the live
-protocols (`tests/live/README.md` L6 and L7) are written, not run.
+documents were corrected. Several behaviors change for the same inputs (below). The only live
+evidence is a bounded external run of the Package gate against SQLcl 26.1 (audit report 08, SELECTs only); L7 as a
+whole and L6 are not done. Every other script was tested with SQLcl and the browser stubbed, and the live protocols
+(`tests/live/README.md` L6 and L7) are written, not run.
 
 **This is a minor release (0.8.0).** `framework/CONTRACTS.md` says a change to the frozen interface is a
 minor release; this section adds interface (new flags, a script, a config key, result paths, `.prev` and `.lock`
@@ -118,14 +119,17 @@ the two scripts that write `frameworkVersion`; **no tag has been made** (the own
   (`security/runtime:2`, `ui/runtime-orders:1`, `runtime/record-sync:1`, ...): only that producer's result is
   judged against it, so a failed retry of one scope no longer hides behind the other scopes' PASS. A page declared
   with `--page` is a producer even when its file is missing. A specific exit 0 never neutralizes the gate's
-  non-zero exit; the same key with two codes, and a key the task has no such producer for, are BLOCKED `BAD_EXIT`.
+  non-zero exit; the same key (or the same gate) with two codes, in either order, and a key the task has no such
+  producer for, are BLOCKED `BAD_EXIT`; identical duplicates are accepted. Before 0.8.0, `--exit validation:2
+  --exit validation:0` kept the last one and read PASS.
   The gate-only form is unchanged.
 - **A producer claims its destination before the work (GAP-14 B).** `sec-scan`, `plsql-scan`, `secrets-scan`,
   `sec-probe`, `ux-scan`, `pkg-check`, `evidence.py capture` and the guard's task-dir copy create
   `<result>.lock` (exclusive: pid and run id) and move the previous result to `<result>.prev` before the work that
   can fail, so a producer that dies leaves no file that reads as fresh. A second producer for the same destination,
   or an unreadable lock, is BLOCKED `CLAIM_HELD` and writes nothing over the other's file; a lock whose pid is
-  gone is replaced with a note; a result that cannot be moved is BLOCKED `STATE_UNWRITABLE`. `evidence.py
+  gone is replaced with a note, under an exclusive `<result>.lock.recover` (a second contender is refused, and the
+  lock is read again under it); a lock is removed only by the run whose token it carries; a result that cannot be moved is BLOCKED `STATE_UNWRITABLE`. `evidence.py
   capture` publishes the metadata last, whole, with the output's sha256, and `delivery.py` reads a pair that
   disagrees as UNKNOWN. `.prev` is one file replaced by the next attempt, a temporary backup, not an archive.
   Not covered, by design: `ux-check.py` (its page is known only after the page is measured: use `--exit
@@ -201,7 +205,7 @@ the two scripts that write `frameworkVersion`; **no tag has been made** (the own
 
 - `delivery.py --page <page>[:dialog]` (repeatable); new stop reasons `NO_JSONSCHEMA` and `BAD_PAGE`.
 - `sec-probe.py --auth-host <host[:port]>` (repeatable).
-- `delivery.py --exit <gate>/<producer>:<code>` (the gate-only form is unchanged); stop reasons `CLAIM_HELD` and `STATE_UNWRITABLE` for the producers; `<result>.lock`, `<result>.prev` files and `sha256` in a capture's `.exit.json`.
+- `delivery.py --exit <gate>/<producer>:<code>` (the gate-only form is unchanged); stop reasons `CLAIM_HELD` and `STATE_UNWRITABLE` for the producers; `<result>.lock`, `<result>.lock.recover`, `<result>.prev` files and `sha256` in a capture's `.exit.json`.
 - `sync-result.schema.json`: the reason catalog gains `CLAIM_HELD`. A validator holding the 0.7.x schema rejects a sync-result with that reason: update the schemas with the scripts.
 - `delivery.py --run <id>` (default `$APEX_RUN_ID`), new stop reason `BAD_RUN`; optional `context.runId` in the result envelope, written from `APEX_RUN_ID`.
 - New script `skills/apex-sentinel/scripts/pkg-check.py [--app <alias>] [--env <name>] [--task <id>]

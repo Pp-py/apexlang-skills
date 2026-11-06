@@ -191,7 +191,7 @@ def app_settings(cfg, app):
     return merged
 
 
-_HELD = {}              # lock path -> the destination it guards, while this process holds it
+_HELD = {}              # lock path -> (destination, token) while this process holds it
 _REFUSED = set()        # destinations this process was refused: write() must not put its own result there
 
 
@@ -213,13 +213,19 @@ def _alive(pid):
 
 
 def release(lock=None):
-    """Remove the lock(s) this process holds (all of them, or one)."""
+    """Remove the lock(s) this process holds (all of them, or one). A lock is removed only if it still carries
+    this process's token: an earlier owner can never delete the lock of whoever replaced it."""
     for path in [lock] if lock else list(_HELD):
-        if _HELD.pop(path, None) is not None:
-            try:
+        held = _HELD.pop(path, None)
+        if held is None:
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                mine = fh.read() == held[1]
+            if mine:
                 os.remove(path)
-            except OSError:
-                pass
+        except OSError:
+            pass
 
 
 atexit.register(release)
@@ -238,32 +244,66 @@ def claim(task_dir, name, companions=()):
     dest = os.path.join(task_dir, name)
     lock = dest + ".lock"
     refuse = lambda code, msg: (_REFUSED.add(dest), (_ for _ in ()).throw(Stop("BLOCKED", code, msg)))      # noqa: E731
-    me = f"{os.getpid()} {os.environ.get('APEX_RUN_ID', '-')}\n"
-    for attempt in (0, 1):
+    me = f"{os.getpid()} {os.environ.get('APEX_RUN_ID', '-')} {os.urandom(6).hex()}\n"      # the token: ours alone
+    guard = lock + ".recover"
+
+    def judge():        # (pid, text) of the lock as it is now; a lock that cannot be read is never guessed
         try:
-            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            break
+            with open(lock, encoding="utf-8") as fh:
+                text = fh.read()
+            return int(text.split()[0]), text
+        except FileNotFoundError:
+            return None, None
+        except (OSError, ValueError, IndexError):
+            refuse("CLAIM_HELD", f"{name}.lock exists and cannot be read: another producer may be writing {name}; "
+                                 f"remove the lock only when no producer is running")
+
+    def live(pid):
+        if pid != os.getpid() and _alive(pid):
+            refuse("CLAIM_HELD", f"{name}.lock is held by a running producer (pid {pid}): wait for it, or stop it")
+
+    fd = None
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        pid, seen = judge()
+        if pid is not None:
+            live(pid)
+        # A stale lock is replaced only under <lock>.recover, taken exclusively: the second contender is refused,
+        # and under it the lock is read again, so nobody removes the lock of a producer that took it meanwhile.
+        try:
+            gfd = os.open(guard, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
-            try:
-                with open(lock, encoding="utf-8") as fh:
-                    pid = int(fh.read().split()[0])
-            except (OSError, ValueError, IndexError):
-                refuse("CLAIM_HELD", f"{name}.lock exists and cannot be read: another producer may be writing {name}; "
-                                     f"remove the lock only when no producer is running")
-            if pid != os.getpid() and _alive(pid):
-                refuse("CLAIM_HELD", f"{name}.lock is held by a running producer (pid {pid}): wait for it, or stop it")
-            if attempt:
-                refuse("CLAIM_HELD", f"{name}.lock could not be replaced")
-            print(f"claim: stale lock of pid {pid} (not running) on {name}: replaced", file=sys.stderr)
-            try:
-                os.remove(lock)
-            except OSError as e:
-                refuse("STATE_UNWRITABLE", f"cannot replace the stale {name}.lock: {e.__class__.__name__}")
+            refuse("CLAIM_HELD", f"{name}.lock is being recovered by another producer: wait and retry "
+                                 f"(remove {name}.lock.recover only when no producer is running)")
         except OSError as e:
-            refuse("STATE_UNWRITABLE", f"cannot create {name}.lock: {e.__class__.__name__}")
+            refuse("STATE_UNWRITABLE", f"cannot recover {name}.lock: {e.__class__.__name__}")
+        try:
+            os.close(gfd)
+            pid2, now = judge()
+            if pid2 is not None:
+                live(pid2)
+                print(f"claim: stale lock of pid {pid2} (not running) on {name}: replaced", file=sys.stderr)
+                try:
+                    os.remove(lock)
+                except OSError as e:
+                    refuse("STATE_UNWRITABLE", f"cannot replace the stale {name}.lock: {e.__class__.__name__}")
+            try:
+                fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                refuse("CLAIM_HELD", f"{name}.lock could not be replaced")
+            except OSError as e:
+                refuse("STATE_UNWRITABLE", f"cannot create {name}.lock: {e.__class__.__name__}")
+        finally:
+            try:
+                os.remove(guard)
+            except OSError:
+                pass
+    except OSError as e:
+        refuse("STATE_UNWRITABLE", f"cannot create {name}.lock: {e.__class__.__name__}")
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(me)
-    _HELD[lock] = dest
+    _HELD[lock] = (dest, me)
     try:
         for suffix in ("",) + tuple(companions):
             if os.path.exists(dest + suffix):

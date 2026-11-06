@@ -364,7 +364,8 @@ def main(argv):
                 if pexits.setdefault((g, prod), int(code)) != int(code):
                     raise Stop("BLOCKED", "BAD_EXIT", f"--exit {g}/{prod} is given with two different codes")
             else:
-                exits[g] = int(code)
+                if exits.setdefault(g, int(code)) != int(code):     # the order of the arguments never decides
+                    raise Stop("BLOCKED", "BAD_EXIT", f"--exit {g} is given with two different codes")
         pages = {}
         for s in a.page:
             token, sep, mod = s.partition(":")
