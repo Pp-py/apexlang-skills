@@ -69,6 +69,19 @@ check "clean page, dialog holds focus → PASS" clean 0 \
   "d['status'] == 'PASS' and set(c.values()) == {'PASS'}" --dialog '#open'
 check "the CLI's quoted string is the same verdict" clean-quoted 0 "d['status'] == 'PASS'" --dialog '#open'
 check "no --dialog → UX-DIALOG-FOCUS NOT_RUN" clean 0 "c['UX-DIALOG-FOCUS'] == 'NOT_RUN'"
+# UX-REFLOW and UX-NAME-LANGUAGE are advisories: reported, named in the summary, never a verdict.
+check "narrow widths and English defaults on a Spanish page → advisories, still PASS" narrow-es 0 \
+  "d['status'] == 'PASS' and 'UX-REFLOW' in adv and 'UX-NAME-LANGUAGE' in adv \
+   and sum(a['id'] == 'UX-REFLOW' for a in d['advisories']) == 3 \
+   and sorted(a['detail'] for a in d['advisories'] if a['id'] == 'UX-NAME-LANGUAGE') == ['aria-label \"Bar\" on a lang=es page', 'aria-label \"Breadcrumb\" on a lang=es page'] \
+   and 'Maria' not in json.dumps(d) and 'UX-REFLOW advisory' in d['reasons'][0]['message']"
+check "the same names on an English page → no language advisory" names-en 0 "'UX-NAME-LANGUAGE' not in adv and 'UX-REFLOW' not in adv"
+PW_FAKE_OUT="$FIX/clean.json" "$PY" "$CHECK" >/dev/null 2>&1 || true
+if grep -q '"reflow": \[320, 375\]' "$PW_SNIP_LOG"; then ok "the snippet asks for 320 and 375 px by default"
+else bad "the snippet does not carry the reflow widths"; fi
+PW_FAKE_OUT="$FIX/clean.json" "$PY" "$CHECK" --no-reflow >/dev/null 2>&1 || true
+if grep -q '"reflow": \[\]' "$PW_SNIP_LOG"; then ok "--no-reflow leaves the viewport alone"
+else bad "--no-reflow still resizes"; fi
 check "serious violation → UX-AXE-SERIOUS FAIL" serious 1 \
   "c['UX-AXE-SERIOUS'] == 'FAIL' and c['UX-ITEM-NAME'] == 'PASS'"
 check "label at any impact → UX-ITEM-NAME FAIL" item-name 1 \

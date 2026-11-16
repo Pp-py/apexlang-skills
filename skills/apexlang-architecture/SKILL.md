@@ -1,6 +1,6 @@
 ---
 name: apexlang-architecture
-description: Use when deciding WHERE business logic, validation, or DML belongs in an Oracle APEX app written as APEXlang (.apx) — routing every write through a PL/SQL package instead of region-bound Automatic DML and deciding which package owns it (one entity, a multi-entity flow, an external system) or whether the rule belongs in a database constraint, the UI, or no package at all, and architecting screens that write (editable Interactive Grids, modal CRUD, full-page and drawer forms, master-detail, workflows, versioned/vigency records) or read (dashboards, faceted search, split-view browsers, analytical reports), including what the SQL/view must project to feed cards, content rows, badges and drill-down links. NOT for .apx grammar/validate/import/round-trip (use Oracle's APEXlang skills) or one-off read-only pages with no reuse.
+description: Use when deciding WHERE business logic, validation, or DML belongs in an Oracle APEX app written as APEXlang (.apx) — routing every write through a PL/SQL package instead of region-bound Automatic DML and deciding which package owns it (one entity, a multi-entity flow, an external system) or whether the rule belongs in a database constraint, the UI, or no package at all, and architecting screens that write (editable Interactive Grids, modal CRUD, full-page and drawer forms, master-detail, workflows, versioned/vigency records) or read (dashboards, faceted search, split views, reports, calendars, maps, picture catalogs), including what the SQL/view must project to feed cards, content rows, badges and drill-down links. NOT for .apx grammar/validate/import/round-trip (use Oracle's APEXlang skills) or one-off read-only pages with no reuse.
 ---
 
 # APEXlang Architecture
@@ -20,14 +20,9 @@ APEXlang turns an APEX app into declarative `.apx` source. Generating and valida
 
 **Core principle: the `.apx` only orchestrates. A PL/SQL package validates and writes. No region performs direct DML.**
 
-The `.apx` may call two packages in sequence; it never decides *where* a rule lives, nor coordinates an operation whose invariant spans entities — that is a flow package's job (`package-boundaries.md`). Left alone, an agent bolts automatic table-bound DML onto each grid and calls it "simple."
+The `.apx` may call two packages in sequence; it never decides *where* a rule lives, nor coordinates an operation whose invariant spans entities — that is a flow package's job (`package-boundaries.md`).
 
 **REQUIRED SUB-SKILL:** Oracle's APEXlang skills (`apexlang-inventory`, `apexlang-compile`, `apexlang-deploy`) for grammar, generation (26.1), validation and import. This skill governs *where logic goes*.
-
-## When NOT to use
-
-- A read-only one-off page with no write path and no reuse.
-- `.apx` grammar, validation or import questions — Oracle's APEXlang skills.
 
 ## The two decisions that matter
 
@@ -48,9 +43,11 @@ Validation in IG column                Validation + rules inside the package
 DML in page processes                  All DML behind the package API
 ```
 
-**This is a deliberate deviation from Oracle's default**, resting on an exception Oracle's own standard names: the 26.1 policies say *"Prefer ARP for simple CRUD"*, and the Interactive Grid page rule that requires Automatic Row Processing also says *"do not substitute custom PL/SQL **unless invoking a dedicated API**"* — the package the `.apx` calls **is** that API. Everywhere else the standard already points this way (`invokeApi` by default, inline PL/SQL extracted into a package API). The argument, quoted and anchored: `references/official-standard.md`. A page process calls the package through `invokeApi`; a thin `executeCode` wrapper only where Oracle allows one, first line `-- thin wrapper: <reason>` (`references/official-standard.md`, KC-4).
+**This is a deliberate deviation from Oracle's default**, resting on an exception Oracle's own standard names: the 26.1 policies say *"Prefer ARP for simple CRUD"*, and the Interactive Grid page rule that requires Automatic Row Processing also says *"do not substitute custom PL/SQL **unless invoking a dedicated API**"* — the package the `.apx` calls **is** that API. The argument, quoted and anchored: `references/official-standard.md`. A page process calls the package through `invokeApi`; a thin `executeCode` wrapper only where Oracle allows one, first line `-- thin wrapper: <reason>` (`references/official-standard.md`, KC-4).
 
 ## Which file to open
+
+No signal fits: `component-catalog.md` — every region, template component and item, by need.
 
 Read the **one** recipe the signal points to, plus its background file. Two recipes at most,
 and only when the screen combines archetypes (a faceted list that opens a drawer).
@@ -67,6 +64,7 @@ and only when the screen combines archetypes (a faceted list that opens a drawer
 | Input the user cannot give in one screen | wizard, multi-step, `@/wizard-modal-dialog`, draft row, staging | `recipes/wizard-multi-step.md` |
 | The verb is approve / reject / cancel, not "save" | workflow, state machine, status badge, transition guard | `recipes/workflow-state-transitions.md` |
 | A file attached to a record | upload, `fileUpload`, BLOB | `recipes/attachments-to-package.md` |
+| Rows that are *when* | calendar, booking, drag and drop | `recipes/calendar-scheduling.md` |
 
 **The screen only reads** — how does the user find the row?
 
@@ -78,6 +76,8 @@ and only when the screen combines archetypes (a faceted list that opens a drawer
 | Glanceable numbers and trends | dashboard, KPI, `metricCard`, chart, landing page | `recipes/dashboard-kpis-charts.md` |
 | The working list of an entity: sort, filter, save a view, act on a row | interactive report, IR, browse list, row actions, `savedReport` | `recipes/browse-interactive-report.md` |
 | Aggregated pivots and charts over the same data | analytical report, monthly/weekly view, `v_*` aggregation | `recipes/analytical-report.md` |
+| Rows that are *where* | map, layer, branches | `recipes/map-locations.md` |
+| Records known by sight | catalog, photos, `media` | `recipes/media-gallery-catalog.md` |
 
 **Alongside the recipe, always:**
 
@@ -85,14 +85,14 @@ and only when the screen combines archetypes (a faceted list that opens a drawer
 |---|---|
 | Anything writes | `back-end-conventions.md` — the write path, validation, `-20xxx` catalog, no COMMIT, views, retention, vigencies, version token |
 | Anything reads | `ui-contracts.md` — state tokens, drill-down URLs, derived columns, `cards` vs `contentRow`, selection state, deviating from an official default |
-| The page has a UI to judge | `../apex-ux/SKILL.md` — criteria by ID and the static scan; this skill does not judge the UI |
+| A page is built or changed | load `apex-ux`, `apex-sentinel`, `apex-security` and run their checks (no `apex-sync.json` or sync marker needed): this skill verifies nothing |
 | An operation writes more than one table | `package-boundaries.md` — which layer owns it, the satellite and cross-entity tests, when NOT a package, the god-package threshold |
 
 Three runnable slices (DDL + package + `.apx`) live in `examples/` — start at `examples/README.md`. Recipe snippets are architectural shorthand, not import-ready grammar: copy grammar from Oracle's `apexlang-inventory` first and the examples second (they pass the 26.1 lint, the SQLcl compiler currently rejects them — KC-7), architecture from the recipes.
 
 ## Where each layer's authority comes from
 
-Three sources, three jobs: Oracle for whether `.apx` is valid (the compiler, then the 26.1 lint, then the inventory, policies and templates — `framework/PRINCIPLES.md` P6); `apex-ux` for whether the UI is usable and accessible (Oracle's UX Pattern Catalog app is an example only); **this skill** for where the logic lives, what the data layer projects, and when to deviate — `references/official-standard.md`.
+Three sources, three jobs: Oracle for whether `.apx` is valid (the compiler, then the 26.1 lint, then the inventory, policies and templates — `framework/PRINCIPLES.md` P6); `apex-ux` for whether the UI is usable and accessible; **this skill** for where the logic lives, what the data layer projects, and when to deviate — `references/official-standard.md`.
 
 ## Common mistakes (from agent baselines)
 

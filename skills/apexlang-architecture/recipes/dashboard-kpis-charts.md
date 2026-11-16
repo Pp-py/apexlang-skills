@@ -111,6 +111,8 @@ read as decoration unless the question they answer is stated.
 
 A series whose categories are time orders by the date key, never by the label or the formatted text (`order by trunc(d)`, not `order by to_char(d, 'Month YYYY')`) — an alphabetical axis draws "Agosto, Julio, Junio…".
 
+**With two or more series the `order by` is not enough.** APEX fills the gaps between series (`multiSeriesChartData.fillGapsInChartData`, on by default) and then sorts the groups by `sortOrder`, whose default is `label-asc`: the chart redraws the months alphabetically whatever the SQL says (measured on APEX 26.1: the widget reports `sorting: "label-asc"`). Keep the query's order with `multiSeriesChartData { fillGapsInChartData: false }` when every series returns the same groups, or give the x axis `timeAxisType: enabled` and a date label; `ux-scan.py` fails a multi-series chart that orders in SQL and does neither (`UXDASH-CHART-QUERY-ORDER`).
+
 Aggregate in SQL, at the granularity the axis shows (`trunc(date)` for daily). A chart series that
 returns raw rows and lets the chart engine group is a performance problem that only appears in
 production data volumes.

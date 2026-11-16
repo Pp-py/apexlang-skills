@@ -2,8 +2,9 @@
 // wraps it as `async (page) => (<this>)(page, AXE, OPTS)` and hands it to
 // `pw.sh run-code --raw --filename`, so it runs inside the session the agent already logged in.
 //   AXE   the vendored axe-core source, verified against its sha256 lock by the caller
-//   OPTS  { tags: [...], dialogs: [selector, ...] }
-// Returns one JSON string: { verdict: 'OK' | 'NOT-LOGGED-IN', url, runs: [...], dialogs: [...], errors: [...] }.
+//   OPTS  { tags: [...], dialogs: [selector, ...], reflow: [width, ...] }
+// Returns one JSON string: { verdict: 'OK' | 'NOT-LOGGED-IN', url, runs: [...], dialogs: [...],
+//   names: [...], reflow: [...], errors: [...] }.
 // Every run keeps axe's raw result; the caller strips node HTML before printing anything.
 async (page, AXE, OPTS) => {
   const errors = [];
@@ -54,7 +55,35 @@ async (page, AXE, OPTS) => {
   const unmark = () => page.evaluate((m) => document.querySelectorAll('[' + m + ']')
     .forEach((d) => d.removeAttribute(m)), MARK);
 
+  // UX-NAME-LANGUAGE: what assistive technology reads, per frame — names and live text, with the
+  // page's lang. The caller reports only the ones on its list of APEX's untranslated defaults.
+  const names = [];
+  const readNames = async (where) => {
+    for (const frame of page.frames()) {
+      if (frame.url() === 'about:blank') continue;
+      try {
+        names.push({ where, frame: frame.url(), ...(await frame.evaluate(() => {
+          const out = [], seen = new Set();
+          const css = (e) => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') +
+            (typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\s+/)[0] : '');
+          const push = (kind, text, el) => {
+            text = (text || '').replace(/\s+/g, ' ').trim();
+            if (!text || text.length > 120 || seen.has(kind + '|' + text)) return;
+            seen.add(kind + '|' + text);
+            out.push({ kind, text, target: css(el) });
+          };
+          for (const el of document.querySelectorAll('[aria-label],[title],[alt]'))
+            for (const a of ['aria-label', 'title', 'alt']) if (el.hasAttribute(a)) push(a, el.getAttribute(a), el);
+          for (const el of document.querySelectorAll('[role="alert"],[role="status"],[aria-live]:not([aria-live="off"]),.u-VisuallyHidden,.u-vh'))
+            push('text', el.textContent, el);
+          return { lang: document.documentElement.lang || '', names: out.slice(0, 400) };
+        })) });
+      } catch (e) { /* a frame that navigated away: axe reports it in errors */ }
+    }
+  };
+
   const runs = await runAxe('page');
+  await readNames('page');
   const dialogs = [];
 
   for (const sel of OPTS.dialogs) {
@@ -76,6 +105,7 @@ async (page, AXE, OPTS) => {
     await page.waitForTimeout(1000);              // the dialog's page loads and places focus
 
     runs.push(...await runAxe('dialog ' + sel));  // as opened, before the keyboard moves anything
+    await readNames('dialog ' + sel);
     res.focusIn = await focusInDialog();
     const walk = async (key) => {
       for (let i = 0; i < 30; i++) {
@@ -104,7 +134,58 @@ async (page, AXE, OPTS) => {
     await unmark();
   }
 
+  // UX-REFLOW: the page at each narrow width — horizontal page scroll, content cut off by a
+  // container that cannot scroll, scroll regions the keyboard cannot reach, controls under 24 px
+  // (axe target-size at that width). The viewport is put back. Candidates, read by a person:
+  // a wide table that scrolls inside its own focusable container is not one.
+  const reflow = [];
+  if ((OPTS.reflow || []).length) {
+    const size = page.viewportSize() || await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    try {
+      for (const width of OPTS.reflow) {
+        await page.setViewportSize({ width, height: Math.max(size.height, 640) });
+        await page.waitForTimeout(700);
+        const r = await page.evaluate(() => {
+          const de = document.documentElement, vw = de.clientWidth;
+          const css = (e) => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') +
+            (typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\s+/)[0] : '');
+          const shown = (e) => { const c = getComputedStyle(e), b = e.getBoundingClientRect();
+            return c.display !== 'none' && c.visibility !== 'hidden' && b.width > 1 && b.height > 1; };
+          const clipped = [], unreachable = [];
+          for (const el of document.body.querySelectorAll('*')) {
+            if (!shown(el)) continue;
+            const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+            if (el.scrollWidth <= el.clientWidth + 1 || cs.textOverflow === 'ellipsis') continue;
+            if (r.right <= 0 || r.left >= vw) continue;                    // an off-canvas part
+            if (cs.overflowX === 'hidden' || cs.overflowX === 'clip') {
+              // cut off for real: a visible cell, control or text block ends beyond the container
+              const cut = [...el.querySelectorAll('td,th,a[href],button,input,select,textarea,p,li,h1,h2,h3,label')]
+                .some((d) => shown(d) && d.getBoundingClientRect().right > r.right + 1 && d.getBoundingClientRect().left < r.right + 2000);
+              if (cut) clipped.push(el);
+            } else if ((cs.overflowX === 'auto' || cs.overflowX === 'scroll') &&
+                       !(el.tabIndex >= 0 || el.querySelector('a[href],button,input,select,textarea,[tabindex]'))) {
+              unreachable.push(el);
+            }
+          }
+          const inner = (list) => list.filter((e) => !list.some((o) => o !== e && e.contains(o))).slice(0, 10).map(css);
+          return { pageOverflowsX: de.scrollWidth > de.clientWidth + 1, clipped: inner(clipped), unreachable: inner(unreachable) };
+        });
+        try {
+          if (!(await page.evaluate(() => !!window.axe))) await page.addScriptTag({ content: AXE });
+          const t = await page.evaluate(() => window.axe.run(document, { runOnly: { type: 'rule', values: ['target-size'] }, resultTypes: ['violations'] }));
+          r.smallTargets = t.violations.reduce((n, v) => n + v.nodes.length, 0);
+          r.smallTargetList = t.violations.flatMap((v) => v.nodes.map((n) => n.target.join(' '))).slice(0, 10);
+        } catch (e) { r.smallTargets = null; }
+        reflow.push({ width, ...r });
+      }
+    } catch (e) {
+      errors.push({ where: 'reflow', frame: page.url(), error: String(e && e.message || e).slice(0, 300) });
+    } finally {
+      await page.setViewportSize(size).catch(() => {});
+    }
+  }
+
   // the APEX version that rendered the page: oracle-owned.json entries are per version
   const apexVersion = await page.evaluate(() => (window.apex && apex.env && apex.env.APEX_BASE_VERSION) || null).catch(() => null);
-  return JSON.stringify({ verdict: 'OK', url: page.url(), apex: apexVersion, runs, dialogs, errors });
+  return JSON.stringify({ verdict: 'OK', url: page.url(), apex: apexVersion, runs, dialogs, names, reflow, errors });
 }

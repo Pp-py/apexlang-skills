@@ -352,7 +352,7 @@ def check_marker_minutes():
 
 UOW_RECIPES = ["editable-ig-to-package", "modal-crud-to-package", "form-page-to-package", "master-detail-edit",
                "versioned-vigency-record", "wizard-multi-step", "workflow-state-transitions", "item-detail-page",
-               "attachments-to-package"]
+               "attachments-to-package", "calendar-scheduling", "media-gallery-catalog"]
 
 
 def check_unit_of_work():
@@ -415,7 +415,7 @@ def check_criterion_ids():
 
 
 UX_PREFIX = {"common": "UX", "dashboards": "UXDASH", "browse-search": "UXBRW", "item-details": "UXDET",
-             "data-entry": "UXENT", "workflow": "UXWF"}
+             "data-entry": "UXENT", "workflow": "UXWF", "calendar": "UXCAL", "map": "UXMAP"}
 
 
 def check_ux_criteria():

@@ -37,10 +37,12 @@ exception. Oracle's 26.1 lint stays advisory and never becomes a UI verdict
 |---|---|---|---|
 | [common.md](common.md) | `UX` | every page | Reference, Component Primitives |
 | [dashboards.md](dashboards.md) | `UXDASH` | `dashboard-kpis-charts` | Dashboards, Metrics, Charts |
-| [browse-search.md](browse-search.md) | `UXBRW` | `browse-interactive-report`, `master-faceted-search`, `analytical-report` | Browse and Search |
+| [browse-search.md](browse-search.md) | `UXBRW` | `browse-interactive-report`, `master-faceted-search`, `analytical-report`, `media-gallery-catalog` | Browse and Search, Cards ("Media Cards") |
 | [item-details.md](item-details.md) | `UXDET` | `item-detail-page`, `split-view-selection` | Item Details |
 | [data-entry.md](data-entry.md) | `UXENT` | `form-page-to-package`, `modal-crud-to-package`, `editable-ig-to-package`, `master-detail-edit`, `wizard-multi-step`, `versioned-vigency-record` | Data Entry |
 | [workflow.md](workflow.md) | `UXWF` | `workflow-state-transitions` | Content Rows — Decision and Action List |
+| [calendar.md](calendar.md) | `UXCAL` | `calendar-scheduling` | none — the catalog has no calendar page |
+| [map.md](map.md) | `UXMAP` | `map-locations` | none — the catalog has no map page |
 
 A page takes `common.md` plus its archetype. A page that is two archetypes (a detail page with an
 embedded form) takes both.

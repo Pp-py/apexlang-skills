@@ -87,4 +87,29 @@ page 71 (
             fontColor: #ff0000
         }
     )
+
+    region months (
+        name: months
+        type: chart
+        series income (
+            name: income
+            source {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    select label, value from v_months order by month_start
+                    ```
+            }
+        )
+        series expense (
+            name: expense
+            source {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    select label, value from v_months order by month_start
+                    ```
+            }
+        )
+    )
 )

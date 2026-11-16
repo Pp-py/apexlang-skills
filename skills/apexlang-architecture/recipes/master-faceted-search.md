@@ -83,6 +83,30 @@ own *Faceted Search – Cards* and *Faceted Search – Content Row* patterns hid
 facets move up into the title bar. Fine, provided the reason is in the region's `comments`
 (`ui-contracts.md` §9). No reason in the source means take the default.
 
+## Filtering a calendar or a map
+
+`filteredRegion` is not limited to reports: a `calendar` and a `map` take facets and refresh as a
+report would (measured on APEX 26.2.0: nine events to two, six markers to one; Oracle's Faceted
+Search Patterns application does the same in FS-04 and FS-05). Two conditions:
+
+- **A map needs its query on the region**, with the layer reading `source { location: regionSource }`.
+  A layer with its own query leaves the facets nothing to filter and the page does not compile.
+- **One `facetedSearch`, one filtered region.** A second region on the page — the list under a map,
+  the report beside a calendar — is not filtered (measured: the list kept every row). Say on the
+  page which set each one shows (`calendar-scheduling.md`, `map-locations.md`).
+
+## Search — one box over several entities
+
+A facet filters one result set by its columns. A `search` region is a different tool: one box,
+several search configurations (one per entity, each a shared component), ranked results that link
+to each entity's page. Use it for "find anything" in the navigation bar or on a landing page; keep
+the faceted page for browsing one entity. `smartFilters` is the faceted search in a single bar —
+the same `filteredRegion` contract, for a page with no room for a facet column.
+
+Each search configuration reads a view, and that view is the scope: a row the user may not open
+must not be a result. Grammar: Oracle's `region-components/search-config/` and
+`smart-filter-search/` families (26.1). This repo has built neither.
+
 ## Count and active facets in the title bar
 
 Selector mode is opt-in officially, and this is the case that earns it: once the results header is

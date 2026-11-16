@@ -1,0 +1,7 @@
+textMessage "APEX.DIALOG.CLOSE" (
+    message {
+        language: es
+        usedInJavaScript: true
+        text: Cerrar
+    }
+)

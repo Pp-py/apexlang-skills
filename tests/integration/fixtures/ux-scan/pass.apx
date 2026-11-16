@@ -94,4 +94,101 @@ page 70 (
             action: refresh
         )
     )
+
+    region gaps-off (
+        name: gaps-off
+        type: chart
+        multiSeriesChartData {
+            fillGapsInChartData: false
+        }
+        series income (
+            name: income
+            source {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    select label, value from v_months order by month_start
+                    ```
+            }
+        )
+        series expense (
+            name: expense
+            source {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    select label, value from v_months order by month_start
+                    ```
+            }
+        )
+    )
+    region sorted (
+        name: sorted
+        type: chart
+        multiSeriesChartData {
+            sortOrder: labelDesc
+        }
+        series income (
+            name: income
+            source {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    select label, value from v_months order by month_start
+                    ```
+            }
+        )
+        series expense (
+            name: expense
+            source {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    select label, value from v_months order by month_start
+                    ```
+            }
+        )
+    )
+    region time-axis (
+        name: time-axis
+        type: chart
+        axis x (
+            name: x
+            timeAxisType: enabled
+        )
+        series income (
+            name: income
+            source {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    select label, value from v_months order by month_start
+                    ```
+            }
+        )
+        series expense (
+            name: expense
+            source {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    select label, value from v_months order by month_start
+                    ```
+            }
+        )
+    )
+    region one-series (
+        name: one-series
+        type: chart
+        series income (
+            name: income
+            source {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    select label, value from v_months order by month_start
+                    ```
+            }
+        )
+    )
 )

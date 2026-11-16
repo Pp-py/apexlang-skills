@@ -21,7 +21,8 @@ official default · 10 item defaults in shared components.
 The official contract stops at "prefer `Cards` **or** `Content Row` for browse/list experiences"
 (`apex.region-contracts.md`) — it does not separate them. Oracle's UX Pattern Catalog answers it
 implicitly, by building the same catalogue of use cases twice: once under *Content Rows* and once
-under *Cards*. That is the material for the split:
+under *Cards*. That is the material for the split (every other component — calendar, map, search,
+the page items — is in `component-catalog.md`):
 
 | Use case | Primitive | Why |
 |---|---|---|
@@ -33,7 +34,7 @@ under *Cards*. That is the material for the split:
 | Decision & action list (approve/reject) | either | see the full-card trap below |
 | Selectable master list | content row | it is the one with a documented selection contract (§8) |
 | People / users | either | cards for a directory grid, content row for a sidebar roster |
-| Product / media catalog | **cards** | media is the point: `media { source: urlColumn ... }` |
+| Product / media catalog | **cards** | media is the point: `media { source: urlColumn ... }` or `blobColumn` (`recipes/media-gallery-catalog.md`) |
 | Timeline / activity feed | **content row** | grouping (`plugin-grouping`) has no cards equivalent |
 | The user shapes the view: saved reports, personalised columns, ad-hoc filters, group-by or pivot, a download of columns they choose | **interactive report** | the IR toolbar is the only primitive that offers them |
 | Fixed facets and a fixed set of sort orders | **cards** or **content row** with `facetedSearch` | the choices are closed and declared, so no IR toolbar is needed (below) |

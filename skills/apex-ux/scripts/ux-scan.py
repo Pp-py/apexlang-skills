@@ -12,6 +12,9 @@ Checks (criteria/common.md):
   UX-NO-INLINE-STYLE      no style= attribute, no literal colour (a report's print/PDF formatting excepted)
   UX-NO-COMPOSED-CLASS    no class built from pieces (substitution glued into a class,
                           or 'prefix-' || ... in SQL)
+  UXDASH-CHART-QUERY-ORDER (criteria/dashboards.md) a chart of two or more series whose SQL
+                          orders its rows keeps that order: gap filling off, an explicit
+                          sortOrder, or a time axis - else APEX re-sorts the groups by label
 
 Output: a ui-result (framework/schemas/ui-result.schema.json, scope static) on stdout,
 and with --task in <evidenceDir>/<task>/ui-<alias>-static.json; a one-line summary on stderr.
@@ -29,7 +32,8 @@ from apx import RE_FENCE, RE_PROP, ParseError, collect, is_destructive, parse, p
 from result import Stop, claim, context, rel, target, write  # noqa: E402
 
 CRITERIA = ["UX-ITEM-NAME", "UX-CONTROL-NAME", "UX-DESTRUCTIVE-CONFIRM",
-            "UX-NO-INLINE-STYLE", "UX-NO-COMPOSED-CLASS"]
+            "UX-NO-INLINE-STYLE", "UX-NO-COMPOSED-CLASS", "UXDASH-CHART-QUERY-ORDER"]
+RE_ORDER_BY = re.compile(r"(?i)\border\s+by\b")
 
 # --- checks -----------------------------------------------------------------------
 VISIBLE_NAME = re.compile(r"(?i)aria-label(?:ledby)?\s*=|u-VisuallyHidden")
@@ -98,8 +102,29 @@ def scan_text(lines, add):
                 add("UX-CONTROL-NAME", no, "icon-only linkText with no accessible name")
 
 
-def scan_tree(root, add):
+def chart_keeps_query_order(region):
+    """False when APEX will re-sort the chart's groups: with two or more series it fills the gaps
+    between them (multiSeriesChartData.fillGapsInChartData, default on) and then orders the groups
+    by sortOrder, default label-asc (Oracle's 26.1 inventory, region/plugin-variants/chart) - the
+    series' own ORDER BY is discarded and months draw as "Agosto, Julio, Junio"."""
+    if prop(region, "multiSeriesChartData.fillGapsInChartData")[0].lower() in ("false", "n"):
+        return True
+    if prop(region, "multiSeriesChartData.sortOrder")[0]:
+        return True                             # stated: the author chose the order
+    return any(k.split(".")[-1] == "timeAxisType" and v[0] not in ("", "disabled")
+               for c in [region, *walk(region)] for k, v in c.props.items())
+
+
+def scan_tree(root, add, lines=()):
     for c in walk(root):
+        if c.kind == "region" and prop(c, "type")[0] == "chart":
+            series = [x for x in c.children if x.kind == "series"]
+            ordered = [x for x in series if any(RE_ORDER_BY.search(ln) and not COMMENT.match(ln)
+                                                for ln in lines[x.line - 1:x.end])]
+            if len(series) >= 2 and ordered and not chart_keeps_query_order(c):
+                add("UXDASH-CHART-QUERY-ORDER", c.line,
+                    f"chart {c.name}: {len(series)} series ordered in SQL, but the groups are re-sorted by label "
+                    "(set multiSeriesChartData { fillGapsInChartData: false }, a sortOrder, or a time axis)")
         if c.kind == "pageItem":
             if prop(c, "type")[0] != "hidden" and not prop(c, "label.label")[0]:
                 add("UX-ITEM-NAME", c.line, f"pageItem {c.name} has no label")
@@ -155,7 +180,7 @@ def scan(paths):
         def add(cid, line, detail, r=r):
             findings[cid].append({"path": r, "line": line, "detail": detail})
         try:
-            scan_tree(parse(lines), add)
+            scan_tree(parse(lines), add, lines)
         except ParseError as e:
             out["unparsed"].append({"path": r, "detail": str(e)})
         scan_text(lines, add)
@@ -171,7 +196,7 @@ def scan(paths):
             "message": "a file could not be parsed: its item and button checks did not run - read it by hand"}]
     else:
         out["status"], out["reasons"] = "PASS", [{"code": "UI_CRITERIA_HELD",
-            "message": f"{n} file(s); the five static FAIL criteria held"}]
+            "message": f"{n} file(s); the static FAIL criteria held"}]
     return out
 
 

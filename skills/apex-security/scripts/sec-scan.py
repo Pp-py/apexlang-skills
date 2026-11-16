@@ -47,7 +47,8 @@ BUILTIN = {"APP_ID", "APP_PAGE_ID", "SESSION", "DEBUG", "APP_TITLE", "IMAGE_PREF
 BARE_SUBST = re.compile(r"&([A-Za-z][\w$#]*)\.")             # &X. — &X!HTML. never matches
 HTML_PROP = re.compile(r"^\s*(\w*(?:html|Html|HTML)\w*|linkText|linkAttributes|text)\s*:\s*(.*)$")
 UNSAFE_URL = [
-    (re.compile(r"(?i)javascript:"), "javascript: URL"),
+    # the scheme, not a property whose name ends in it (`usedInJavaScript: true` of a text message)
+    (re.compile(r"(?i)(?<![A-Za-z])javascript:"), "javascript: URL"),
     (re.compile(r"""(?i)(?:href|src|url|target)\s*[=:]\s*["']?data:"""), "data: URL"),
     (re.compile(r"""(?i)(?:href|src|url)\s*[=:]\s*["']?//[\w.-]"""), "protocol-relative URL"),
     (re.compile(r"""(?i)(?:href|src|url)\s*[=:]\s*["']?http://"""), "plain-http URL"),
