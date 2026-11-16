@@ -115,4 +115,13 @@ SKILL.md | If the version is unknown, use 26.1. | README.md (Requirements: the v
 26.1/apexlang-generation/references/policies/memory-bank/40-components/apex.region-media.md | Raw LOB projection is display-only. | apexlang-architecture recipes/attachments-to-package.md
 26.1/apexlang-generation/templates/items/file-upload/file-upload._common.md | Proven storage type: `appTempFiles`. | apexlang-architecture recipes/attachments-to-package.md
 26.1/apexlang-generation/templates/items/file-upload/file-upload._common.md | Omit `source {}` when the item is not bound to persisted data or a form region. | apexlang-architecture recipes/attachments-to-package.md
+26.1/apexlang-generation/templates/region-components/calendar/calendar._common.md | `invokeApi` unless a packaged API is unavailable. | apexlang-architecture recipes/calendar-scheduling.md
+26.1/apexlang-generation/templates/region-components/calendar/calendar._common.md | disable escaping (`escapeSpecialChars: false`) only | apexlang-architecture recipes/calendar-scheduling.md
+26.1/apexlang-generation/references/policies/memory-bank/30-pages/apex.calendar.md | Every calendar region must emit `settings.pkColumn` | apexlang-architecture recipes/calendar-scheduling.md
+26.1/apexlang-generation/references/policies/memory-bank/30-pages/apex.map-page.md | Multi-marker maps must use a viewport that fits the marker set. | apexlang-architecture recipes/map-locations.md; apex-ux criteria/map.md
+26.1/apexlang-generation/references/policies/memory-bank/30-pages/apex.map-page.md | Prefer a SQL-derived `boundingBox` | apexlang-architecture recipes/map-locations.md
+26.1/apexlang-generation/references/policies/memory-bank/30-pages/apex.map-page.md | must include a declarative `link { target: { page, items } }` | apexlang-architecture recipes/map-locations.md
+26.1/apexlang-generation/references/policies/memory-bank/40-components/apex.region-media.md | Cards BLOB display uses | apexlang-architecture recipes/media-gallery-catalog.md
+26.1/apexlang-generation/references/policies/memory-bank/40-components/apex.region-media.md | Map accessible image text with `media.imageDescription` | apexlang-architecture recipes/media-gallery-catalog.md; apex-ux criteria/browse-search.md
+26.1/apexlang-generation/templates/template-components/media-list/media-list._common.md | do not infer BLOB contracts | apexlang-architecture component-catalog.md, recipes/media-gallery-catalog.md
 ```

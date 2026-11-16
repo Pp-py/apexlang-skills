@@ -22,6 +22,23 @@ bump yet (the owner's call); `UXDASH-CHART-QUERY-ORDER` is a new FAIL for the sa
   message with that property was a finding: 19 to 43 per benchmark app.
 
 **Skills and documents**
+- **`apexlang-architecture/component-catalog.md` (new): every region, template component and page item, by the
+  need it answers.** Twenty regions, ten template components and thirty items, each with when to use it, what
+  to use instead, and whether this repo has a recipe, Oracle has a 26.1 template, or only the inventory names
+  it. It holds no grammar.
+- **Three recipes: `calendar-scheduling.md`, `map-locations.md`, `media-gallery-catalog.md`.** A dragged
+  calendar event is a write and goes through the package, where the overlap rule lives; a map projects a
+  geometry from a view and is never the only route to a record; a picture catalog is `cards` with BLOB media
+  and a text alternative from the row. Each was built and measured on APEX 26.2.0 and says what was and was
+  not measured. The measurement corrected the first draft and three statements of Oracle's 26.1 templates: a
+  timed calendar needs `showTime` or a drag stores midnight to midnight; a refused drag is silent unless the
+  page handles `apexcalendardragdroperror`; `boundingBox` limits panning and does not frame the markers.
+- `apex-ux`: two archetype files, `criteria/calendar.md` (`UXCAL`, six) and `criteria/map.md` (`UXMAP`, seven),
+  and three `UXBRW-MEDIA-*` rows. All `ADVISE`; no script changed. **Known:** on APEX 26.2.0 a page with a
+  calendar fails `UX-AXE-SERIOUS` on the calendar's own markup; it is not listed in `oracle-owned.json`.
+- `master-faceted-search.md`: facets over a calendar or a map, and when a `search` region or `smartFilters`
+  is the tool instead. `apexlang-architecture/SKILL.md` drops its "When NOT to use" section (its frontmatter
+  says the same) to stay within its size budget.
 - `apexlang-delivery` and `apexlang-architecture` name the three skills to load with them; `apex-ux`, `apex-sentinel` and `apex-security` trigger on building or changing a page, not only on a review.
 - `apexlang-delivery` (the first paragraph of §The loop) and `AGENTS.md`: only Sync
   and `record-sync` depend on the config and write a marker; every other check still runs.

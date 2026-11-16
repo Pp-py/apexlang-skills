@@ -1,6 +1,6 @@
 # Browse and search — `UXBRW`
 
-Recipes: `browse-interactive-report.md`, `master-faceted-search.md`, `analytical-report.md`. Runtime companion: `apex-sentinel/checks/browse-search.md`.
+Recipes: `browse-interactive-report.md`, `master-faceted-search.md`, `analytical-report.md`, `media-gallery-catalog.md`. Runtime companion: `apex-sentinel/checks/browse-search.md`.
 
 | ID | Criterion | Sev | By | Source |
 |---|---|---|---|---|
@@ -14,3 +14,6 @@ Recipes: `browse-interactive-report.md`, `master-faceted-search.md`, `analytical
 | `UXBRW-NO-RESULTS` | a search with no results says so and suggests the next step (clear a facet, try other words) | ADVISE | static + runtime | ex: CAT 26.1.6 full-page-search |
 | `UXBRW-SEARCH-STATES` | a search box that drives a results region has one effective term — the value trimmed the same way in the page and in the SQL, so a blank term is the initial state (the same as no term), never a hidden "match everything" — and the region tells its states apart: an initial prompt, the results, and a no-results message (`UXBRW-NO-RESULTS`); clearing the box returns to the initial state | ADVISE | static + runtime | repo `recipes/master-faceted-search.md` §A search box that is a page item (one effective term, client and SQL); ex: CAT 26.1.6 full-page-search |
 | `UXBRW-HEADINGS` | every visible column has a heading a user understands, not the column name | ADVISE | static | Oracle interactive-report |
+| `UXBRW-MEDIA-DESCRIPTION` | an image that carries information has a text alternative from the row (`media.imageDescription`), never the file name; an image the title already describes has an empty one, so the name is not read twice | ADVISE | static + runtime | WCAG 1.1.1; Oracle region-media |
+| `UXBRW-MEDIA-MISSING` | a record with no image shows the card without media or the application's one placeholder — never a broken image | ADVISE | runtime | repo `recipes/media-gallery-catalog.md` |
+| `UXBRW-MEDIA-TEXT-OVER` | text placed over an image (`media.position: background`) keeps its contrast on every image, not only on the sample | ADVISE | manual | WCAG 1.4.3 |

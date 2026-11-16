@@ -1,6 +1,6 @@
 ---
 name: apexlang-architecture
-description: Use when deciding WHERE business logic, validation, or DML belongs in an Oracle APEX app written as APEXlang (.apx) — routing every write through a PL/SQL package instead of region-bound Automatic DML and deciding which package owns it (one entity, a multi-entity flow, an external system) or whether the rule belongs in a database constraint, the UI, or no package at all, and architecting screens that write (editable Interactive Grids, modal CRUD, full-page and drawer forms, master-detail, workflows, versioned/vigency records) or read (dashboards, faceted search, split-view browsers, analytical reports), including what the SQL/view must project to feed cards, content rows, badges and drill-down links. NOT for .apx grammar/validate/import/round-trip (use Oracle's APEXlang skills) or one-off read-only pages with no reuse.
+description: Use when deciding WHERE business logic, validation, or DML belongs in an Oracle APEX app written as APEXlang (.apx) — routing every write through a PL/SQL package instead of region-bound Automatic DML and deciding which package owns it (one entity, a multi-entity flow, an external system) or whether the rule belongs in a database constraint, the UI, or no package at all, and architecting screens that write (editable Interactive Grids, modal CRUD, full-page and drawer forms, master-detail, workflows, versioned/vigency records) or read (dashboards, faceted search, split views, reports, calendars, maps, picture catalogs), including what the SQL/view must project to feed cards, content rows, badges and drill-down links. NOT for .apx grammar/validate/import/round-trip (use Oracle's APEXlang skills) or one-off read-only pages with no reuse.
 ---
 
 # APEXlang Architecture
@@ -20,14 +20,9 @@ APEXlang turns an APEX app into declarative `.apx` source. Generating and valida
 
 **Core principle: the `.apx` only orchestrates. A PL/SQL package validates and writes. No region performs direct DML.**
 
-The `.apx` may call two packages in sequence; it never decides *where* a rule lives, nor coordinates an operation whose invariant spans entities — that is a flow package's job (`package-boundaries.md`). Left alone, an agent bolts automatic table-bound DML onto each grid and calls it "simple."
+The `.apx` may call two packages in sequence; it never decides *where* a rule lives, nor coordinates an operation whose invariant spans entities — that is a flow package's job (`package-boundaries.md`).
 
 **REQUIRED SUB-SKILL:** Oracle's APEXlang skills (`apexlang-inventory`, `apexlang-compile`, `apexlang-deploy`) for grammar, generation (26.1), validation and import. This skill governs *where logic goes*.
-
-## When NOT to use
-
-- A read-only one-off page with no write path and no reuse.
-- `.apx` grammar, validation or import questions — Oracle's APEXlang skills.
 
 ## The two decisions that matter
 
@@ -48,9 +43,11 @@ Validation in IG column                Validation + rules inside the package
 DML in page processes                  All DML behind the package API
 ```
 
-**This is a deliberate deviation from Oracle's default**, resting on an exception Oracle's own standard names: the 26.1 policies say *"Prefer ARP for simple CRUD"*, and the Interactive Grid page rule that requires Automatic Row Processing also says *"do not substitute custom PL/SQL **unless invoking a dedicated API**"* — the package the `.apx` calls **is** that API. Everywhere else the standard already points this way (`invokeApi` by default, inline PL/SQL extracted into a package API). The argument, quoted and anchored: `references/official-standard.md`. A page process calls the package through `invokeApi`; a thin `executeCode` wrapper only where Oracle allows one, first line `-- thin wrapper: <reason>` (`references/official-standard.md`, KC-4).
+**This is a deliberate deviation from Oracle's default**, resting on an exception Oracle's own standard names: the 26.1 policies say *"Prefer ARP for simple CRUD"*, and the Interactive Grid page rule that requires Automatic Row Processing also says *"do not substitute custom PL/SQL **unless invoking a dedicated API**"* — the package the `.apx` calls **is** that API. The argument, quoted and anchored: `references/official-standard.md`. A page process calls the package through `invokeApi`; a thin `executeCode` wrapper only where Oracle allows one, first line `-- thin wrapper: <reason>` (`references/official-standard.md`, KC-4).
 
 ## Which file to open
+
+No signal fits: `component-catalog.md` — every region, template component and item, by need.
 
 Read the **one** recipe the signal points to, plus its background file. Two recipes at most,
 and only when the screen combines archetypes (a faceted list that opens a drawer).
@@ -67,6 +64,7 @@ and only when the screen combines archetypes (a faceted list that opens a drawer
 | Input the user cannot give in one screen | wizard, multi-step, `@/wizard-modal-dialog`, draft row, staging | `recipes/wizard-multi-step.md` |
 | The verb is approve / reject / cancel, not "save" | workflow, state machine, status badge, transition guard | `recipes/workflow-state-transitions.md` |
 | A file attached to a record | upload, `fileUpload`, BLOB | `recipes/attachments-to-package.md` |
+| Rows that are *when* | calendar, booking, drag and drop | `recipes/calendar-scheduling.md` |
 
 **The screen only reads** — how does the user find the row?
 
@@ -78,6 +76,8 @@ and only when the screen combines archetypes (a faceted list that opens a drawer
 | Glanceable numbers and trends | dashboard, KPI, `metricCard`, chart, landing page | `recipes/dashboard-kpis-charts.md` |
 | The working list of an entity: sort, filter, save a view, act on a row | interactive report, IR, browse list, row actions, `savedReport` | `recipes/browse-interactive-report.md` |
 | Aggregated pivots and charts over the same data | analytical report, monthly/weekly view, `v_*` aggregation | `recipes/analytical-report.md` |
+| Rows that are *where* | map, layer, branches | `recipes/map-locations.md` |
+| Records known by sight | catalog, photos, `media` | `recipes/media-gallery-catalog.md` |
 
 **Alongside the recipe, always:**
 
