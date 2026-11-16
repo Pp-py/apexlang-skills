@@ -1,6 +1,6 @@
 ---
 name: apex-security
-description: Use when an APEXlang app or page is designed, changed or reviewed for security — page and action authorization, public pages, page access protection and session state protection, escaping of HTML output, dynamic SQL in the write-path packages, secrets in the repo — and before calling a change safe to deploy.
+description: Use whenever an APEXlang page, process or write-path package is built or changed, not only when a review is asked for — its scans run on plain source (no apex-sync.json, no sync marker). Covers page and action authorization, public pages, page access protection and session state protection, escaping of HTML output, dynamic SQL in the write-path packages, secrets in the repo — and before calling a change safe to deploy.
 ---
 
 # apex-security

@@ -42,6 +42,9 @@ Codex, opencode, Cursor, aider, …) working on an APEXlang app, load the releva
 They form one loop: **architect → build (`.apx` + package) → validate → package check (opt-in `packageGate`) →
 sync-check → import → record-sync → verify in the browser → security probes → UI checks** (plus sync-check before any export).
 
+**Checks do not depend on sync.** No `apex-sync.json`, or sync marks forbidden: skip only Sync and
+`record-sync`; still load `apex-ux`, `apex-sentinel`, `apex-security` and run them on every page you change.
+
 ## Gates, statuses, evidence
 
 - Every gate ends in `PASS`, `FAIL`, `CONFLICT` (sync only), `BLOCKED` or `UNKNOWN` — exit codes
@@ -86,7 +89,5 @@ the two disagree, `framework/PRINCIPLES.md` P6 sets the precedence.
 
 ## Runnable examples
 
-`skills/apexlang-architecture/examples/` holds three complete slices (DDL + package + `.apx`):
-`sectors-catalog` (editable Interactive Grid), `absences-workflow` (state machine) and
-`employees-form` (single-entity form, full page + drawer); the first two have browser
-walkthroughs in `skills/apex-sentinel/examples/`. Start at `skills/apexlang-architecture/examples/README.md`.
+`skills/apexlang-architecture/examples/` holds three slices (DDL + package + `.apx`), two with
+browser walkthroughs in `skills/apex-sentinel/examples/`. Start at its `README.md`.

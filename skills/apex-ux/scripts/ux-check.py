@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """ux-check — the runtime half of apex-ux's FAIL criteria, in the page the agent has open.
 
-Usage: python3 ux-check.py [--app <alias>] [--env <name>] [--task <id>] [--dialog <selector>]... [--raw <file>]
+Usage: python3 ux-check.py [--app <alias>] [--env <name>] [--task <id>] [--dialog <selector>]...
+                           [--no-reflow] [--raw <file>]
 
 Run it after `pw.sh [--app X] [--env E] login` and `pw.sh goto <page>`: it checks the page the
 session already holds, through apex-sentinel's pw.sh (never a copy of it).
@@ -13,7 +14,14 @@ Checks (criteria/common.md), with the vendored axe-core (vendor/axe-core.lock.js
   UX-CONTROL-NAME   axe's naming rules for controls (button-name, link-name, input-button-name)
   UX-DIALOG-FOCUS   per --dialog opener: focus moves in, Tab and Shift+Tab stay in, Esc
                     closes, focus returns to the opener. No --dialog → NOT_RUN.
-  advisories        UX-AXE-MINOR (moderate/minor), UX-AXE-REVIEW (axe "incomplete"),
+  advisories        UX-REFLOW: at 320 and 375 px (the viewport is put back; --no-reflow skips it) the
+                    page scrolls sideways, a container cuts content off with no scroll, a scroll
+                    region has no keyboard stop, or controls are under 24 px - candidates to read;
+                    UX-NAME-LANGUAGE: on a page whose lang is not English, a name or live text
+                    that is one of APEX's untranslated defaults ("Breadcrumb", "Spinner",
+                    "Processing started...") - the texts present when the check ran, never a
+                    transient state it did not cause (references/by-hand.md);
+                    UX-AXE-MINOR (moderate/minor), UX-AXE-REVIEW (axe "incomplete"),
                     UX-ORACLE-OWNED: a finding in markup APEX itself renders, listed in
                     ../oracle-owned.json for the APEX version the page reports — narrow entries,
                     one version each; a version with no entry gets none
@@ -72,6 +80,14 @@ ITEM_RULES = {"label", "select-name", "aria-input-field-name"}
 CONTROL_RULES = {"button-name", "link-name", "input-button-name"}
 FAIL_IDS = ["UX-AXE-SERIOUS", "UX-ITEM-NAME", "UX-CONTROL-NAME", "UX-DIALOG-FOCUS"]
 TIMEOUT = int(os.environ.get("UX_CHECK_TIMEOUT", "300"))
+REFLOW_WIDTHS = [320, 375]          # WCAG 1.4.10's width, and the usual phone
+# APEX and Universal Theme defaults that stay English until the app translates them (text messages,
+# template options): exact names, never a guess at the language of arbitrary text.
+ENGLISH_DEFAULTS = re.compile(
+    r"(?i)^(?:application|breadcrumb|main navigation|skip to main content|spinner|warning|close|loading\.*|"
+    r"sort by this column|expand / collapse (?:navigation|side) ?(?:menu|column)?|processing(?: started| completed)?\.*|"
+    r"\d+ of \d+ characters entered\.?|page help|actions|search)$"
+    r"|(?:^|: )(?:bar|line|area|pie|donut|combination)(?=:)")
 
 
 def page_name(url):
@@ -95,13 +111,51 @@ def load_axe():
     return src.decode("utf-8"), lock
 
 
-def run_page(app, axe_src, dialogs):
+def run_page(app, axe_src, dialogs, reflow=()):
     with open(TEMPLATE, encoding="utf-8") as fh:
         body = fh.read()
-    opts = {"tags": TAGS, "dialogs": dialogs}
+    opts = {"tags": TAGS, "dialogs": dialogs, "reflow": list(reflow)}
     code = ("async (page) => {\n  const AXE = %s;\n  const OPTS = %s;\n  return (%s)(page, AXE, OPTS);\n}\n"
             % (json.dumps(axe_src), json.dumps(opts), body))
     return run_code(app, code, "ux-check-", TIMEOUT)
+
+
+def reflow_advisories(v):
+    out = []
+    for r in v.get("reflow") or []:
+        w = f"{r.get('width')} px"
+        if r.get("pageOverflowsX"):
+            out.append({"id": "UX-REFLOW", "where": w, "detail": "the page scrolls horizontally"})
+        if r.get("clipped"):
+            out.append({"id": "UX-REFLOW", "where": w, "detail": "content cut off by a container that does not scroll",
+                        "count": len(r["clipped"]), "targets": [str(t)[:200] for t in r["clipped"]][:10]})
+        if r.get("unreachable"):
+            out.append({"id": "UX-REFLOW", "where": w, "detail": "a scroll region with no keyboard stop",
+                        "count": len(r["unreachable"]), "targets": [str(t)[:200] for t in r["unreachable"]][:10]})
+        if r.get("smallTargets"):
+            out.append({"id": "UX-REFLOW", "where": w, "rule": "target-size", "detail": "controls under 24 px with no spacing",
+                        "count": int(r["smallTargets"]), "targets": [str(t)[:200] for t in r.get("smallTargetList") or []][:10]})
+    return out
+
+
+def language_advisories(v):
+    """Only APEX's known English defaults, and only on a page that says it is not English: the
+    text of anything else is never judged, nor copied into the result (it can be personal data)."""
+    out, seen = [], set()
+    for n in v.get("names") or []:
+        if str(n.get("lang") or "").lower().startswith("en") or not n.get("lang"):
+            continue
+        for x in n.get("names") or []:
+            text = str(x.get("text") or "")
+            m = ENGLISH_DEFAULTS.search(text)
+            key = (m.group(0).strip(": ").lower() if m else None, n.get("where"))
+            if not m or key in seen:
+                continue
+            seen.add(key)
+            out.append({"id": "UX-NAME-LANGUAGE", "where": str(n.get("where", "page")), "frame": redact(n.get("frame")),
+                        "detail": f"{x.get('kind')} \"{m.group(0).strip(': ')}\" on a lang={n.get('lang')} page",
+                        "targets": [str(x.get("target"))[:200]]})
+    return out
 
 
 def evaluate(v, dialogs, owned=()):
@@ -146,6 +200,7 @@ def evaluate(v, dialogs, owned=()):
                   if not d.get(k)]
         if failed:
             fail("UX-DIALOG-FOCUS", {"selector": d.get("selector"), "failed": failed})
+    advisories += reflow_advisories(v) + language_advisories(v)
     out = []
     for k in FAIL_IDS:
         c = {"id": k, "status": "FAIL" if crit[k] else "PASS", "findings": crit[k]}
@@ -158,12 +213,19 @@ def evaluate(v, dialogs, owned=()):
     return out, advisories, blocked
 
 
+def advised(advisories):
+    """The advisories a reader must not miss behind a PASS: named in the one-line summary."""
+    n = {k: sum(1 for x in advisories if x.get("id") == k) for k in ("UX-REFLOW", "UX-NAME-LANGUAGE")}
+    return "".join(f"; {v} {k} advisory(ies) - read them" for k, v in n.items() if v)
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description="apex-ux runtime checks on the page pw.sh holds")
     ap.add_argument("--app")
     ap.add_argument("--env", help="the environment the page belongs to, for an app with environments")
     ap.add_argument("--task")
     ap.add_argument("--dialog", action="append", default=[], help="selector of a control that opens a dialog")
+    ap.add_argument("--no-reflow", action="store_true", help="skip UX-REFLOW (it resizes the session's viewport to 320 and 375 px, then puts it back)")
     ap.add_argument("--raw", help="write axe's full output here (default with --task: the task's raw dir)")
     a = ap.parse_args(argv)
     result = {"kind": "ui-result", "schemaVersion": 1, "status": "UNKNOWN", "reasons": [],
@@ -176,7 +238,7 @@ def main(argv):
             result["app"] = {"appAlias": alias, **({"environment": a.env} if a.env else {})}
         axe_src, lock = load_axe()
         result["engine"] = {"name": "axe-core", "version": lock.get("version"), "sha256": lock.get("sha256")}
-        v = run_page(a.app, axe_src, a.dialog)
+        v = run_page(a.app, axe_src, a.dialog, () if a.no_reflow else REFLOW_WIDTHS)
         url = redact(v.get("url"))
         page = page_name(url)
         if re.match(r"^https?://\S+$", url):
@@ -206,7 +268,7 @@ def main(argv):
         failed = [c["id"] for c in result["criteria"] if c["status"] == "FAIL"]
         result["status"] = "FAIL" if failed else "PASS"
         result["reasons"] = [{"code": "UI_CRITERIA_FAILED" if failed else "UI_CRITERIA_HELD",
-                              "message": f"{len(v['runs'])} axe run(s), {len(a.dialog)} dialog(s)"}]
+                              "message": f"{len(v['runs'])} axe run(s), {len(a.dialog)} dialog(s)" + advised(result["advisories"])}]
     except Stop as s:
         result["status"], result["reasons"] = s.status, [{"code": s.code, "message": s.message}]
         if s.status == "BLOCKED" and s.code == "OPENER_NOT_FOUND" and any(c["status"] == "FAIL" for c in result["criteria"]):

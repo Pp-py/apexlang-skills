@@ -17,6 +17,11 @@ description: Use when a change to an APEXlang app is to be delivered and called 
 
 ## The loop — one task
 
+**No `apex-sync.json`, or sync marks forbidden?** Only Sync and `record-sync` need them: skip those two with the
+reason and run the rest. Load `apex-ux`, `apex-sentinel`, `apex-security`: scans take a source dir, browser
+checks `pw.sh login <url>` with `$APEX_TEST_USER`/`$APEX_TEST_PASSWORD`; without `--task` nothing is written.
+Never drop the checks because one gate cannot run.
+
 Pick a task id (`T-42`) and use it for every command; start at step 0. After each gate, run `delivery.py`: it reads the task dir and prints the next gate to run, or the gate to stop at.
 
 Optional (GAP-14): `export APEX_RUN_ID=<id>` (letters, digits, `.`, `_`, `-`; up to 64) before the first
@@ -48,8 +53,7 @@ producer, then `delivery.py --task <id> --run <id>`: a result written without th
    with `;`: Validation PASS → `check-import` PASS (it lapses in 5 minutes, and speaks only for
    the LOCAL it compared) → `apex import` (or Oracle's deploy script) → `record-sync`. Nothing
    imports into an environment the user did not name, or into a `protected` one: those are the
-   user's to run. Nothing enforces Validation before Oracle's deploy script (GAP-3): this
-   order does. `record-sync --task <id>` leaves the result the Runtime gate reads next.
+   user's to run. `record-sync --task <id>` leaves the result the Runtime gate reads next.
 6. **Runtime** — the `apex-sentinel` walkthrough as the test user, **after** the `record-sync` (log
    in again after the import: it ended every session), its result through `evidence.py write
    --kind runtime`. Run `record-sync` again later in the task and this walkthrough's verdict reads
@@ -112,11 +116,8 @@ the app sets `packageGate`). Setting `packageGate`, `securityGate` and `uiGate` 
 
 ## A pipeline
 
-[`docs/examples/ci/apexlang-static-gates.yml`](../../docs/examples/ci/apexlang-static-gates.yml)
-is a GitHub Actions workflow to copy into a project: on each pull request it runs the five
-static scans at a pinned release and uploads their results. Validation, Sync, Runtime and the
-runtime scopes need SQLcl, the Builder or a browser, so they stay in this loop; a green
-pipeline is the static scopes holding, never a verified task.
+[`docs/examples/ci/apexlang-static-gates.yml`](../../docs/examples/ci/apexlang-static-gates.yml) runs the five
+static scans on each pull request: green is the static scopes holding, never a verified task.
 
 ## What a PASS here does not establish
 

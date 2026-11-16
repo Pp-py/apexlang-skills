@@ -1,7 +1,9 @@
 # Runtime ADVISE checks, by hand
 
-`ux-check.py` does not measure `UX-REFLOW`, `UX-FOCUS-VISIBLE` (the 3:1 contrast), `UX-NAME-LANGUAGE`
-or `UXDASH-CHART-SERIES`. Apply them on the page the session holds, after `pw.sh login` and
+`ux-check.py` does not measure `UX-FOCUS-VISIBLE` (the 3:1 contrast) or `UXDASH-CHART-SERIES`. It reports
+`UX-REFLOW` candidates at 320 and 375 px and, for `UX-NAME-LANGUAGE`, APEX's known English defaults in the
+state the page was in: read those advisories first, then use the procedures below for what it cannot do
+(operating the actions at a narrow width, the transient texts, a string not on its list). Apply them on the page the session holds, after `pw.sh login` and
 `pw.sh goto <page>`. A finding is an advisory under the criterion's ID, never a verdict; a check
 you did not run is `NOT_RUN`. Whether a message appears or an action works is `apex-sentinel`'s
 verdict: use its flow to cause the state (a request, a validation error), and report only how it is

@@ -1,6 +1,6 @@
 ---
 name: apex-sentinel
-description: Use when an APEXlang page or component was just imported or changed and needs confirming in the running app — verifying an Interactive Grid saves, a modal closes, a workflow transition lands, or a KPI/report renders — before claiming the change works.
+description: Use every time an APEXlang page or component was built, imported or changed, before saying it works — it needs only a browser, a test user and the URL (no apex-sync.json, no sync marker). Confirms it in the running app — verifying an Interactive Grid saves, a modal closes, a workflow transition lands, or a KPI/report renders — before claiming the change works.
 ---
 
 # apex-sentinel

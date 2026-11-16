@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+From the analysis of the Phase 4 benchmark (FinOff), where the arm with this framework scored below the
+control: the agent loaded two of the six skills, ran none of the checks (it read them as needing sync
+markers its instructions forbade), and the checks would not have seen what the evaluator failed. No version
+bump yet (the owner's call); `UXDASH-CHART-QUERY-ORDER` is a new FAIL for the same input.
+
+**Behavior changes**
+- **`ux-scan.py` has a sixth static FAIL criterion, `UXDASH-CHART-QUERY-ORDER`.** A chart of two or more
+  series whose SQL has an `ORDER BY` fails unless it sets `multiSeriesChartData { fillGapsInChartData: false }`,
+  a `sortOrder`, or a time axis: APEX otherwise re-sorts the groups by label. Every static `ui-result` now
+  lists six criteria. On the four benchmark apps it fails the one whose chart drew alphabetically and passes the
+  other three.
+- **`ux-check.py` resizes the viewport to 320 and 375 px and back by default** (`--no-reflow` skips it) and
+  adds two kinds of advisory: `UX-REFLOW` (sideways page scroll, content cut off by a container that does not
+  scroll, a scroll region with no keyboard stop, controls under 24 px at that width) and `UX-NAME-LANGUAGE`
+  (APEX's untranslated English defaults on a page whose `lang` is not English). Advisories never change the
+  verdict; the summary line now counts them. The raw output gains `names` and `reflow`.
+- **`sec-scan.py`: `usedInJavaScript: true` is no longer a `javascript:` URL** (`SEC-URL-SAFE`). Every text
+  message with that property was a finding: 19 to 43 per benchmark app.
+
+**Skills and documents**
+- `apexlang-delivery` and `apexlang-architecture` name the three skills to load with them; `apex-ux`, `apex-sentinel` and `apex-security` trigger on building or changing a page, not only on a review.
+- `apexlang-delivery` (the first paragraph of §The loop) and `AGENTS.md`: only Sync
+  and `record-sync` depend on the config and write a marker; every other check still runs.
+- `dashboard-kpis-charts.md`: ordering the series by the date key is not enough with two or more series (the
+  0.8.0 sentence said only that); the recipe states the two ways to keep the order.
+
+**Not done**: no agent run measures whether these skills are now loaded (L6); the benchmark arm is to be rerun
+by the owner. Severity is unchanged: reflow and language stay advisories.
+
 ## 0.8.0 — 2026-11-05
 
 The changes of an external audit of 0.7.1: the aggregator reads

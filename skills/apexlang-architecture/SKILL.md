@@ -85,14 +85,14 @@ and only when the screen combines archetypes (a faceted list that opens a drawer
 |---|---|
 | Anything writes | `back-end-conventions.md` — the write path, validation, `-20xxx` catalog, no COMMIT, views, retention, vigencies, version token |
 | Anything reads | `ui-contracts.md` — state tokens, drill-down URLs, derived columns, `cards` vs `contentRow`, selection state, deviating from an official default |
-| The page has a UI to judge | `../apex-ux/SKILL.md` — criteria by ID and the static scan; this skill does not judge the UI |
+| A page is built or changed | load `apex-ux`, `apex-sentinel`, `apex-security` and run their checks (no `apex-sync.json` or sync marker needed): this skill verifies nothing |
 | An operation writes more than one table | `package-boundaries.md` — which layer owns it, the satellite and cross-entity tests, when NOT a package, the god-package threshold |
 
 Three runnable slices (DDL + package + `.apx`) live in `examples/` — start at `examples/README.md`. Recipe snippets are architectural shorthand, not import-ready grammar: copy grammar from Oracle's `apexlang-inventory` first and the examples second (they pass the 26.1 lint, the SQLcl compiler currently rejects them — KC-7), architecture from the recipes.
 
 ## Where each layer's authority comes from
 
-Three sources, three jobs: Oracle for whether `.apx` is valid (the compiler, then the 26.1 lint, then the inventory, policies and templates — `framework/PRINCIPLES.md` P6); `apex-ux` for whether the UI is usable and accessible (Oracle's UX Pattern Catalog app is an example only); **this skill** for where the logic lives, what the data layer projects, and when to deviate — `references/official-standard.md`.
+Three sources, three jobs: Oracle for whether `.apx` is valid (the compiler, then the 26.1 lint, then the inventory, policies and templates — `framework/PRINCIPLES.md` P6); `apex-ux` for whether the UI is usable and accessible; **this skill** for where the logic lives, what the data layer projects, and when to deviate — `references/official-standard.md`.
 
 ## Common mistakes (from agent baselines)
 
