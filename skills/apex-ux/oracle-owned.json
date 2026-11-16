@@ -9,6 +9,15 @@
       "apex": "26.2",
       "note": "the Interactive Grid's own grid view: role=grid holding a role=region footer (.a-GV-footer) and a scroll div with tabindex (.a-GV-w-scroll)",
       "source": "R-8, framework/CAPABILITIES.md Recorded runs (2026-10-13, APEX 26.2.0, axe-core 4.13.0)"
+    },
+    {
+      "id": "OO-3",
+      "criterion": "UX-AXE-SERIOUS",
+      "rule": "aria-required-parent",
+      "targets": "^(\\.fc-scrollgrid > (thead|tbody)|tbody\\[role=\"rowgroup\"\\])$",
+      "apex": "26.2",
+      "note": "the Calendar region's month, week and day grids: the table's thead and tbody carry role=rowgroup under a table whose role is not one that owns row groups. Its list view has no such grid and passes",
+      "source": "framework/CAPABILITIES.md Recorded runs (2026-11-16, APEX 26.2.0, axe-core 4.13.0): a page holding only a calendar region with displayColumn, startDateColumn and pkColumn fails with this finding alone; the same page without the region passes"
     }
   ]
 }

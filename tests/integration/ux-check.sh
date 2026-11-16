@@ -10,7 +10,7 @@
 #   * stdout never carries a node's HTML or a session id; --raw keeps both, with its sha256;
 #   * --task writes the ui-result and the raw output into the evidence dir;
 #   * the snippet the CLI receives carries the pinned axe, and is deleted afterwards;
-#   * oracle-owned.json lists only OO-1: a page's own dialog failing focusReturns on 26.2 is FAIL,
+#   * oracle-owned.json lists OO-1 and OO-3: a page's own dialog failing focusReturns on 26.2 is FAIL,
 #     the version compare is exact, and the `failed` branch is covered by a temporary list;
 #   * the snippets in references/by-hand.md parse (when node is on PATH) and stay read-only.
 # The real-browser smoke (fixtures/ux-check/page.html, a live app) is manual: tests/README.md.
@@ -98,7 +98,7 @@ check "no verdict in the output → UNKNOWN" garbage 3 "d['status'] == 'UNKNOWN'
 
 # Markup APEX itself renders (oracle-owned.json): an advisory on the exact version an entry names,
 # a FAIL on any other version, with any other target, or with another dialog step failing.
-# Only OO-1 is listed. A dialog that loses focus on Esc is the page's own until a minimal
+# OO-1 (the IG grid) and OO-3 (the calendar grid) are listed. A dialog that loses focus on Esc is the page's own until a minimal
 # reproduction with a negative control says otherwise (OO-2 was retired).
 check "APEX 26.2's IG grid markup → UX-ORACLE-OWNED OO-1, PASS" oracle-owned 0 \
   "d['status'] == 'PASS' and sorted(a['detail'].split()[1] for a in d['advisories'] if a['id'] == 'UX-ORACLE-OWNED') == ['OO-1']" --dialog '#open'
@@ -110,6 +110,11 @@ sed 's/, "apex": "26.2"//' "$FIX/oracle-owned.json" > "$WORK/oo-none.json"
 for v in 263:"another APEX version" 2620:"26.2.0 is not 26.2 (exact version)" target:"another target" steps:"another dialog step too" none:"no APEX version reported"; do
   check "oracle-owned, ${v#*:} → FAIL" "$WORK/oo-${v%%:*}.json" 1 "d['status'] == 'FAIL'" --dialog '#open'
 done
+# OO-3: the Calendar region's own grid (month, week, day) on 26.2 — and nothing else under that rule.
+check "APEX 26.2's calendar grid markup → UX-ORACLE-OWNED OO-3, PASS" calendar-grid 0 \
+  "d['status'] == 'PASS' and sorted(a['detail'].split()[1] for a in d['advisories'] if a['id'] == 'UX-ORACLE-OWNED') == ['OO-3']"
+sed 's/.fc-scrollgrid > thead/#my_table > thead/' "$FIX/calendar-grid.json" > "$WORK/oo3-target.json"
+check "aria-required-parent on a table of the page's own → FAIL" "$WORK/oo3-target.json" 1 "d['status'] == 'FAIL' and 'UX-ORACLE-OWNED' not in adv"
 # The retired OO-2: the page's own dialog failing only focusReturns on 26.2, against the REAL list.
 check "own dialog on 26.2 failing only focusReturns → FAIL, no advisory" own-dialog 1 \
   "c['UX-DIALOG-FOCUS'] == 'FAIL' and 'UX-ORACLE-OWNED' not in adv and d['criteria'][3]['findings'][0]['failed'] == ['focusReturns']" --dialog '#my-own-dialog-opener'

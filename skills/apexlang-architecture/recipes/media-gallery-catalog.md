@@ -9,8 +9,9 @@ menu. If the user would say "the red one", the page needs the picture.
 
 **Measured** on APEX 26.2.0 (2026-11-16, a 26.1 source compiled and imported with SQLcl 26.2.0, driven
 in a browser): cards with BLOB media and its attributes, the text alternative, a row with no image,
-a facet over the cards, `ux-check.py` (PASS). **Not measured:** the upload, the read scope, URL
-media, `mediaList`.
+a facet over the cards, the upload through the package, the image link's protection,
+`ux-check.py` (PASS). **Not measured:** URL media, `mediaList`, `imageUpload` (the upload used
+`fileUpload`), several photos per product.
 
 **Contents:** which component · what the query projects · the description of an image · facets and
 order · upload · common mistakes.
@@ -59,7 +60,10 @@ blobAttributes { mimeTypeColumn: PHOTO_MIME_TYPE  lastUpdatedColumn: PHOTO_UPDAT
   region resolves the BLOB by key.
 - **The scope is the view's.** Cards serves the image for whatever row the query returns; a product
   a user may not see must be absent from `v_products`, not merely hidden on the page
-  (`attachments-to-package.md` §Reading).
+  (`attachments-to-package.md` §Reading). Measured: each image address carries the row's key signed
+  by APEX; the address of a visible product rewritten to the key of one the view leaves out was
+  refused (400, a checksum error), and so was one with the signature removed. An image can be asked
+  for only with an address the region issued — so what the query returns is exactly what can be read.
 - Store a display-sized image. A 6 MB camera original in a 24-card grid is 144 MB of page; resize on
   write (below) and keep the original separately if it is needed at all.
 
@@ -87,6 +91,19 @@ it offers column operations nobody performs on pictures.
 The photo is a file on a record, so it is written as `attachments-to-package.md` says: an
 `imageUpload` item (crop and preview in the browser) or `fileUpload`, temporary storage, and the
 entity's package stores it — size, declared type and leading bytes checked on the server.
+
+Measured with a `fileUpload` item (`storage { type: appTempFiles  fileTypes  maxFileSize }`), a thin
+wrapper that reads `apex_application_temp_files` and `set_photo(p_product_id, p_mime_type, p_content,
+p_photo_alt, p_row_version)`:
+
+| Attempt | Result |
+|---|---|
+| a text file named `.png` | the item let it through; the **package** refused it — the content did not match the type |
+| a 600 KB file, limit 512 KB | the **item** refused it, in APEX's own words, before the package ran |
+| a valid PNG with a description | stored; the card showed it with that `alt` |
+| a new description, no file | the stored photo and its type were kept; the row version moved |
+
+The first row is why the server check exists: `fileTypes` is advice to the browser.
 
 **Unit of work.** The photo, its MIME type, `photo_updated_on` and the alt text change in the same
 `UPDATE` as the row version; an edit that picks no new file keeps the stored one.
