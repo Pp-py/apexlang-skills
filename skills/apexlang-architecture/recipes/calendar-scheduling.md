@@ -10,8 +10,9 @@ writes when an event is dragged, where "no overlap" lives, and what the SQL may 
 
 **Measured** on APEX 26.2.0 (2026-11-16, a 26.1 source compiled and imported with SQLcl 26.2.0, driven
 in a browser, each write confirmed in the table): the SQL and class mapping, the three writes below,
-the refusal message, the create link, facets over the calendar. **Not measured:** a drag in the week
-or day view, resizing, the keyboard. The inventory lists no calendar-specific property and Oracle's
+the refusal message, the create link, facets over the calendar, a drag and a resize in the week
+view, opening an event from the keyboard, and `ux-check.py` on all four views. **Not measured:** a
+refused move in the week view (the month view's was), touch. The inventory lists no calendar-specific property and Oracle's
 26.1 template is incomplete on three points this recipe names — where they disagree, the compiler
 decided.
 
@@ -34,10 +35,9 @@ like configuration. It is a write.
 
 ```sql
 select b.booking_id, b.title, b.starts_at, b.ends_at,
-       case b.status when 'CONFIRMED' then 'apex-cal-green'
+       case b.status when 'CONFIRMED' then 'apex-cal-black'
                      when 'PENDING'   then 'apex-cal-yellow'
-                     when 'CANCELLED' then 'apex-cal-gray'
-                     else 'apex-cal-blue' end as css_class
+                     else 'apex-cal-silver' end as css_class
   from v_bookings b
  where b.room_id = :P20_ROOM_ID
 ```
@@ -53,9 +53,13 @@ settings {
 
 - `pkColumn` is required on every calendar and is the table's primary key (Oracle: *"Every calendar
   region must emit `settings.pkColumn`"*).
-- `cssClass` follows `ui-contracts.md` §2: whole literals from the calendar's nine classes
-  (`apex-cal-black`, `-blue`, `-gray`, `-green`, `-lime`, `-orange`, `-red`, `-silver`, `-yellow`),
-  a `CASE` with an `ELSE`. Never a concatenation, never a class column a user can type into.
+- `cssClass` follows `ui-contracts.md` §2: whole literals, a `CASE` with an `ELSE`. Never a
+  concatenation, never a class column a user can type into.
+- **Four of the calendar's nine classes are usable.** Measured text contrast on APEX 26.2.0 (list view):
+  `apex-cal-black` 13.2, `-yellow` 6.2, `-silver` 5.8, `-red` 5.1 meet 4.5:1; `-gray` 4.0,
+  `-blue` 3.9, `-lime` 3.3, `-orange` 2.2 and `-green` 2.1 do not, and each event wearing one is a
+  `color-contrast` finding (`UX-AXE-SERIOUS`). The closed set is those four. Oracle's templates and
+  Sample Calendar use the other five.
 - Colour is not the only signal: put the state in the title or in `supplementalInfo` as well
   (`apex-ux` `UX-NO-COLOR-ONLY`).
 - **No markup in the query.** Oracle's calendar contract lets `escapeSpecialChars: false` through
@@ -139,6 +143,13 @@ or raises, and nothing else is written (`back-end-conventions.md` §4). A drag h
 guard — the row may have changed since the calendar loaded — so `reschedule` re-reads the row,
 checks the state still allows a move, and locks it before writing (§7).
 
+Resizing an event runs the same code with a new end (measured: 15:00–16:00 became 15:00–17:00
+through `reschedule`), and a drag in the week view changes the hour and keeps the duration — so
+`reschedule` is the one place both arrive.
+
+Dragging is never the only way: an event is a keyboard stop and Enter opens its form (measured), where
+the dates are fields (`apex-ux` `UXCAL-DRAG-ALTERNATIVE`).
+
 Leave `dragAndDrop` off when moving an event has consequences a drag cannot ask about (a confirmed
 booking that notifies people, a shift with a swap rule). An edit form can ask; a drag cannot.
 
@@ -191,10 +202,26 @@ Measured: a facet on the room took the month from nine events to two, and the li
 - `maxEventsDay` keeps a busy month legible; the overflow opens the day.
 - The calendar reopens on the view the user last chose (measured: week, after a new sign-in). A test
   that assumes the month view selects it first.
-- **The month grid fails axe today.** On APEX 26.2.0 the calendar's own markup gives three
-  violations `ux-check.py` counts as `UX-AXE-SERIOUS` (`aria-required-parent`, `role-img-alt` on the
-  previous/next icons, `scrollable-region-focusable`). They are not in `apex-ux`'s
-  `oracle-owned.json`, so a page with a calendar does not pass the UI gate as built.
+- The week view opens on the first week of the month the user was looking at, not on today
+  (measured): a test presses **today** before it looks for an event.
+- **Three axe findings, two of them the page's to fix.** On APEX 26.2.0 a calendar as generated
+  gives `role-img-alt` (the previous/next icons), `scrollable-region-focusable` (the time grid's
+  scroller) and `aria-required-parent` (the grid's own table). The first two go away with two
+  options, measured on all four views:
+
+  ```
+  componentAdvanced { initJavaScriptFunction: ```javascript-browser
+      function (pOptions) {
+          pOptions.contentHeight = "auto";      // no inner scroller
+          pOptions.buttonIcons = false;         // text buttons instead of unnamed icons
+          pOptions.buttonText = Object.assign({}, pOptions.buttonText, { prev: "Previous", next: "Next" });
+          return pOptions;
+      }``` }
+  ```
+
+  The third is APEX's markup and no `.apx` changes it: `apex-ux` lists it as `OO-3` for APEX 26.2,
+  an advisory. With the four classes above and these options the page passes `ux-check.py`; the
+  list view passes with no exception at all.
 - A read-only calendar sets no `dragAndDrop`, no `createLink`, and `readOnly`.
 
 ## Common mistakes
@@ -203,6 +230,7 @@ Measured: a facet on the room took the month from nine events to two, and the li
 |---|---|
 | `update … where id = :APEX$PK_VALUE` in `dragAndDropPlsqlCode` | A write outside the package: the overlap rule, the state guard and the audit are skipped on the gesture users will use most. |
 | The overlap check as a page validation on the form | A drag never runs it. A job and a REST call never run it. |
+| `apex-cal-green` for "confirmed" | White on that green is 2.1:1. The state is in the text; the class comes from the four that pass. |
 | `'apex-cal-' \|\| lower(colour)` | A composed class (`UX-NO-COMPOSED-CLASS`): no literal in the source says which classes can reach the page. |
 | An icon or a link built as HTML in the title | The query projects data; and it turns `escapeSpecialChars` off for the whole region. |
 | Timed events with no `showTime` | A drag stores midnight to midnight: the hours are gone, silently. |
@@ -214,5 +242,4 @@ Measured: a facet on the room took the month from nine events to two, and the li
 
 `apex-sentinel`: create from a slot, drag an event onto a free slot and onto a taken one (the row
 moves and keeps its hours, or the package's message shows and the event returns), and confirm each
-in the table. No check file for this archetype exists yet — say which of these you ran.
-`apex-ux`: `criteria/calendar.md`.
+in the table: `apex-sentinel` `checks/calendar.md`. `apex-ux`: `criteria/calendar.md`.

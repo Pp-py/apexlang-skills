@@ -76,6 +76,7 @@ A full accessibility snapshot of an APEX page is tens of thousands of tokens; a 
 | Split view (list or tree + detail) | `checks/split-view.md` |
 | Browse & faceted search | `checks/browse-search.md` |
 | Workflow / state transition | `checks/workflow-state.md` |
+| Calendar | `checks/calendar.md` |
 | Dashboard / analytical report | `checks/dashboard-report.md` |
 
 **Read `setup.md` before any check** — base-URL/TLS resolution, login, session preservation, and IG inline-edit mechanics are non-obvious and block everything.

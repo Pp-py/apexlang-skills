@@ -1,11 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.8.1 — 2026-11-16
 
 From the analysis of the Phase 4 benchmark (FinOff), where the arm with this framework scored below the
 control: the agent loaded two of the six skills, ran none of the checks (it read them as needing sync
-markers its instructions forbade), and the checks would not have seen what the evaluator failed. No version
-bump yet (the owner's call); `UXDASH-CHART-QUERY-ORDER` is a new FAIL for the same input.
+markers its instructions forbade), and the checks would not have seen what the evaluator failed. And a
+catalog of every UI component, with three recipes measured on APEX 26.2.0. For the same input,
+`UXDASH-CHART-QUERY-ORDER` is a new FAIL and a calendar's own grid is now an advisory (`OO-3`).
 
 **Behavior changes**
 - **`ux-scan.py` has a sixth static FAIL criterion, `UXDASH-CHART-QUERY-ORDER`.** A chart of two or more
@@ -33,9 +34,18 @@ bump yet (the owner's call); `UXDASH-CHART-QUERY-ORDER` is a new FAIL for the sa
   not measured. The measurement corrected the first draft and three statements of Oracle's 26.1 templates: a
   timed calendar needs `showTime` or a drag stores midnight to midnight; a refused drag is silent unless the
   page handles `apexcalendardragdroperror`; `boundingBox` limits panning and does not frame the markers.
-- `apex-ux`: two archetype files, `criteria/calendar.md` (`UXCAL`, six) and `criteria/map.md` (`UXMAP`, seven),
-  and three `UXBRW-MEDIA-*` rows. All `ADVISE`; no script changed. **Known:** on APEX 26.2.0 a page with a
-  calendar fails `UX-AXE-SERIOUS` on the calendar's own markup; it is not listed in `oracle-owned.json`.
+- `apex-ux`: two archetype files, `criteria/calendar.md` (`UXCAL`, seven) and `criteria/map.md` (`UXMAP`, seven),
+  and three `UXBRW-MEDIA-*` rows. All `ADVISE`; no script changed.
+- **`oracle-owned.json` gains OO-3: `aria-required-parent` on the Calendar region's own grid, APEX 26.2.** A
+  page holding only a calendar fails with that finding alone and the same page without it passes; the list
+  view has no such grid. A calendar as generated had three more findings, and those are the page's: five of
+  the nine `apex-cal-*` classes do not reach 4.5:1 (`color-contrast`), and two FullCalendar options remove
+  `role-img-alt` and `scrollable-region-focusable`. With those, the calendar passes on its four views.
+- `apex-sentinel`: `checks/calendar.md` (`CAL-*`, six criteria) — move, resize, refusal, create from a slot,
+  open from the keyboard, filter.
+- A second measurement round on the same application settled what the first left open: a drag and a resize
+  in the week view, the keyboard, `SDO_GEOMETRY` and GeoJSON layers, a marker's link, a location written
+  through its package, the photo upload and the image link's signature (`framework/CAPABILITIES.md`).
 - `master-faceted-search.md`: facets over a calendar or a map, and when a `search` region or `smartFilters`
   is the tool instead. `apexlang-architecture/SKILL.md` drops its "When NOT to use" section (its frontmatter
   says the same) to stay within its size budget.

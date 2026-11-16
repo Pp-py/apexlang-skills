@@ -370,7 +370,8 @@ def check_unit_of_work():
 
 
 CHECK_PREFIX = {"browse-search": "BROWSE", "dashboard-report": "DASH", "editable-ig": "IG",
-                "form-page": "FORM", "modal-crud": "MODAL", "package": "PKG", "split-view": "SPLIT", "workflow-state": "WF"}
+                "form-page": "FORM", "modal-crud": "MODAL", "package": "PKG", "split-view": "SPLIT", "workflow-state": "WF",
+                "calendar": "CAL"}
 ID = re.compile(r"`([A-Z]{2,8}(?:-[A-Z0-9]{1,24}){1,4})`")
 ID_PATTERN = json.loads(read("framework/schemas/common.schema.json"))["$defs"]["criterionId"]["pattern"]
 
